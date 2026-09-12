@@ -10,6 +10,7 @@ use App\Mcp\Tools\DescribeTodoIssue;
 use App\Mcp\Tools\DescribeTodoQueueStatus;
 use App\Mcp\Tools\DescribeTodoServer;
 use App\Mcp\Tools\ListTodoTasks;
+use App\Mcp\Tools\ScaffoldTodoPlan;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -27,6 +28,7 @@ class TodoServer extends Server
         DescribeTodoIssue::class,
         DescribeTodoQueueStatus::class,
         CreateTodoTask::class,
+        ScaffoldTodoPlan::class,
     ];
 
     protected array $resources = [
