@@ -6,7 +6,7 @@ use App\Actions\ApplyGitHubSnapshot;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectItem;
-use Illuminate\Database\QueryException;
+use App\Services\GitHub\GitHubSyncException;
 
 function githubSnapshotFixture(): array
 {
@@ -58,8 +58,34 @@ it('rolls back a malformed snapshot without modifying the previous good data', f
     $snapshot = githubSnapshotFixture();
     $snapshot['issues'][0]['title'] = 'Should roll back';
     $snapshot['projects'][0]['items'][0]['id'] = null;
-    expect(fn () => app(ApplyGitHubSnapshot::class)->handle($snapshot))->toThrow(QueryException::class);
+    // project_items.github_node_id became nullable for #49's local-first pending rows, so a missing remote
+    // id is no longer a DB constraint violation — ApplyGitHubSnapshot must reject it explicitly instead.
+    expect(fn () => app(ApplyGitHubSnapshot::class)->handle($snapshot))->toThrow(GitHubSyncException::class, 'without an id');
     expect(Issue::query()->where('github_node_id', 'I1')->sole()->title)->toBe('Website');
+});
+
+it('rejects a comment with no id instead of silently accepting it', function (): void {
+    $snapshot = githubSnapshotFixture();
+    $snapshot['issues'][0]['comments'] = [['id' => null, 'body' => 'Hello', 'author' => ['login' => 'loki495'], 'url' => null, 'createdAt' => '2026-09-08T12:00:00Z', 'updatedAt' => '2026-09-08T12:00:00Z']];
+
+    expect(fn () => app(ApplyGitHubSnapshot::class)->handle($snapshot))->toThrow(GitHubSyncException::class, 'comment without an id');
+    expect(Issue::query()->count())->toBe(0);
+});
+
+it('rejects a label with no id instead of silently accepting it', function (): void {
+    $snapshot = githubSnapshotFixture();
+    $snapshot['labels'][0]['id'] = null;
+
+    expect(fn () => app(ApplyGitHubSnapshot::class)->handle($snapshot))->toThrow(GitHubSyncException::class, 'label without an id');
+    expect(Label::query()->count())->toBe(0);
+});
+
+it('rejects a Project field option with no id instead of silently accepting it', function (): void {
+    $snapshot = githubSnapshotFixture();
+    $snapshot['projects'][0]['fields'][1]['options'][0]['id'] = null;
+
+    expect(fn () => app(ApplyGitHubSnapshot::class)->handle($snapshot))->toThrow(GitHubSyncException::class, 'field option without an id');
+    expect(Issue::query()->count())->toBe(0);
 });
 
 it('accepts re-added membership with a new GitHub item identity', function (): void {

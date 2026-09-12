@@ -1,74 +1,19 @@
+<?php declare(strict_types=1);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<?php
-
-declare(strict_types=1);
-
-use App\Actions\AddIssueLabels;
-use App\Actions\AddIssueToGitHubProject;
 use App\Actions\BuildIssueTree;
-use App\Actions\ClearProjectItemGroup;
-use App\Actions\ClearProjectItemPriority;
-use App\Actions\CloseGitHubIssue;
-use App\Actions\CreateGitHubComment;
-use App\Actions\CreateGitHubIssue;
-use App\Actions\CreateGitHubLabel;
-use App\Actions\DeleteGitHubProjectItem;
-use App\Actions\DescribeGitHubSync;
-use App\Actions\EnsureGitHubGroupOption;
+use App\Actions\EnqueueGitHubPush;
 use App\Actions\GetIssueDetails;
-use App\Actions\SetIssueLabels;
-use App\Actions\SetIssueParent;
-use App\Actions\SetProjectItemGroup;
-use App\Actions\SetProjectItemPriority;
 use App\Actions\SyncGitHub;
-use App\Actions\TrackGitHubMutation;
-use App\Actions\UpdateGitHubComment;
-use App\Actions\UpdateGitHubIssue;
 use App\Actions\UpdateGitHubProject;
 use App\Models\Comment;
 use App\Models\GitHubProject;
+use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectFieldOption;
+use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubSyncException;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -326,9 +271,8 @@ new class extends Component
     {
         $this->reset('captureError');
         $this->validate(['newTitle' => ['required', 'string', 'max:255'], 'newBody' => ['nullable', 'string', 'max:65535'], 'captureNewGroup' => ['nullable', 'string', 'max:50'], 'captureNewLabel' => ['nullable', 'string', 'max:50'], 'captureLabels' => ['array'], 'captureLabels.*' => ['integer']]);
-        $token = (string) config('github.token');
-        if ($token === '') {
-            $this->captureError = 'Task capture needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+        if (trim($this->captureNewGroup) !== '' && $this->captureArea === 0) {
+            $this->captureError = 'Choose an area before creating a Group.';
 
             return;
         }
@@ -362,66 +306,90 @@ new class extends Component
 
             return;
         }
-        $mutation = app(TrackGitHubMutation::class)->begin('issue.create', null, [
-            'title' => $this->newTitle, 'body' => $this->newBody, 'project_id' => $this->captureArea,
-            'group_id' => $this->captureGroup, 'priority_id' => $this->capturePriority, 'parent_id' => $this->captureParent, 'label_ids' => $this->captureLabels,
-        ]);
-        try {
+        $repository = GitHubRepository::query()->where('full_name', config('github.owner').'/'.config('github.repository'))->first();
+        if (! $repository instanceof GitHubRepository) {
+            $this->captureError = 'The repository is not configured or not available locally. Refresh and try again.';
+
+            return;
+        }
+        $issue = null;
+        DB::transaction(function () use (&$issue, &$group, $project, $priority, $labels, $parent, $repository): void {
             if (trim($this->captureNewGroup) !== '') {
-                if (! $project instanceof GitHubProject) {
-                    throw new GitHubSyncException('Choose an area before creating a Group.');
+                $groupField = $project->fields()->where('semantic_key', 'group')->where('is_available', true)->first();
+                $existingGroup = $groupField?->options()->whereRaw('LOWER(name) = LOWER(?)', [trim($this->captureNewGroup)])->first();
+                if ($existingGroup instanceof ProjectFieldOption) {
+                    $group = $existingGroup;
+                } else {
+                    $newOption = ProjectFieldOption::create([
+                        'project_field_id' => $groupField->id,
+                        'github_option_id' => null,
+                        'name' => trim($this->captureNewGroup),
+                        'color' => 'GRAY',
+                        'position' => (int) $groupField->options()->max('position') + 1,
+                    ]);
+                    app(EnqueueGitHubPush::class)->handle('create_group_option', 'project_field_option', $newOption->id, ['name' => $newOption->name, 'color' => 'GRAY'], 'group_option:create:'.$newOption->id);
+                    $group = $newOption;
                 }
-                $group = app(EnsureGitHubGroupOption::class)->handle($token, $project, $this->captureNewGroup);
             }
             if (trim($this->captureNewLabel) !== '') {
-                $labels->push(app(CreateGitHubLabel::class)->handle($token, $this->captureNewLabel));
+                $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [trim($this->captureNewLabel)])->first();
+                if ($existingLabel instanceof Label) {
+                    $labels->push($existingLabel);
+                } else {
+                    $newLabel = Label::create([
+                        'repository_id' => $repository->id,
+                        'github_node_id' => null,
+                        'name' => trim($this->captureNewLabel),
+                        'color' => '6B7280',
+                        'is_available' => true,
+                    ]);
+                    app(EnqueueGitHubPush::class)->handle('create_label', 'label', $newLabel->id, ['name' => $newLabel->name, 'color' => '6B7280', 'description' => null], 'label:create:'.$newLabel->id);
+                    $labels->push($newLabel);
+                }
             }
-            $issue = $this->newBody === ''
-                ? app(CreateGitHubIssue::class)->handle($token, $this->newTitle)
-                : app(CreateGitHubIssue::class)->handle($token, $this->newTitle, $this->newBody);
-        } catch (GitHubSyncException $exception) {
-            app(TrackGitHubMutation::class)->fail($mutation, $exception);
-            $this->captureError = $exception->getMessage();
-
-            return;
-        }
-        $this->reset('newTitle', 'newBody');
-        $this->selected = $issue->id;
-        $placement = null;
-        try {
-            $item = null;
+            $issue = Issue::create([
+                'repository_id' => $repository->id,
+                'github_node_id' => null,
+                'github_number' => null,
+                'title' => trim($this->newTitle),
+                'body' => $this->newBody === '' ? null : $this->newBody,
+                'state' => 'OPEN',
+                'sibling_position' => 0,
+                'is_available' => true,
+                'last_seen_at' => now(),
+            ]);
+            app(EnqueueGitHubPush::class)->handle('create_issue', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:create:'.$issue->id);
             if ($project instanceof GitHubProject) {
-                $placement = 'area';
-                $item = app(AddIssueToGitHubProject::class)->handle($token, $issue, $project);
-            }
-            if ($item !== null && $group instanceof ProjectFieldOption) {
-                $placement = 'group';
-                app(SetProjectItemGroup::class)->handle($token, $item, $group);
-            }
-            if ($item !== null && $priority instanceof ProjectFieldOption) {
-                $placement = 'priority';
-                app(SetProjectItemPriority::class)->handle($token, $item, $priority);
+                $item = ProjectItem::create([
+                    'project_id' => $project->id,
+                    'issue_id' => $issue->id,
+                    'github_node_id' => null,
+                    'content_type' => 'ISSUE',
+                    'is_available' => true,
+                    'group_option_id' => $group?->id,
+                    'priority_option_id' => $priority?->id,
+                    'last_seen_at' => now(),
+                ]);
+                app(EnqueueGitHubPush::class)->handle('add_project_membership', 'project_item', $item->id, [], 'project_item:create:'.$item->id);
+                if ($group instanceof ProjectFieldOption) {
+                    app(EnqueueGitHubPush::class)->handle('set_project_item_group', 'project_item', $item->id, ['group_option_id' => $group->id], 'project_item:group:'.$item->id);
+                }
+                if ($priority instanceof ProjectFieldOption) {
+                    app(EnqueueGitHubPush::class)->handle('set_project_item_priority', 'project_item', $item->id, ['priority_option_id' => $priority->id], 'project_item:priority:'.$item->id);
+                }
             }
             if ($labels->isNotEmpty()) {
-                $placement = 'labels';
-                app(AddIssueLabels::class)->handle($token, $issue, $labels->all());
+                $issue->labels()->syncWithoutDetaching($labels->pluck('id'));
+                app(EnqueueGitHubPush::class)->handle('add_issue_labels', 'issue', $issue->id, ['label_ids' => $labels->pluck('id')->all()], 'issue:labels:'.$issue->id);
             }
             if ($parent instanceof Issue) {
-                $placement = 'parent';
-                app(SetIssueParent::class)->handle($token, $issue, $parent);
+                $sibling_position = (int) Issue::query()->where('parent_issue_id', $parent->id)->max('sibling_position') + 1;
+                $issue->update(['parent_issue_id' => $parent->id, 'sibling_position' => $sibling_position]);
+                app(EnqueueGitHubPush::class)->handle('set_issue_parent', 'issue', $issue->id, ['parent_issue_id' => $parent->id], 'issue:parent:'.$issue->id);
             }
-        } catch (GitHubSyncException $exception) {
-            app(TrackGitHubMutation::class)->fail($mutation, $exception);
-            $this->captureError = match ($placement) {
-                'area' => 'Task was created, but could not be added to '.$project->title.'. '.$exception->getMessage(),
-                'parent' => 'Task was created, but could not be added under '.$parent->title.'. '.$exception->getMessage(),
-                default => 'Task was created, but its organization could not be completed. '.$exception->getMessage(),
-            };
-
-            return;
-        }
-        app(TrackGitHubMutation::class)->confirm($mutation);
-        $this->reset('captureGroup', 'capturePriority', 'captureLabels', 'captureNewGroup', 'captureNewLabel', 'captureParentSearch');
+        });
+        $this->selected = $issue->id;
+        $this->reset('newTitle', 'newBody', 'captureGroup', 'capturePriority', 'captureLabels', 'captureNewGroup', 'captureNewLabel', 'captureParentSearch');
         $this->captureOpen = false;
     }
 
@@ -463,13 +431,15 @@ new class extends Component
         $this->validate(['editTitle' => ['required', 'string', 'max:255'], 'editBody' => ['nullable', 'string', 'max:65535'], 'editNewGroup' => ['nullable', 'string', 'max:50'], 'editNewLabel' => ['nullable', 'string', 'max:50'], 'editLabels' => ['array'], 'editLabels.*' => ['integer']]);
         $issue = Issue::query()->where('is_available', true)->with(['projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')])->find($this->selected);
         if (! $issue instanceof Issue) {
+            $this->cancelEdit();
             $this->selected = 0;
 
             return;
         }
-        $token = (string) config('github.token');
-        if ($token === '') {
-            $this->editError = 'Editing needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+        $repository = GitHubRepository::query()->where('full_name', config('github.owner').'/'.config('github.repository'))->first();
+        if (! $repository instanceof GitHubRepository) {
+            $this->editError = 'The repository is not configured or not available locally. Refresh and try again.';
+            $this->cancelEdit();
 
             return;
         }
@@ -493,51 +463,114 @@ new class extends Component
 
             return;
         }
-        $mutation = app(TrackGitHubMutation::class)->begin('issue.edit', $issue, [
-            'title' => $this->editTitle, 'body' => $this->editBody, 'project_id' => $this->editArea,
-            'group_id' => $this->editGroup, 'priority_id' => $this->editPriority, 'parent_id' => $this->editParent, 'label_ids' => $this->editLabels,
-        ]);
-        try {
-            if (trim($this->editNewGroup) !== '') {
-                if (! $project instanceof GitHubProject) {
-                    throw new GitHubSyncException('Choose an area before creating a Group.');
-                }
-                $group = app(EnsureGitHubGroupOption::class)->handle($token, $project, $this->editNewGroup);
-            }
-            if (trim($this->editNewLabel) !== '') {
-                $labels->push(app(CreateGitHubLabel::class)->handle($token, $this->editNewLabel));
-            }
-            app(UpdateGitHubIssue::class)->handle($token, $issue, $this->editTitle, $this->editBody);
-            app(SetIssueLabels::class)->handle($token, $issue, $labels->all());
-            app(SetIssueParent::class)->handle($token, $issue, $parent);
-            $item = null;
-            if ($project instanceof GitHubProject) {
-                $item = $issue->projectItems->firstWhere('project_id', $project->id) ?? app(AddIssueToGitHubProject::class)->handle($token, $issue, $project);
-                foreach ($issue->projectItems->where('project_id', '!==', $project->id) as $obsolete) {
-                    app(DeleteGitHubProjectItem::class)->handle($token, $obsolete);
-                }
-                if ($group instanceof ProjectFieldOption) {
-                    app(SetProjectItemGroup::class)->handle($token, $item, $group);
-                } else {
-                    app(ClearProjectItemGroup::class)->handle($token, $item);
-                }
-                if ($priority instanceof ProjectFieldOption) {
-                    app(SetProjectItemPriority::class)->handle($token, $item, $priority);
-                } else {
-                    app(ClearProjectItemPriority::class)->handle($token, $item);
-                }
-            } else {
-                foreach ($issue->projectItems as $obsolete) {
-                    app(DeleteGitHubProjectItem::class)->handle($token, $obsolete);
-                }
-            }
-        } catch (GitHubSyncException $exception) {
-            app(TrackGitHubMutation::class)->fail($mutation, $exception);
-            $this->editError = $exception->getMessage();
+        if (trim($this->editNewGroup) !== '' && ! $project instanceof GitHubProject) {
+            $this->editError = 'Choose an area before creating a Group.';
 
             return;
         }
-        app(TrackGitHubMutation::class)->confirm($mutation);
+        DB::transaction(function () use (&$group, &$labels, $project, $priority, $parent, $repository, $issue): void {
+            if (trim($this->editNewGroup) !== '') {
+                $groupField = $project->fields()->where('semantic_key', 'group')->where('is_available', true)->first();
+                $existingGroup = $groupField?->options()->whereRaw('LOWER(name) = LOWER(?)', [trim($this->editNewGroup)])->first();
+                if ($existingGroup instanceof ProjectFieldOption) {
+                    $group = $existingGroup;
+                } else {
+                    $newOption = ProjectFieldOption::create([
+                        'project_field_id' => $groupField->id,
+                        'github_option_id' => null,
+                        'name' => trim($this->editNewGroup),
+                        'color' => 'GRAY',
+                        'position' => (int) $groupField->options()->max('position') + 1,
+                    ]);
+                    app(EnqueueGitHubPush::class)->handle('create_group_option', 'project_field_option', $newOption->id, ['name' => $newOption->name, 'color' => 'GRAY'], 'group_option:create:'.$newOption->id);
+                    $group = $newOption;
+                }
+            }
+            if (trim($this->editNewLabel) !== '') {
+                $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [trim($this->editNewLabel)])->first();
+                if ($existingLabel instanceof Label) {
+                    $labels->push($existingLabel);
+                } else {
+                    $newLabel = Label::create([
+                        'repository_id' => $repository->id,
+                        'github_node_id' => null,
+                        'name' => trim($this->editNewLabel),
+                        'color' => '6B7280',
+                        'is_available' => true,
+                    ]);
+                    app(EnqueueGitHubPush::class)->handle('create_label', 'label', $newLabel->id, ['name' => $newLabel->name, 'color' => '6B7280', 'description' => null], 'label:create:'.$newLabel->id);
+                    $labels->push($newLabel);
+                }
+            }
+            $issue->update(['title' => $this->editTitle, 'body' => $this->editBody === '' ? null : $this->editBody]);
+            app(EnqueueGitHubPush::class)->handle('update_issue_body', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:update:'.$issue->id.':'.now()->timestamp);
+
+            $current = $issue->labels()->where('is_available', true)->get();
+            $currentIds = $current->pluck('id')->all();
+            $requestedIds = $labels->pluck('id')->all();
+            $addIds = array_values(array_diff($requestedIds, $currentIds));
+            $removeIds = array_values(array_diff($currentIds, $requestedIds));
+            if ($addIds !== [] || $removeIds !== []) {
+                $issue->labels()->sync($requestedIds);
+                app(EnqueueGitHubPush::class)->handle('set_issue_labels', 'issue', $issue->id, ['add_label_ids' => $addIds, 'remove_label_ids' => $removeIds], 'issue:labels:'.$issue->id.':'.now()->timestamp);
+            }
+
+            if ($parent instanceof Issue && $issue->parent_issue_id !== $parent->id) {
+                $sibling_position = (int) Issue::query()->where('parent_issue_id', $parent->id)->max('sibling_position') + 1;
+                $issue->update(['parent_issue_id' => $parent->id, 'sibling_position' => $sibling_position]);
+                app(EnqueueGitHubPush::class)->handle('set_issue_parent', 'issue', $issue->id, ['parent_issue_id' => $parent->id], 'issue:parent:'.$issue->id.':'.now()->timestamp);
+            } elseif ($parent === null && $issue->parent_issue_id !== null) {
+                $previousParentGithubNodeId = $issue->github_parent_node_id;
+                $issue->update(['parent_issue_id' => null, 'github_parent_node_id' => null, 'sibling_position' => 0]);
+                if ($previousParentGithubNodeId !== null) {
+                    app(EnqueueGitHubPush::class)->handle('remove_issue_parent', 'issue', $issue->id, ['parent_github_node_id' => $previousParentGithubNodeId], 'issue:remove_parent:'.$issue->id.':'.now()->timestamp);
+                }
+            }
+
+            if ($project instanceof GitHubProject) {
+                $item = $issue->projectItems->firstWhere('project_id', $project->id);
+                if (! $item instanceof ProjectItem) {
+                    $item = ProjectItem::create([
+                        'project_id' => $project->id,
+                        'issue_id' => $issue->id,
+                        'github_node_id' => null,
+                        'content_type' => 'ISSUE',
+                        'is_available' => true,
+                        'last_seen_at' => now(),
+                    ]);
+                    app(EnqueueGitHubPush::class)->handle('add_project_membership', 'project_item', $item->id, [], 'project_item:create:'.$item->id);
+                }
+                foreach ($issue->projectItems->where('project_id', '!==', $project->id) as $obsolete) {
+                    if ($obsolete->github_node_id !== null) {
+                        app(EnqueueGitHubPush::class)->handle('delete_project_item', 'project_item', $obsolete->id, [], 'project_item:delete:'.$obsolete->id);
+                    } else {
+                        $obsolete->update(['is_available' => false]);
+                    }
+                }
+                if ($group instanceof ProjectFieldOption) {
+                    $item->update(['group_option_id' => $group->id]);
+                    app(EnqueueGitHubPush::class)->handle('set_project_item_group', 'project_item', $item->id, ['group_option_id' => $group->id], 'project_item:group:'.$item->id);
+                } elseif ($item->group_option_id !== null) {
+                    $item->update(['group_option_id' => null]);
+                    app(EnqueueGitHubPush::class)->handle('clear_project_item_group', 'project_item', $item->id, [], 'project_item:clear_group:'.$item->id.':'.now()->timestamp);
+                }
+                if ($priority instanceof ProjectFieldOption) {
+                    $item->update(['priority_option_id' => $priority->id]);
+                    app(EnqueueGitHubPush::class)->handle('set_project_item_priority', 'project_item', $item->id, ['priority_option_id' => $priority->id], 'project_item:priority:'.$item->id);
+                } elseif ($item->priority_option_id !== null) {
+                    $item->update(['priority_option_id' => null]);
+                    app(EnqueueGitHubPush::class)->handle('clear_project_item_priority', 'project_item', $item->id, [], 'project_item:clear_priority:'.$item->id.':'.now()->timestamp);
+                }
+            } else {
+                foreach ($issue->projectItems as $obsolete) {
+                    if ($obsolete->github_node_id !== null) {
+                        app(EnqueueGitHubPush::class)->handle('delete_project_item', 'project_item', $obsolete->id, [], 'project_item:delete:'.$obsolete->id);
+                    } else {
+                        $obsolete->update(['is_available' => false]);
+                    }
+                }
+            }
+        });
         $this->cancelEdit();
     }
 
@@ -550,17 +583,8 @@ new class extends Component
 
             return;
         }
-        $token = (string) config('github.token');
-        if ($token === '') {
-            $this->editError = 'Completing a task needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
-
-            return;
-        }
-        try {
-            app(CloseGitHubIssue::class)->handle($token, $issue);
-        } catch (GitHubSyncException $exception) {
-            $this->editError = $exception->getMessage();
-        }
+        $issue->update(['state' => 'CLOSED']);
+        app(EnqueueGitHubPush::class)->handle('close_issue', 'issue', $issue->id, [], 'issue:close:'.$issue->id);
     }
 
     public function addComment(): void
@@ -573,19 +597,14 @@ new class extends Component
 
             return;
         }
-        $token = (string) config('github.token');
-        if ($token === '') {
-            $this->commentError = 'Adding a comment needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
-
-            return;
-        }
-        try {
-            app(CreateGitHubComment::class)->handle($token, $issue, $this->newCommentBody);
-        } catch (GitHubSyncException $exception) {
-            $this->commentError = $exception->getMessage();
-
-            return;
-        }
+        $comment = Comment::create([
+            'issue_id' => $issue->id,
+            'github_node_id' => null,
+            'body' => trim($this->newCommentBody),
+            'is_available' => true,
+            'last_seen_at' => now(),
+        ]);
+        app(EnqueueGitHubPush::class)->handle('create_comment', 'comment', $comment->id, [], 'comment:create:'.$comment->id);
         $this->reset('newCommentBody', 'commentError');
     }
 
@@ -615,19 +634,8 @@ new class extends Component
 
             return;
         }
-        $token = (string) config('github.token');
-        if ($token === '') {
-            $this->commentError = 'Editing a comment needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
-
-            return;
-        }
-        try {
-            app(UpdateGitHubComment::class)->handle($token, $comment, $this->editCommentBody);
-        } catch (GitHubSyncException $exception) {
-            $this->commentError = $exception->getMessage();
-
-            return;
-        }
+        $comment->update(['body' => trim($this->editCommentBody)]);
+        app(EnqueueGitHubPush::class)->handle('update_comment', 'comment', $comment->id, [], 'comment:update:'.$comment->id.':'.now()->timestamp);
         $this->cancelEditComment();
     }
 
@@ -660,12 +668,11 @@ new class extends Component
         return [...app(BuildIssueTree::class)->handle($this->area, $this->view, $this->search, $this->state, $this->group, $this->labels, $this->priority, $this->rankPriority),
             'detail' => $this->selected > 0 ? app(GetIssueDetails::class)->handle($this->selected) : null,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $labelOptions,
-            'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $labelOptions,
-            'freshness' => app(DescribeGitHubSync::class)->handle()];
+            'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $labelOptions];
     }
 }; ?>
 
-<div class="pb-8 pt-3" x-data="todoFreshness({ endpoint: @js(route('freshness')), version: @js($freshness['version']) })" x-init="init()" @keydown.escape.window="$wire.set('selected', 0)">
+<div class="pb-8 pt-3" @keydown.escape.window="$wire.set('selected', 0)">
     <header class="mb-8 flex items-center justify-between gap-4">
         <a href="{{ route('workspace') }}" class="flex items-center gap-3 text-xl font-semibold tracking-tight">
             <span class="flex size-10 items-center justify-center rounded-xl bg-teal-800 text-white"><flux:icon.check class="size-6" /></span>
@@ -714,11 +721,6 @@ new class extends Component
                 @else
                     {{ __('Waiting for the first import') }}
                 @endif
-                @if ($freshness['isPending'])<p class="mt-2 text-teal-700 dark:text-teal-400">{{ __('Reconciling GitHub in the background…') }}</p>
-                @elseif ($freshness['retryAfter'])<p class="mt-2 text-amber-700 dark:text-amber-400">{{ __('GitHub asked us to wait before retrying. Showing the last saved data.') }}</p>
-                @elseif ($freshness['lastError'])<p class="mt-2 text-amber-700 dark:text-amber-400">{{ __('Sync needs attention. Showing the last saved data.') }}</p>
-                @elseif ($freshness['isStale'])<p class="mt-2 text-amber-700 dark:text-amber-400">{{ __('This saved view is stale. A refresh will be requested.') }}</p>@endif
-                <p x-cloak x-show="offline" class="mt-2 text-amber-700 dark:text-amber-400">{{ __('Connection to Todo needs attention. Showing the last saved data.') }}</p>
             </div>
         </aside>
 
@@ -846,4 +848,3 @@ new class extends Component
         </form>
     </flux:modal>
 </div>
-
