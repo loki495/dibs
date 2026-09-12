@@ -40,17 +40,21 @@ class GetIssueDetails
         ];
     }
 
-    /** @return Collection<int, Issue> */
+    /**
+     * Sibling knowledge issues only — a knowledge-labeled child already appears in the 'children'
+     * list with its own isKnowledge flag, so including it here too would just duplicate the entry.
+     *
+     * @return Collection<int, Issue>
+     */
     private function relatedKnowledge(Issue $issue): Collection
     {
+        if ($issue->parent_issue_id === null) {
+            return collect();
+        }
+
         $isKnowledge = fn (Issue $candidate): bool => $candidate->labels->pluck('name')->intersect(KnowledgeLabels::NAMES)->isNotEmpty();
 
-        $fromChildren = $issue->children->filter($isKnowledge);
-        $fromSiblings = $issue->parent_issue_id !== null
-            ? Issue::query()->where('is_available', true)->where('parent_issue_id', $issue->parent_issue_id)->whereKeyNot($issue->id)->with('labels')->get()->filter($isKnowledge)
-            : collect();
-
-        return $fromChildren->concat($fromSiblings)->unique('id')->values();
+        return Issue::query()->where('is_available', true)->where('parent_issue_id', $issue->parent_issue_id)->whereKeyNot($issue->id)->with('labels')->get()->filter($isKnowledge)->values();
     }
 
     /** @return array<string, mixed> */

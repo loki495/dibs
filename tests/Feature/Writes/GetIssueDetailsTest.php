@@ -42,11 +42,22 @@ it('summarizes the parent and children for navigation', function (): void {
         ->and($detail['children'][0]['title'])->toBe('Child task');
 });
 
-it('surfaces knowledge-labeled children and siblings without duplicates', function (): void {
+it('flags a knowledge-labeled child in the children list, not the sibling knowledge list', function (): void {
     $parent = Issue::factory()->create();
     $issue = Issue::factory()->for($parent, 'parent')->create();
     $knowledgeChild = Issue::factory()->for($issue, 'parent')->create(['title' => 'A lesson learned']);
     $knowledgeChild->labels()->attach(Label::factory()->for($issue->repository, 'repository')->create(['name' => 'lesson']));
+
+    $detail = app(GetIssueDetails::class)->handle($issue->id);
+
+    expect($detail['children'])->toHaveCount(1)
+        ->and($detail['children'][0]['isKnowledge'])->toBeTrue()
+        ->and($detail['knowledge'])->toBe([]);
+});
+
+it('surfaces sibling knowledge issues without duplicating knowledge children', function (): void {
+    $parent = Issue::factory()->create();
+    $issue = Issue::factory()->for($parent, 'parent')->create();
     $knowledgeSibling = Issue::factory()->for($parent, 'parent')->create(['title' => 'Sibling research']);
     $knowledgeSibling->labels()->attach(Label::factory()->for($issue->repository, 'repository')->create(['name' => 'research']));
     $plainSibling = Issue::factory()->for($parent, 'parent')->create();
@@ -54,9 +65,9 @@ it('surfaces knowledge-labeled children and siblings without duplicates', functi
     $detail = app(GetIssueDetails::class)->handle($issue->id);
 
     $titles = array_column($detail['knowledge'], 'title');
-    expect($titles)->toContain('A lesson learned', 'Sibling research')
+    expect($titles)->toContain('Sibling research')
         ->and($titles)->not->toContain($plainSibling->title)
-        ->and(count($titles))->toBe(2);
+        ->and(count($titles))->toBe(1);
 });
 
 it('flags a pending or needs-attention push-queue entry for the issue', function (): void {

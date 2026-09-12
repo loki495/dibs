@@ -5,6 +5,7 @@ use App\Actions\CreateTodoComment;
 use App\Actions\CreateTodoIssue;
 use App\Actions\EnqueueGitHubPush;
 use App\Actions\GetIssueDetails;
+use App\Actions\ReleaseAbandonedTaskClaim;
 use App\Actions\ReviseTodoComment;
 use App\Actions\SyncGitHub;
 use App\Actions\UpdateGitHubProject;
@@ -125,6 +126,8 @@ new class extends Component
 
     public ?string $refreshError = null;
 
+    public ?string $claimError = null;
+
     public function mount(): void
     {
         $this->captureArea = $this->area;
@@ -134,7 +137,7 @@ new class extends Component
     public function updatedSelected(): void
     {
         $this->captureParent = $this->selectedParentId();
-        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editNewLabel', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision');
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editNewLabel', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision', 'claimError');
     }
 
     public function chooseArea(int $id): void
@@ -494,6 +497,16 @@ new class extends Component
         }
         $issue->update(['state' => 'CLOSED']);
         app(EnqueueGitHubPush::class)->handle('close_issue', 'issue', $issue->id, [], 'issue:close:'.$issue->id);
+    }
+
+    public function releaseClaim(): void
+    {
+        $this->reset('claimError');
+        try {
+            app(ReleaseAbandonedTaskClaim::class)->handle($this->selected);
+        } catch (DomainException $exception) {
+            $this->claimError = $exception->getMessage();
+        }
     }
 
     public function addComment(): void

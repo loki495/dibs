@@ -18,8 +18,65 @@
                 <div>
                     <div class="flex items-start justify-between gap-4"><div><span @class(['text-xs font-medium uppercase tracking-wider', 'text-teal-700 dark:text-teal-400' => $detail['issue']->state === 'OPEN', 'text-slate-500' => $detail['issue']->state !== 'OPEN'])>{{ $detail['issue']->state === 'OPEN' ? __('Open') : __('Closed') }}</span><h2 id="issue-detail-title" class="mt-3 break-words text-2xl font-semibold leading-snug tracking-tight">{{ $detail['issue']->title }}</h2></div><div class="flex shrink-0 gap-1">@if ($detail['issue']->state === 'OPEN')<flux:button type="button" wire:click="closeIssue" variant="primary" size="sm" icon="check">{{ __('Mark done') }}</flux:button>@endif<flux:button type="button" wire:click="beginEdit" variant="ghost" size="sm" icon="pencil-square">{{ __('Edit') }}</flux:button></div></div>
                     <div class="mt-4 flex flex-wrap gap-2">@foreach ($detail['issue']->labels as $item)<span class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ $item->name }}</span>@endforeach</div>
-                    @if ($detail['issue']->url)<a href="{{ $detail['issue']->url }}" target="_blank" rel="noopener noreferrer" class="mt-4 inline-flex min-h-10 items-center gap-2 text-sm text-teal-700 underline-offset-4 hover:underline dark:text-teal-400">{{ __('Open in GitHub') }}<flux:icon.arrow-up-right class="size-4" /></a>@endif
+                    <div class="mt-4 flex flex-wrap items-center gap-4">
+                        @if ($detail['issue']->url)<a href="{{ $detail['issue']->url }}" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-10 items-center gap-2 text-sm text-teal-700 underline-offset-4 hover:underline dark:text-teal-400">{{ __('Open in GitHub') }}<flux:icon.arrow-up-right class="size-4" /></a>@endif
+                        @if ($detail['pushQueuePending'])<a href="{{ route('push-queue') }}" class="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-amber-50 px-3 text-sm text-amber-900 hover:underline dark:bg-amber-950 dark:text-amber-100"><flux:icon.arrow-path class="size-3.5" />{{ __('Pending GitHub sync') }}</a>@endif
+                    </div>
                 </div>
+            @endif
+
+            @if ($detail['claim'])
+                @php($claim = $detail['claim'])
+                <div @class(['rounded-xl border p-4 text-sm', 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40' => $claim['isExpired'], 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30' => ! $claim['isExpired'] && $claim['isCurrentlyAlive'] === false, 'border-teal-200 bg-teal-50 dark:border-teal-900 dark:bg-teal-950/30' => ! $claim['isExpired'] && $claim['isCurrentlyAlive'] !== false])>
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="font-medium">
+                            {{ __('Claimed by :agent', ['agent' => $claim['agentName']]) }}
+                            @if ($claim['isExpired'])<span class="ml-1 text-xs font-normal text-slate-500">{{ __('(lease expired)') }}</span>
+                            @elseif ($claim['isCurrentlyAlive'] === false)<span class="ml-1 text-xs font-normal text-red-700 dark:text-red-400">{{ __('(process no longer alive)') }}</span>
+                            @elseif ($claim['isCurrentlyAlive'] === null)<span class="ml-1 text-xs font-normal text-slate-500">{{ __('(liveness unverifiable)') }}</span>
+                            @endif
+                        </p>
+                        <flux:button type="button" wire:click="releaseClaim" wire:confirm="{{ __('Release this claim? The agent holding it will lose access.') }}" variant="ghost" size="sm">{{ __('Release claim') }}</flux:button>
+                    </div>
+                    <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+                        @if ($claim['host'])<dt>{{ __('Host') }}</dt><dd>{{ $claim['host'] }}</dd>@endif
+                        <dt>{{ __('Process') }}</dt><dd>{{ __('pid :pid', ['pid' => $claim['pid']]) }}</dd>
+                        <dt>{{ __('Last heartbeat') }}</dt><dd>{{ \Illuminate\Support\Carbon::parse($claim['lastSeenAt'])->diffForHumans() }}</dd>
+                        <dt>{{ __('Lease expires') }}</dt><dd>{{ \Illuminate\Support\Carbon::parse($claim['expiresAt'])->diffForHumans() }}</dd>
+                    </dl>
+                    @if ($claimError)<p role="alert" class="mt-2 text-xs text-amber-700 dark:text-amber-400">{{ $claimError }}</p>@endif
+                </div>
+            @endif
+
+            @if ($detail['parent'] || $detail['children'] || $detail['knowledge'])
+                <nav aria-label="{{ __('Plan navigation') }}" class="space-y-3 text-sm">
+                    @if ($detail['parent'])
+                        <div>
+                            <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Parent') }}</p>
+                            <button type="button" wire:click="$set('selected', {{ $detail['parent']['id'] }})" class="text-left text-teal-700 hover:underline dark:text-teal-400">#{{ $detail['parent']['number'] }} {{ $detail['parent']['title'] }}</button>
+                        </div>
+                    @endif
+                    @if (count($detail['children']) > 0)
+                        <div>
+                            <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Child tasks') }}</p>
+                            <ul class="space-y-1">
+                                @foreach ($detail['children'] as $child)
+                                    <li><button type="button" wire:click="$set('selected', {{ $child['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $child['isKnowledge'], 'text-teal-700 dark:text-teal-400' => ! $child['isKnowledge'], 'line-through opacity-70' => $child['state'] === 'CLOSED'])>#{{ $child['number'] }} {{ $child['title'] }}</button></li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+                    @if (count($detail['knowledge']) > 0)
+                        <div>
+                            <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Related knowledge') }}</p>
+                            <ul class="space-y-1">
+                                @foreach ($detail['knowledge'] as $item)
+                                    <li><button type="button" wire:click="$set('selected', {{ $item['id'] }})" class="text-left text-violet-700 hover:underline dark:text-violet-400">#{{ $item['number'] }} {{ $item['title'] }}</button></li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+                </nav>
             @endif
             @if ($detail['issue']->projectItems->isNotEmpty())
                 <div class="space-y-3">
