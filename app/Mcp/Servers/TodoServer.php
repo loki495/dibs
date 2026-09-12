@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Servers;
 
 use App\Mcp\Tools\DescribeTodoServer;
+use App\Mcp\Tools\ListTodoTasks;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -17,6 +18,7 @@ class TodoServer extends Server
 {
     protected array $tools = [
         DescribeTodoServer::class,
+        ListTodoTasks::class,
     ];
 
     protected array $resources = [
