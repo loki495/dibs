@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions;
 
-use App\Models\GitHubProject;
 use App\Models\Issue;
+use App\Support\IssueSummary;
 use App\Support\KnowledgeLabels;
 
 class ListTodoIssues
@@ -53,33 +53,11 @@ class ListTodoIssues
             ->paginate($perPage, ['*'], 'page', $page);
 
         return [
-            'items' => $paginator->getCollection()->map($this->summarize(...))->all(),
+            'items' => $paginator->getCollection()->map(IssueSummary::from(...))->all(),
             'page' => $paginator->currentPage(),
             'perPage' => $paginator->perPage(),
             'total' => $paginator->total(),
             'lastPage' => $paginator->lastPage(),
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function summarize(Issue $issue): array
-    {
-        $names = $issue->labels->pluck('name')->all();
-        $membership = $issue->projectItems->first();
-
-        return [
-            'id' => $issue->id,
-            'number' => $issue->github_number,
-            'title' => $issue->title,
-            'state' => $issue->state,
-            'url' => $issue->url,
-            'container' => $issue->children_count > 0,
-            'knowledge' => count(array_intersect($names, KnowledgeLabels::NAMES)) > 0,
-            'labels' => $names,
-            'parentId' => $issue->parent_issue_id,
-            'area' => $membership?->project instanceof GitHubProject ? ['id' => $membership->project->id, 'title' => $membership->project->title] : null,
-            'group' => $membership?->groupOption?->name,
-            'priority' => $membership?->priorityOption?->name,
         ];
     }
 }
