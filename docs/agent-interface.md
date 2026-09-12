@@ -1,6 +1,6 @@
 # MCP agent interface
 
-Status: the host-local stdio MCP server (#41), its full read/write/claim tool surface (#42-#45), and the workspace UI's claim/plan visibility (#46) are implemented. The documented Artisan CLI fallback is implemented. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records (see GitHub issue #37, loki495/Todo, for the full architecture record). GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue (#49) — there is no inbound webhook receiver and no scheduled freshness polling. Remaining plan work: end-to-end verification (#47) and migrating shared workflow docs (#48).
+Status: the host-local stdio MCP server (#41), its full read/write/claim tool surface (#42-#45), the workspace UI's claim/plan visibility (#46), and end-to-end verification (#47) are complete. The documented Artisan CLI fallback is implemented. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records (see GitHub issue #37, loki495/Todo, for the full architecture record). GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue (#49) — there is no inbound webhook receiver and no scheduled freshness polling. Remaining plan work: migrating shared workflow docs (#48).
 
 ## Server foundation (#41, 2026-09-12)
 
@@ -51,6 +51,7 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_release` | Release the calling process's own live claim without completing the task. |
 | `todo_complete` | Close a claimed task, enqueue the push, optionally post a result summary comment, and release the claim. |
 | `todo_claim_status` | Read-only: whether a task has a live claim, and by whom — no capability token exposed. |
+| `todo_report_bug` | Self-report a problem with the MCP/CLI tooling itself (not a product task) — creates an `agent-report`-labeled issue; amend with `todo_comment`. |
 
 Every write tool implements `Laravel\Mcp\Server\Contracts\Errable` and validates its own arguments via `Request::validate()` — confirmed empirically that `laravel/mcp` `1.0.0-beta.1` does not enforce a tool's declared JSON Schema before calling `handle()`, so schema-shaped input alone is not a safety guarantee.
 
