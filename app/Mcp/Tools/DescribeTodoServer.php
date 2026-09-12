@@ -9,6 +9,7 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
+use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
@@ -17,9 +18,9 @@ class DescribeTodoServer extends Tool
 {
     protected string $name = 'todo_status';
 
-    public function handle(Request $request, DescribeTodoServerAction $describe): Response
+    public function handle(Request $request, DescribeTodoServerAction $describe): ResponseFactory
     {
-        return Response::json($describe->handle());
+        return Response::structured($describe->handle());
     }
 
     /** @return array<string, Type> */
