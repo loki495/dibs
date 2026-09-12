@@ -26,4 +26,10 @@ class TaskClaim extends Model
     {
         return $this->belongsTo(AgentSession::class);
     }
+
+    /** @return BelongsTo<Issue, $this> */
+    public function issue(): BelongsTo
+    {
+        return $this->belongsTo(Issue::class);
+    }
 }

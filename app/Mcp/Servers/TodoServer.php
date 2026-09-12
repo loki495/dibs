@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\DescribeTodoContext;
 use App\Mcp\Tools\DescribeTodoIssue;
 use App\Mcp\Tools\DescribeTodoQueueStatus;
 use App\Mcp\Tools\DescribeTodoServer;
@@ -20,6 +21,7 @@ class TodoServer extends Server
 {
     protected array $tools = [
         DescribeTodoServer::class,
+        DescribeTodoContext::class,
         ListTodoTasks::class,
         DescribeTodoIssue::class,
         DescribeTodoQueueStatus::class,
