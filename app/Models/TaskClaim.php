@@ -6,7 +6,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $expires_at
+ * @property Carbon|null $released_at
+ */
 class TaskClaim extends Model
 {
     protected $guarded = [];
