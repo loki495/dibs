@@ -1,6 +1,6 @@
 # Initial architecture proposal
 
-Status: foundation and manual import implemented. Laravel 13, Livewire 4 SFC, PHP 8.5, SQLite and private LAN access are settled. GitHub issue #37 (loki495/Todo) is the authoritative current plan and architecture record — this file's later sections are historical design proposal, partially superseded by the sync-authority pivot described below and in #37.
+Status: foundation and manual import implemented. Laravel 13, Livewire 4 SFC, PHP 8.5, SQLite and private LAN access are settled. This file's later sections are historical design proposal, partially superseded by the sync-authority pivot described below.
 
 ## Stack recommendation
 
@@ -10,14 +10,14 @@ Status: foundation and manual import implemented. Laravel 13, Livewire 4 SFC, PH
 - Tailwind and appropriate free Flux components for forms and common controls.
 - SQLite on local disk, with foreign keys, WAL, a busy timeout, short write transactions, and a single sync writer initially.
 - Pest for tests, Pint, Larastan/PHPStan at the project convention level, and Rector in dry-run mode.
-- Docker for PHP/application tools per Andres's conventions. PHP 8.5 and docker/setup.sh are implemented.
+- Docker for PHP/application tools. PHP 8.5 and docker/setup.sh are implemented.
 - Current hosting is private LAN through Traefik with login; public webhook ingress remains pending. Do not expose private GitHub data through an unauthenticated network service.
 
 Livewire components/controllers and Artisan commands delegate business logic to typed Actions. Actions use a GitHub service for external calls. Queue jobs orchestrate the same actions. No business logic hidden in a Blade component or queue handler.
 
-## Authority and local data (superseded 2026-09-11 — see #37)
+## Authority and local data (superseded 2026-09-11)
 
-Local SQLite is now authoritative for issues, comments, labels, parent links, Project memberships, Project fields, plans, tasks, and knowledge records. GitHub is an asynchronous, mostly-read-only mirror reached through a durable outbound push queue (#49) rather than a live sync source — there are no inbound webhooks and no scheduled freshness polling. The browser reads SQLite; it never reads GitHub directly, and SQLite is no longer "rebuildable from GitHub alone," since it can hold local writes GitHub hasn't received yet.
+Local SQLite is now authoritative for issues, comments, labels, parent links, Project memberships, Project fields, plans, tasks, and knowledge records. GitHub is an asynchronous, mostly-read-only mirror reached through a durable outbound push queue rather than a live sync source — there are no inbound webhooks and no scheduled freshness polling. The browser reads SQLite; it never reads GitHub directly, and SQLite is no longer "rebuildable from GitHub alone," since it can hold local writes GitHub hasn't received yet.
 
 Manual pull (the existing importer) remains for initial setup, disaster recovery, and bringing a second instance in sync — a read path only, and it must not overwrite unpushed local changes.
 
@@ -56,12 +56,12 @@ Deferred tables when the corresponding behavior exists:
 
 - mutation_operations: durable outgoing command, target, payload, base remote state, status, attempts, error, request identity. Required before robust asynchronous editing, not for read-only sync.
 - preferences: expanded nodes, selected views, and filters if browser storage is insufficient.
-- agent_sessions / task_claims: local worker identity and expiring task claims; implemented with JSON CLI fallback commands and exposed as MCP tools (`todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete`/`todo_claim_status`, #45).
+- agent_sessions / task_claims: local worker identity and expiring task claims; implemented with JSON CLI fallback commands and exposed as MCP tools (`todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete`/`todo_claim_status`).
 - website_bindings: explicit website parent → repository/local checkout metadata, before agents execute project work.
 
 ## Sync scheduling
 
-(Historical — describes the inbound webhook/polling design that #37/#49 replace with an outbound push queue. Retained for design-rationale context; do not implement inbound polling/webhooks per this section.)
+(Historical — describes the inbound webhook/polling design that was later replaced with an outbound push queue. Retained for design-rationale context; do not implement inbound polling/webhooks per this section.)
 
 The page can poll OUR SERVER about every 3–5 seconds while visible. That endpoint queries the local read model or lightweight sync revision, not the GitHub API. Stop/suspend hidden-page work; preserve client tree state across refreshes. Do not re-render an entire large tree merely because a timer fired.
 
@@ -79,7 +79,7 @@ State distinctions matter: closed issue, removed Project membership, deleted iss
 
 ## Writes: next slice after read-only sync
 
-(Superseded by the local-authoritative push-queue model in #37/#49 — a write commits to SQLite immediately as the confirmed result and enqueues the GitHub push; a GitHub-side conflict surfaces at push time as a `needs_attention` queue item, not as a pre-write blocking check. The principles below — one Action per intent, explicit pending/failed state, reconciling before retrying an ambiguous outcome — still apply, just against the push queue instead of a synchronous GitHub call.)
+(Superseded by the local-authoritative push-queue model described above — a write commits to SQLite immediately as the confirmed result and enqueues the GitHub push; a GitHub-side conflict surfaces at push time as a `needs_attention` queue item, not as a pre-write blocking check. The principles below — one Action per intent, explicit pending/failed state, reconciling before retrying an ambiguous outcome — still apply, just against the push queue instead of a synchronous GitHub call.)
 
 One Action per intent (rename issue, complete issue, assign parent, change planned date), shared by UI and agent entry points. Prefer field-level changes over replacing an entire stale remote object.
 

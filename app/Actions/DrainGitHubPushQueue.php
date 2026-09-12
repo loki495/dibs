@@ -20,7 +20,7 @@ use SensitiveParameter;
  * Delivers durable push-queue rows to GitHub at its own pace, independent of the UI
  * action that created them. Local SQLite is already the confirmed result by the time
  * a row reaches here; a failure marks the row for retry or human attention, it never
- * rolls back the local write. See GitHub issue #37/#49 (loki495/Todo) for the model.
+ * rolls back the local write.
  *
  * Operations run in OPERATION_ORDER, not insertion order, because several depend on
  * another row having already been pushed in this same call (an issue must exist on

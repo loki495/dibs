@@ -10,7 +10,7 @@ use App\Models\Issue;
  * Lets an agent self-report a problem with the MCP/CLI tooling itself — distinct from
  * CreateTodoIssue's use for real product tasks. Always applies the dedicated `agent-report`
  * label (via CreateTodoIssue's existing case-insensitive create-or-reuse-by-name mechanism)
- * so these are filterable without polluting the `bug` label used for real product defects. See #63.
+ * so these are filterable without polluting the `bug` label used for real product defects.
  */
 class ReportTodoBug
 {

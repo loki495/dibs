@@ -1,184 +1,64 @@
-# Todo — project context and conventions
+# Dibs — project context and conventions
 
-## Purpose and next work
+## What this is
 
-This is Andres's private global task and knowledge system for current work, personal projects, career development, learning, and everyday tasks.
+Dibs is a self-hosted personal task and knowledge tracker, backed by GitHub Issues and Projects as an asynchronous mirror. Local SQLite is authoritative once imported — GitHub is a mostly-read-only mirror reached through a durable outbound push queue, not a live sync source. It's built MCP-native: a host-local stdio MCP server exposes the same task/plan/claim operations to AI agents that the web UI uses, with a claim/heartbeat/release/complete lifecycle so multiple agents (or the same agent across sessions) can coordinate on shared work without duplicating or conflicting. Use it solo as a todo list, or let agents work alongside you.
 
-**Current: implementing the sync-authority pivot (local SQLite is now authoritative; GitHub becomes an asynchronously-pushed, mostly-read-only mirror via a durable push queue) as part of the MCP-backed agent-planning plan.** This project tracks its own multi-step work in its own GitHub issues rather than the global `.ai/plans/` file-based orchestrator-worker protocol — read issue #36 (application context), #37 (the authoritative MCP/sync-pivot plan), #38 (open questions), and #51 (dogfooding friction/lessons) before coding. Do not recreate `.ai/plans/` files for Todo's own work; GitHub issues plus local SQLite are the source of truth for planning state here.
+## Stack
 
-The user wants low-friction capture, editing, filtering, a collapsible task tree, website-specific knowledge, and a passive daily list. Notifications and calendar integration can follow. Preserve the existing GitHub issues and their identities when adding the UI.
+Laravel 13, Livewire 4 class-based single-file components, PHP 8.5, SQLite, Tailwind 4, Flux UI. Docker Compose for local development — PHP/Composer commands run inside the app container; Node builds run in a separate service. See `README.md` for local setup and `docker/setup.sh`.
 
-## Repository and current implementation
+## Architecture
 
-- Private repository: https://github.com/loki495/Todo
-- Local checkout: /home/andres/www/Todo
-- Remote: origin = git@github.com:loki495/Todo.git
-- Observed initial layout: one checkout on main tracking origin/main; no local/feature branches or extra worktrees. Reinspect before consequential git operations; do not assume the layout stays unchanged.
-- Laravel scaffolding, dependencies, schema files and tests now exist. Docker app service is todo-app; local Traefik override routes todo.ac495.net. See GitHub issue #37 for the authoritative implementation status and remaining work.
-- Local SQLite is authoritative once data is imported; GitHub Issues and Projects hold an asynchronously-pushed mirror of that same data, used as a manual-pull baseline and a fallback surface with no live Todo app (see #37). The pinned usage guide is https://github.com/loki495/Todo/issues/20.
-- GitHub CLI is installed and authenticated locally, with Projects access. Verify the actual account and permissions before writes. Do not expose tokens or embed local credentials in browser code.
-- All repository/project data is private. Keep any future hosting private as well.
+- Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records.
+- GitHub Issues/Projects are an asynchronous, mostly-read-only mirror reached through a durable outbound push queue — no inbound webhooks, no scheduled freshness polling. Manual pull (`scripts/github-pull`, `todo:sync`) remains for initial setup, disaster recovery, and syncing a second instance; it must not overwrite unpushed local changes.
+- Livewire components and Artisan commands delegate business logic to typed Actions, shared by the UI and the MCP/CLI agent surface. Actions write SQLite directly as the confirmed result and enqueue a GitHub push rather than calling the GitHub API inline.
+- A push-queue conflict (GitHub edited directly, or by another instance, since the local record was last pushed) does not block or roll back the local write — it marks the row `needs_attention` for human review rather than silently overwriting or discarding either side.
+- See `docs/architecture.md` for the schema and full design history, and `docs/agent-interface.md` for the complete MCP/CLI contract.
 
-Read ~/dotfiles/ai/CLAUDE.md and applicable AGENTS.md instructions before substantive work. Preserve project notes under .claude/ if introduced. Follow the shared planning/research/lessons conventions when application development starts; this document is not a replacement for an implementation plan.
+## Local agent interface (MCP)
 
-## Broad categories: four private GitHub Projects
+The canonical agent interface is a host-local stdio MCP server (`App\Mcp\Servers\TodoServer`, started with `php artisan mcp:start todo`). It exposes 15 tools — context/read (`todo_status`, `todo_context`, `todo_list`, `todo_show`, `todo_queue_status`), create/revise/comment (`todo_create`, `todo_scaffold_plan`, `todo_revise`, `todo_comment`), the full claim lifecycle (`todo_claim`, `todo_heartbeat`, `todo_release`, `todo_complete`, `todo_claim_status`), and a tooling self-report tool (`todo_report_bug`) — all delegating to the same typed Actions the web UI uses. Every write tool validates its own arguments explicitly and implements `Laravel\Mcp\Server\Contracts\Errable`: `laravel/mcp` does not enforce a tool's declared JSON Schema before invoking its handler, so schema-shaped input alone is not a safety guarantee.
 
-| Project | URL | Meaning |
-|---|---|---|
-| Work | https://github.com/users/loki495/projects/2 | Projects and todos for Andres's CURRENT JOB only |
-| Personal Projects | https://github.com/users/loki495/projects/3 | Personal websites/software, homelab, backups, dotfiles, and forward-looking career tasks |
-| Learning & Self-Improvement | https://github.com/users/loki495/projects/5 | Learning, studying codebases, electronics, fitness, and personal development |
-| Random Tasks | https://github.com/users/loki495/projects/6 | Household chores, purchases, inventory, and general errands |
+`todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete` identify the calling process via `posix_getppid()` internally rather than a caller-supplied `pid` argument — a stdio MCP server's own parent process *is* the connecting agent, so no cooperation from the client is needed. `php artisan todo:agent:*` commands are the JSON CLI fallback for recovery and smoke-testing (using an explicit `--pid=`, since each CLI invocation is its own short-lived process), backed by the same shared Actions. Never pass a GitHub credential through a tool argument or output — the server reads `GITHUB_TOKEN` server-side only, when the push-queue worker needs it.
 
-Job hunting, resume/profile improvements, and LinkedIn tasks belong in Personal Projects → Career, not Work or Learning. The old combined Todo Project and Life & Misc Project were emptied and deleted; the Todo repository remains.
+## Claims and coordination
 
-Use one primary Project per task. Projects are broad categories; individual websites normally use parent issues and Group values within them. GitHub Projects do not have parent Projects. Do not create a Project per website merely to emulate hierarchy.
+A live claim binds to the caller's real OS process (host, pid, process start time verified via `/proc/<pid>/stat`), not a self-reported session string, plus a server-issued capability token required for every subsequent heartbeat/release/complete on that claim. A PID that's since been reused by an unrelated process cannot keep an old claim valid; a claim whose process is confirmed dead becomes automatically recoverable by the next claim attempt. This contract is scoped to one local database — it does not arbitrate ownership across independent databases or users; multi-instance/multi-user collaboration is an intentionally open future direction, not yet designed. See `docs/agent-interface.md` for the full model, including the workspace UI's claim/plan visibility (live claim ownership, a human-authorized "Release claim" override, and parent/child/knowledge navigation).
 
-Andres actively edits issues, labels, parents, groups, and membership in GitHub. Always read current data before changing it. Never restore an old assignment merely because it differs from this file or prior session notes. Avoid static task counts and exhaustive task copies here.
+## Git workflow
 
-## Tree and group conventions
+`main` tracks the remote. Keep commits feature-scoped; use separate commits for distinct features or fixes rather than one large commit. Run the full verification suite (below) before committing.
 
-- A GitHub Project is the broad area. Within a selected Project area, Group is the first visual root in the app; native issue/sub-issue links form the hierarchy below that root.
-- An issue may have no Group. Ungrouped root issues remain visible directly under the Project area. Group headings are virtual UI rows, not Issues, and disappear when that Group filter is active.
-- A Group is a website/topic/category within one Project. It does not create a GitHub Project or a fake Issue. Parent links remain optional and express actual task breakdown below the Group.
-- Do not create new empty organizational parent Issues merely to form categories. Existing parent-labeled issues that contain meaningful task or knowledge content may remain; organization-only containers will be migrated to Groups, with children detached or retained under meaningful task parents, before deletion.
-- Each issue has one direct native parent. Use ordinary links for additional associations rather than duplicating the issue or silently replacing a parent. A task may have sub-issues without carrying the parent label.
-- Preserve the real task relationship #9 under #2 unless Andres changes it; it is not an organization-only container.
-- Group and parent selection remain separate during capture/editing. Selecting a Group does not invent a parent, and selecting a parent does not silently change Group.
-- Show all imported issue labels as compact list-row badges. Labels remain lightweight cross-cutting metadata and do not duplicate Projects or Groups.
+## Testing and tooling
 
-## Labels: current simplified scheme
+Run PHP tooling inside the app container via the composer script wrappers rather than invoking Docker directly:
 
-Latest decision supersedes the earlier area-label scheme: **do not duplicate Projects, Groups, or website parents with labels.** Area labels and site/topic labels were deliberately removed.
+```bash
+composer pint      # Pint (auto-fix)
+composer phpstan   # PHPStan level 6 (Larastan)
+composer rector     # Rector, dry-run by default — review its diff before ever applying
+composer pest       # Pest test suite
+composer artisan    # any artisan command, e.g. `composer artisan -- migrate`
+```
 
-| Purpose | Labels |
-|---|---|
-| Workflow | today, next, waiting, someday, recurring, needs research |
-| Structure | parent, guide |
-| Content | bug, documentation, research, lesson, decision |
-| Tooling feedback | agent-report |
+Order matters: Pint → PHPStan → Rector (dry-run) → Pest, so style/static-analysis issues don't get mixed into a test-failure investigation.
 
-Keep labels small and useful. Do not restore GitHub's unused default labels or add one label per website. Existing topics and category membership live in Group/parent/Project. Moving a task no longer requires maintaining an area label.
+Prefer TDD with Pest for non-obvious behavior: write a focused failing test first, confirm it fails for the intended reason, implement the smallest correct change, then refactor with tests passing. Fake GitHub requests in tests (`Http::fake()`); never let a test make a real network call. Cover sad paths explicitly — validation failures, stale writes, claim conflicts, push-queue failures, dead-process cleanup — not just the happy path. Never delete, weaken, or skip a failing test to force a passing state.
 
-Use documentation for actual documentation work, bug for a concrete defect, and the knowledge labels for the corresponding records. Do not label all code-study tasks as research or all AI-assisted work as a separate category by default.
+**Write-tool testing policy:** verify a write tool (create/revise/comment/claim/heartbeat/release/complete) through the isolated Pest suite (`TodoServer::tool(...)->assertOk()`) or an isolated scratch database — never against a real personal dataset — unless explicitly asked to demonstrate one live.
 
-**`agent-report` (added 2026-09-12, #63):** marks an issue an agent filed about the MCP/CLI tooling itself (a bug, confusing behavior, unexpected error) via the `todo_report_bug` tool — distinct from `bug`, which covers real product defects Andres files too. Filterable via the existing label-chip UI; does not affect Tasks/Knowledge classification.
+## Labels
 
-**`research` vs `needs research` (decided 2026-09-12 after a real mix-up):** `research` (and `lesson`/`decision`/`guide` alongside it) marks a completed knowledge *record* — the issue body itself is the maintained finding, and the app's Tasks/Knowledge toggle treats any of these four labels as Knowledge, hiding the issue from the default Tasks view. `needs research` is the opposite: a workflow marker on an ordinary *task* that still needs investigation before it can proceed — it does not affect Tasks/Knowledge classification. Applying `research` to a task that just needs research done (instead of `needs research`) will make it disappear from Tasks view, which is exactly what happened to #35 and looked like data loss.
+The app ships with an example labels scheme: workflow markers (`today`, `next`, `waiting`, `someday`, `recurring`, `needs research`), structural markers (`parent`, `guide`), content markers (`bug`, `documentation`, `research`, `lesson`, `decision`), and `agent-report` for tooling problems agents self-report via `todo_report_bug`. Adjust to taste for your own use — labels are lightweight, cross-cutting metadata, not a replacement for Projects/Groups/parents, and shouldn't duplicate them.
 
-## Website-specific research, lessons, and decisions
+## Knowledge records
 
-Agreed approach: create a separate knowledge issue per meaningful website/topic, discoverable from the website parent, with research, lesson, or decision as appropriate. Avoid burying all knowledge in one long parent-issue comment stream. No fabricated or empty knowledge records have been created just to fill this structure.
-
-- Issue body: maintained current findings/conclusion, scope, relevant sources, and remaining questions.
-- Comments: evidence, discussion, revisions, and the history of how the conclusion was reached.
-- Useful details: what was learned, website/repository it applies to, source task, evidence, relevant files/commit, and when it was verified.
-- Comments cannot have native labels. A heading such as [LESSON], [RESEARCH], or [DECISION] is a recognizable text convention only, not filterable comment metadata. Prefer a labeled issue when a finding deserves independent retrieval.
-- Future UI should separate Tasks and Knowledge for each website while reading from the same GitHub data.
-- Choose one canonical maintained record rather than keeping conflicting summaries in several places. Link from related tasks and website parents.
-- When a finding becomes an instruction agents MUST follow, put that rule in the relevant website repository's instructions and link to the supporting knowledge issue. Keep those instructions concise.
-- Global rules belong in shared documentation; website-specific facts stay scoped to that website. Follow the user's global-memory approval conventions before changing shared instructions.
-- Do not treat a reusable lesson as a pending chore forever. Decide the knowledge issue lifecycle and its relationship to task completion/progress when implementing the UI; it is not settled yet.
-
-## Scheduling and daily lists
-
-Existing fields on each Project:
-
-- Planned: intended work date.
-- Due: a real deadline, if any.
-- Repeat: human-readable recurrence rule; not currently executable automation.
-- Group: website/topic/category within that Project.
-- Status: Todo, In Progress, Done (verify actual options before updates).
-
-Existing views include All tasks, Daily, Today picks, Due, Timeline, group tabs, Parents, and Hierarchy.
-
-- Daily: open issues with Planned today or earlier (planned:<=@today).
-- Due: open issues with Due today or earlier (due:<=@today).
-- Today picks: manual today label. It does not reset automatically.
-- today, next, waiting, someday are optional; do not invent dates or priorities for imported tasks.
-- Timeline is GitHub's roadmap, not a month/week event calendar. Planned/Due mapping in its Date fields UI has not been verified through the API.
-- Date fields are date-only. Timed events need local time, duration, and timezone; default context is America/Los_Angeles.
-- Scheduling fields are per Project. Current manual cross-project shortlist: https://github.com/loki495/Todo/issues?q=is%3Aissue+is%3Aopen+label%3Atoday
-- Recurrence is manual for now: close the occurrence, create the next issue linked to the previous, add it to the appropriate Project/parent, and set its schedule. Distinguish fixed-calendar recurrence from intervals after completion.
-- No automated recurrence, reminders, Google Calendar integration, or automatic project intake/routing is enabled.
-
-## Next implementation: web UI
-
-Local SQLite is the task/knowledge store; GitHub mirrors it asynchronously (see #37). Existing issue IDs, URLs, labels, parents, and Project fields should remain usable from GitHub, the app, and agents. This intentionally is the authoritative database now — the earlier caution against a second authoritative database no longer applies; the risk to guard against instead is SQLite and the GitHub mirror silently diverging, which the push queue's `needs_attention` state exists to surface.
-
-Requested behavior:
-
-1. Show Work, Personal Projects, Learning & Self-Improvement, and Random Tasks as clear areas.
-2. Show top-level issues collapsed by default; expand/collapse children recursively in place, including nested parents. Remember expansion state. Keep standalone tasks discoverable.
-3. Capture with one title field and Enter. Allow area/website/parent selection with minimal steps and sensible defaults from the current view.
-4. Edit titles inline, complete via checkbox with Undo, and open a detail panel for descriptions, comments, links, and checklists.
-5. Provide clickable filters, search, persistent views, and website/topic browsing without requiring users to search a label list.
-6. Offer separate Tasks and Knowledge browsing per website, with research/lesson/decision filtering and maintained summaries visible first.
-7. Provide one daily list across all Projects, including planned/overdue work and manual picks. Keep planned dates distinct from deadlines.
-8. Add recurrence handling after defining rules and history behavior; a passive daily list is acceptable before notifications.
-9. Consider a true calendar and Google Calendar integration later for scheduled events/reminders. Do not claim either exists today.
-10. Preserve user edits from GitHub; refresh state before writes and handle conflicting updates clearly.
-
-## Next implementation: shared local-agent task interface
-
-Andres wants local agents to track individual website/project work here and update status, useful progress, research, and lessons. Build one consistent interface that agents and the UI can share.
-
-Proposed workflow to implement:
-
-1. Read the task, parent context, relevant knowledge, and the actual website repository instructions.
-2. Resolve the website repository/local checkout from explicit metadata on its parent; do not guess the target from a display name.
-3. Record the active session/worker and mark the task in progress when work starts. Define a claim mechanism that avoids two agents independently claiming the same task.
-4. Post meaningful checkpoints, blockers, decisions, and verification results rather than every tool action or raw session transcript.
-5. On completion, summarize changes, tests/checks, commits or PR links, remaining work, and links to new knowledge records; update status and close the issue consistently.
-6. Save durable knowledge in the agreed scoped records and instructions. Keep temporary execution notes in local session files; avoid making them a second permanent backlog.
-7. Define safe retries and conflict handling so repeated requests do not duplicate tasks, comments, or recurring occurrences.
-
-The original agreed order was scaffolding → manual GitHub pull and issue webhooks → hierarchy UI → polling → create/edit operations and shared agent interface; webhooks and polling are being removed in favor of local-authoritative writes with an asynchronous GitHub push queue (#37, #49). The canonical agent interface is a host-local stdio MCP server; the Artisan CLI is its recovery and smoke-test fallback. This roadmap is not blanket authorization for unattended external writes, notifications, pushes, or deployments. Explicitly establish which routine agent updates may happen automatically before enabling that behavior.
-
-## Implementation decisions still open
-
-- Framework/runtime, credential provisioning, and webhook ingress are settled. LAN access uses todo.ac495.net through Traefik with application login.
-- Cache/offline needs beyond the push queue's own backlog (SQLite authority and the GitHub sync strategy are now settled — see #37/#49).
-- Agent interface, session identity/claims, concurrency, retry semantics, and automatic-write authorization boundaries.
-- Rules for synchronizing native issue open/closed state with Project Status.
-- Treatment of persistent knowledge records in progress counts and task views.
-- Calendar scope, recurring-occurrence generation, completion semantics, timezone handling, and future notifications.
-- Testing/linting commands, branch model for application development, and hosting/container layout.
-
-Prefer straightforward implementation choices; do not reopen settled product conventions without a concrete reason. Ask only for decisions that materially affect implementation, and continue independent work while awaiting answers.
-
-## Testing: Pest TDD for non-obvious behavior
-
-User preference: try to use test-driven development with Pest for anything non-obvious. Write a focused failing behavior test first, verify it fails for the intended reason, implement the smallest correct behavior, then refactor with the tests passing.
-
-Prioritize action-level tests for sync idempotency, partial pagination failures, parent resolution/cycles, deletions vs lost access, field mappings, rate-limit/backoff handling, stale writes, recurrence, and agent claims. Include meaningful sad paths and specific expected outcomes. Add feature tests for authentication, validation, and HTTP/Livewire contracts. Fake GitHub requests; prevent stray real network calls in automated tests. Do not fabricate tests for trivial static markup or mirror implementation details. Never delete, weaken, or skip a failing test to make the suite pass.
-
-Initial architecture and sync/schema proposal: docs/architecture.md. Stack decisions are settled; scaffold and migrations are verified. GitHub issue #37 is the authoritative plan and supersedes earlier phase-order proposals.
+`research`, `lesson`, `decision`, and `guide` labels mark a completed knowledge *record* — the issue body itself is the maintained finding — rather than an ordinary task; the workspace's Tasks/Knowledge toggle treats any of these four labels as Knowledge, hiding the issue from the default Tasks view. Don't confuse this with a task that merely needs research done before it can proceed — use a distinct workflow label (e.g. `needs research`) for that; applying a knowledge label to an ordinary task will make it disappear from the Tasks view.
 
 ## Safety and verification
 
-- Follow global instructions for approvals. Never push without first stating the exact remote and branch and receiving explicit confirmation. Never force-push or rewrite shared history without explicit authorization.
-- Existing authorization covers the requested task organization and saving these conventions. The user also authorized scaffolding and LAN serving through Traefik. This does not authorize public exposure, emailing, notifications, production changes, or unrestricted ongoing agent writes.
-- Before changing external state, verify owner/repository/project and inspect live data. Preserve user changes, task identities, parent links, and schedule values.
-- Choose checks appropriate to the future implementation. Never weaken or bypass tests to make them pass. Run Pest/Pint/PHPStan/Rector inside the app container; scaffold checks passed (15 Pest tests, PHPStan level 6, Pint, Rector dry-run, assets and HTTPS smoke check).
-- Keep secrets out of issues, logs, browser bundles, and committed configuration.
-
-## Running the scaffold
-
-See README.md for setup. App: https://todo.ac495.net, container todo-app, PHP 8.5. Create a login with `docker compose exec -u www-data app php artisan todo:user`. Run PHP tooling inside that container; Node builds use `docker compose run --rm node npm run build`. No default account exists. Scaffold, manual import, read-only hierarchy UI, and local-first quick capture (via the durable push queue, see #37/#49) are complete. Automatic polling and inbound webhook delivery were removed 2026-09-11 in favor of the push queue; manual `Refresh from GitHub` / `todo:sync` remain the only inbound path. The Flux capture modal supports the viewed Project/Group, searchable parent selection, and existing or new labels/Groups; existing-task title/description editing is available; comments and completion are available. Scheduling fields remain pending; local-agent reads, hardened claims/heartbeats/releases (PID+process-start-time verified via `/proc`, requiring `pid: "host"` on the `todo-app` container — see #40), comments, and completion are available through documented Artisan commands. Run scripts/github-pull (optionally --comments) to refresh with host gh authorization.
-
-## Theme and sync additions
-
-Theme selector: System (default), Light or Dark. Preference persists in browser localStorage (`todo-theme`), applies before paint and follows OS changes in System mode. Verified at desktop and 390px mobile widths.
-
-Manual read-only import: `scripts/github-pull --comments` uses gh token over stdin. Initial and repeat imports verified with 35 issues and four Projects on 2026-09-08; query live data instead of treating that count as permanent. Repository/Project/issue/label/parent/schedule/comment data remains GitHub-authoritative. The read-only UI provides areas, recursive collapsed hierarchy, saved expansion, search with ancestor context, Group/label/state filters, Tasks/Knowledge, daily list, and safe issue details.
-
-Inbound GitHub webhooks and automatic freshness polling have been removed as of 2026-09-11 (#49). GitHub sync is now one-directional (local SQLite → GitHub via a durable push queue); the only path for GitHub → local data is the manual `Refresh from GitHub` button / `todo:sync` command / `scripts/github-pull`.
-
-## Local agent interface and MCP
-
-The canonical interface is a host-local stdio MCP server. Its tools must delegate to typed GitHub-first Actions and use the local claim/session records; never pass GitHub credentials through tool arguments or output. `todo:agent:list`, `show`, `claim`, `release`, `comment`, and `complete` remain JSON CLI fallback commands for recovery and smoke testing. `docs/agent-interface.md` is the detailed MCP/CLI contract.
-
-The server foundation is implemented (#41): `App\Mcp\Servers\TodoServer`, registered in `routes/ai.php`, started with `php artisan mcp:start todo`. It runs on `laravel/mcp` `1.0.0-beta.1` specifically — not the stable `0.9.x` line — since only that pre-release targets the stateless MCP 2026-07-28 revision the claim/capability-token design assumes; the stable line still has the old `initialize` handshake. Read/write task and knowledge tools (#42-#44) and the live claim lifecycle (#45) are implemented — 15 tools total (`todo_status`, `todo_context`, `todo_list`, `todo_show`, `todo_queue_status`, `todo_create`, `todo_scaffold_plan`, `todo_revise`, `todo_comment`, `todo_claim`, `todo_heartbeat`, `todo_release`, `todo_complete`, `todo_claim_status`, `todo_report_bug`). `todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete` identify the calling process via `posix_getppid()` internally rather than a caller-supplied `pid` argument, since an MCP server's own parent process is the connecting agent. See `docs/agent-interface.md` for the full contract. The workspace UI's claim/plan visibility (#46) is implemented: the issue detail panel shows live claim ownership (agent, host, pid, liveness, lease expiry) with a human-authorized "Release claim" override, parent/child plan navigation, related knowledge issues, and a pending-sync badge linking to the push-queue page (#50). End-to-end verification (#47) is complete: a real local MCP client drove the full workflow against an isolated scratch database, confirmed dead-claim takeover and stale-revision conflict handling live, and confirmed the push-queue drain safely refuses without a GitHub token. `todo_report_bug` (#63) lets an agent self-report a tooling problem (labeled `agent-report`, distinct from product `bug`s), backed by `ReportTodoBug`. Remaining plan work: migrating shared workflow docs (#48).
-
-**Write-tool testing policy:** verify a write tool (create/revise/comment/claim/heartbeat/release/complete) through the isolated Pest suite (`TodoServer::tool(...)->assertOk()`) only — never by smoke-testing it against the live dev server/database, unless explicitly asked to demonstrate one live. A live smoke-test of `todo_create` once created a real task and queued a real GitHub push in the personal database before this rule existed; it was fully reverted, but the rule stands to prevent a repeat. Read-only tools (`todo_status`, `todo_context`, `todo_list`, `todo_show`, `todo_queue_status`, `todo_claim_status`) may still be smoke-tested live via raw stdio JSON-RPC when useful.
+- Never push without confirming the exact remote and branch first. Never force-push or rewrite shared history without explicit authorization.
+- Before changing external GitHub state, verify the configured owner/repository and inspect live data; preserve user edits, task identities, parent links, and schedule values.
+- Never weaken or bypass a test to make it pass.
+- Keep secrets out of issues, logs, browser bundles, and committed configuration. `GITHUB_TOKEN` is read server-side only and never appears in a tool argument, MCP response, or browser bundle.

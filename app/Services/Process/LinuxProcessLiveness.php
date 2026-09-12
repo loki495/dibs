@@ -8,9 +8,9 @@ use Illuminate\Support\Carbon;
 
 /**
  * Verifies a claimed OS process is genuinely alive and hasn't been recycled by PID reuse, by
- * reading /proc directly rather than trusting anything the claiming caller reports. See #37/#40/#56
- * (loki495/Todo) — a claim binds to (pid, process start time), and the server independently confirms
- * that exact pair still exists before honoring a heartbeat, release, or takeover decision.
+ * reading /proc directly rather than trusting anything the claiming caller reports — a claim binds
+ * to (pid, process start time), and the server independently confirms that exact pair still exists
+ * before honoring a heartbeat, release, or takeover decision.
  *
  * Container/PID-namespace note: this only works when the running process's /proc reflects the same
  * PID namespace as the process it's checking (the `todo-app` container runs with `pid: "host"` for

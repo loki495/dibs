@@ -9,9 +9,9 @@ use DomainException;
 
 /**
  * A human-authorized override, distinct from ReleaseTaskClaim: the workspace UI is behind
- * application login for one operator (Andres), who already has full local database access —
- * this just gives him a safe, auditable way to recover a task he judges abandoned, without
- * needing the capability token a claiming agent process holds. See #46.
+ * application login for its one operator, who already has full local database access — this
+ * just gives them a safe, auditable way to recover a task they judge abandoned, without needing
+ * the capability token a claiming agent process holds.
  */
 class ReleaseAbandonedTaskClaim
 {

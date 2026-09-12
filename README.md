@@ -1,6 +1,6 @@
-# Todo
+# Dibs
 
-Private task and knowledge workspace backed by GitHub Issues and Projects.
+A todo list app — that's also built MCP-native, so AI agents can pick up your tasks, coordinate without stepping on each other, and hand off work cleanly. Use it solo, or let agents claim work alongside you. Backed by GitHub Issues and Projects as an asynchronous mirror; local SQLite is authoritative.
 
 Stack: Laravel 13, Livewire 4 class-based single-file components, PHP 8.5, SQLite, Tailwind 4. The private scaffold, light/dark/system themes, hierarchy UI, and durable push queue for asynchronous GitHub sync work. Task capture and editing use local-first Actions for title, description, Project, Group, Priority, parent, labels, completion, and comments, then queue them for GitHub. Local agents can read, claim, release, comment on, and complete tasks through the same application boundary.
 
@@ -15,7 +15,7 @@ bash docker/setup.sh
 docker compose exec -u www-data app php artisan todo:user
 ```
 
-The final command asks for a name, email and hidden password (12+ characters). No default account or public registration exists. Open https://todo.ac495.net on the LAN. App container: todo-app; loopback port: 8095. Use HTTPS for login because session cookies are secure.
+The final command asks for a name, email and hidden password (12+ characters). No default account or public registration exists. Open your configured hostname on the LAN. App container: todo-app; loopback port: 8095. Use HTTPS for login because session cookies are secure.
 
 The Traefik override is machine-specific and ignored. Review its hostname, source ranges and .env TRUSTED_PROXIES when moving hosts; the example assumes the existing web Docker network and 192.168.1.0/24 LAN. No shared Traefik files were changed. A clean host also needs DNS and TLS routing configured. Without Traefik, explicitly configure local HTTP/session settings for your environment.
 
@@ -35,7 +35,7 @@ Host Composer shortcuts: composer pint, composer phpstan, composer rector, compo
 
 ## Agent handoff
 
-Read CLAUDE.md, then GitHub issues #36 (application context), #37 (the authoritative MCP/sync-pivot plan), and #38 (open questions) before coding. This project tracks its own multi-step work in its own GitHub issues rather than the global `.ai/plans/` file-based protocol — GitHub issues plus local SQLite are the source of truth for planning state here. Local SQLite is authoritative once imported; do not seed fake task data or overwrite newer user organization changes.
+Read CLAUDE.md before coding — it documents the architecture, conventions, and testing approach in detail. This project tracks its own multi-step work in GitHub issues rather than a file-based planning protocol. Local SQLite is authoritative once imported; do not seed fake task data or overwrite newer user organization changes.
 
 ## Manual GitHub pull
 
@@ -46,7 +46,7 @@ scripts/github-pull --comments
 docker compose exec -T -u www-data app php artisan todo:sync --comments
 ```
 
-The wrapper pipes `gh auth token` into the container over stdin; it never puts the token in arguments, logs or a file. Full pulls reconcile the configured repository and Project numbers (GITHUB_PROJECT_NUMBERS=2,3,5,6). Comments are optional because they add requests. No GitHub records are written.
+The wrapper pipes `gh auth token` into the container over stdin; it never puts the token in arguments, logs or a file. Full pulls reconcile the configured repository and Project numbers (GITHUB_PROJECT_NUMBERS=1,2,3,4). Comments are optional because they add requests. No GitHub records are written.
 
 The signed-in workspace also has **Refresh from GitHub**. It runs that same complete, read-only importer with comments, disables while it runs, and preserves the cached workspace with a retry message if GitHub is unavailable. It requires a server-side `GITHUB_TOKEN`; keep it only in ignored local configuration with restrictive file permissions.
 
@@ -54,13 +54,13 @@ The importer fetches all pages before applying a transaction, preserves node IDs
 
 ## Push queue
 
-Local edits are queued to GitHub through a durable, asynchronous push queue (app/Actions/DrainGitHubPushQueue.php) scheduled every minute. The queue persists across restarts and retries with exponential backoff on transient failures. See `docs/architecture.md` and GitHub issue #49 for details.
+Local edits are queued to GitHub through a durable, asynchronous push queue (app/Actions/DrainGitHubPushQueue.php) scheduled every minute. The queue persists across restarts and retries with exponential backoff on transient failures. See `docs/architecture.md` for details.
 
 ## Read-only workspace
 
-Projects are the four broad areas: Work, Personal Projects, Learning & Self-Improvement, and Random Tasks. **Group** is the first visual root inside a selected Project area and names a website or topic such as Sessioneer, Career, Fitness, or Home. Native issue parents form the optional hierarchy below the Group. Ungrouped issues remain direct roots. Group headings are virtual UI rows and disappear when filtering by that Group.
+Projects are broad areas you define — Work, Personal Projects, Learning, and so on. **Group** is the first visual root inside a selected Project area and names a website or topic within it. Native issue parents form the optional hierarchy below the Group. Ungrouped issues remain direct roots. Group headings are virtual UI rows and disappear when filtering by that Group.
 
-The workspace shows all four GitHub Projects as areas. Group is inserted as the first virtual root for a selected Project; filtering by that Group hides the duplicate heading. Parent issues form a recursive tree that starts collapsed and remembers expansion in browser storage. Search and filters keep matching parent context visible, including a parent stored outside the selected area. Labels are compact multi-select chips (AND matching); Website/Group, Priority, issue-state, Tasks, and Knowledge filters are available. Priority is a per-Project-item single-select value from 1 through 5; Rank priority sorts siblings without flattening native parent/child hierarchy.
+The workspace shows your configured GitHub Projects as areas. Group is inserted as the first virtual root for a selected Project; filtering by that Group hides the duplicate heading. Parent issues form a recursive tree that starts collapsed and remembers expansion in browser storage. Search and filters keep matching parent context visible, including a parent stored outside the selected area. Labels are compact multi-select chips (AND matching); Website/Group, Priority, issue-state, Tasks, and Knowledge filters are available. Priority is a per-Project-item single-select value from 1 through 5; Rank priority sorts siblings without flattening native parent/child hierarchy.
 
 The Daily list combines open actionable issues that are planned through today, due through today, or labeled `today`, using `America/Los_Angeles`. Organizational parents and knowledge records do not inflate task counts or appear as overdue tasks. Selecting an issue opens a keyboard-accessible detail drawer with its maintained description, imported comments, labels, Project fields, and GitHub link. Imported Markdown is rendered after removing raw HTML and unsafe links.
 
@@ -70,7 +70,7 @@ Task capture uses a Flux modal. It creates in GitHub first, then projects the co
 
 ## Agent integration
 
-Todo's agent interface is a host-local stdio MCP server (`App\Mcp\Servers\TodoServer`, started with `php artisan mcp:start todo`), exposing 14 tools — context/read, create/revise/comment, and the full claim lifecycle (`todo_claim`, `todo_heartbeat`, `todo_release`, `todo_complete`, `todo_claim_status`) — without ever giving an agent a GitHub token. `todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete` identify the calling process via `posix_getppid()` automatically; the CLI fallback below needs an explicit `--pid=` since each Artisan invocation is its own short-lived process. The Artisan commands are the recovery and smoke-test interface underneath the MCP server, backed by the same shared Actions:
+Dibs's agent interface is a host-local stdio MCP server (`App\Mcp\Servers\TodoServer`, started with `php artisan mcp:start todo`), exposing 14 tools — context/read, create/revise/comment, and the full claim lifecycle (`todo_claim`, `todo_heartbeat`, `todo_release`, `todo_complete`, `todo_claim_status`) — without ever giving an agent a GitHub token. `todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete` identify the calling process via `posix_getppid()` automatically; the CLI fallback below needs an explicit `--pid=` since each Artisan invocation is its own short-lived process. The Artisan commands are the recovery and smoke-test interface underneath the MCP server, backed by the same shared Actions:
 
 ```bash
 docker compose exec -T -u www-data app php artisan todo:agent:list

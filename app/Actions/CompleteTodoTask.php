@@ -11,8 +11,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Completing a task is claim-scoped, unlike the workspace UI's closeIssue() (any authenticated human
  * can close any issue there) — only the exact (issue, pid, capability token) that holds the live
- * claim can complete it, matching #45's "the active worker can maintain and finish its claim; another
- * worker cannot impersonate it."
+ * claim can complete it: the active worker can maintain and finish its claim, but another worker
+ * cannot impersonate it.
  */
 class CompleteTodoTask
 {

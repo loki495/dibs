@@ -14,11 +14,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Hardened claim acquisition — see #37/#40/#56 (loki495/Todo). Binds a claim to the caller's own
- * (pid, process start time) rather than trusting a self-reported session string: the server reads
- * /proc itself to confirm the pid is real right now, then re-checks that same fact before ever
- * treating an existing claim as abandoned. A capability token (returned once, in plaintext, only
- * here) is required to release or renew the claim later — see AuthorizeAgentClaim.
+ * Hardened claim acquisition. Binds a claim to the caller's own (pid, process start time) rather
+ * than trusting a self-reported session string: the server reads /proc itself to confirm the pid
+ * is real right now, then re-checks that same fact before ever treating an existing claim as
+ * abandoned. A capability token (returned once, in plaintext, only here) is required to release or
+ * renew the claim later — see AuthorizeAgentClaim.
  */
 class ClaimTaskForAgent
 {

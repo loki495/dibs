@@ -1,11 +1,13 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "loki495/todo",
+    "name": "loki495/dibs",
     "type": "project",
-    "description": "Private task and knowledge workspace backed by GitHub.",
+    "description": "A todo list app that's MCP-native, so AI agents can claim, coordinate on, and complete tasks alongside you. Backed by GitHub Issues and Projects as an asynchronous mirror.",
     "keywords": [
         "laravel",
-        "framework"
+        "framework",
+        "mcp",
+        "todo"
     ],
     "license": "MIT",
     "require": {
