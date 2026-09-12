@@ -32,3 +32,4 @@ Thumbs.db
 /.phpunit.cache/
 /.phpstan/
 /.rector/
+/.playwright-mcp/
