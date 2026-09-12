@@ -8,9 +8,9 @@ use App\Models\TaskClaim;
 use DomainException;
 
 /**
- * Shared lookup used by every claim-mutating Action (release, heartbeat, and eventually complete —
- * #45) so the (issue, pid, capability token) matching logic exists in exactly one place. A worker
- * cannot act on another worker's claim without presenting the exact capability token it was issued.
+ * Shared lookup used by every claim-mutating Action (release, heartbeat, complete) so the
+ * (issue, pid, capability token) matching logic exists in exactly one place. A worker cannot act
+ * on another worker's claim without presenting the exact capability token it was issued.
  */
 class AuthorizeAgentClaim
 {

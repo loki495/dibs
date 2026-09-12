@@ -8,7 +8,7 @@
 
 ## Confirm-before-removal workspace tasks
 
-Do not delete any item in this section until Andres explicitly confirms it is done.
+Do not delete any item in this section until the maintainer explicitly confirms it is done.
 
 - Make task editing use the same reusable form and fields as task creation: description, labels, Group, native parent, and Project membership. Unify the visual design with the preferred edit form and reuse the component/form logic.
 - Add comment browsing, creation, and editing to the task detail drawer.

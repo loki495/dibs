@@ -26,7 +26,7 @@ use Laravel\Mcp\Server\Attributes\Version;
 
 #[Name('Todo')]
 #[Version('0.1.0')]
-#[Instructions('Host-local server for Andres\'s private Todo workspace. Local SQLite is authoritative; GitHub is an asynchronous mirror reached through a push queue. Call todo_status first to confirm the server and repository identity before using other tools.')]
+#[Instructions('Host-local server for this Todo workspace. Local SQLite is authoritative; GitHub is an asynchronous mirror reached through a push queue. Call todo_status first to confirm the server and repository identity before using other tools.')]
 class TodoServer extends Server
 {
     protected array $tools = [
