@@ -1,10 +1,12 @@
 <?php declare(strict_types=1);
 
 use App\Actions\BuildIssueTree;
+use App\Actions\CreateTodoIssue;
 use App\Actions\EnqueueGitHubPush;
 use App\Actions\GetIssueDetails;
 use App\Actions\SyncGitHub;
 use App\Actions\UpdateGitHubProject;
+use App\Exceptions\TodoValidationException;
 use App\Models\Comment;
 use App\Models\GitHubProject;
 use App\Models\GitHubRepository;
@@ -271,123 +273,23 @@ new class extends Component
     {
         $this->reset('captureError');
         $this->validate(['newTitle' => ['required', 'string', 'max:255'], 'newBody' => ['nullable', 'string', 'max:65535'], 'captureNewGroup' => ['nullable', 'string', 'max:50'], 'captureNewLabel' => ['nullable', 'string', 'max:50'], 'captureLabels' => ['array'], 'captureLabels.*' => ['integer']]);
-        if (trim($this->captureNewGroup) !== '' && $this->captureArea === 0) {
-            $this->captureError = 'Choose an area before creating a Group.';
+        try {
+            $issue = app(CreateTodoIssue::class)->handle(
+                title: $this->newTitle,
+                body: $this->newBody === '' ? null : $this->newBody,
+                area: $this->captureArea > 0 ? $this->captureArea : null,
+                parentId: $this->captureParent > 0 ? $this->captureParent : null,
+                groupId: $this->captureGroup > 0 ? $this->captureGroup : null,
+                priorityId: $this->capturePriority > 0 ? $this->capturePriority : null,
+                labelIds: $this->captureLabels,
+                newGroupName: $this->captureNewGroup,
+                newLabelName: $this->captureNewLabel,
+            );
+        } catch (TodoValidationException $exception) {
+            $this->captureError = $exception->getMessage();
 
             return;
         }
-        $project = $this->captureArea > 0 ? GitHubProject::query()->where('is_available', true)->find($this->captureArea) : null;
-        if ($this->captureArea > 0 && ! $project instanceof GitHubProject) {
-            $this->captureError = 'The selected area is no longer available. Refresh and try again.';
-
-            return;
-        }
-        $parent = $this->captureParent > 0 ? Issue::query()->where('is_available', true)->find($this->captureParent) : null;
-        if ($this->captureParent > 0 && ! $parent instanceof Issue) {
-            $this->captureError = 'The selected parent is no longer available. Refresh and try again.';
-
-            return;
-        }
-        $group = $this->captureGroup > 0 ? ProjectFieldOption::query()->with('field')->find($this->captureGroup) : null;
-        if ($this->captureGroup > 0 && (! $group instanceof ProjectFieldOption || ! $project instanceof GitHubProject || $group->field?->project_id !== $project->id)) {
-            $this->captureError = 'The selected Group is no longer available in this area. Refresh and try again.';
-
-            return;
-        }
-        $priority = $this->capturePriority > 0 ? ProjectFieldOption::query()->with('field')->find($this->capturePriority) : null;
-        if ($this->capturePriority > 0 && (! $priority instanceof ProjectFieldOption || ! $project instanceof GitHubProject || $priority->field?->semantic_key !== 'priority' || $priority->field?->project_id !== $project->id)) {
-            $this->captureError = 'The selected Priority is no longer available in this area. Refresh and try again.';
-
-            return;
-        }
-        $labels = Label::query()->where('is_available', true)->whereIn('id', $this->captureLabels)->get();
-        if ($labels->count() !== count($this->captureLabels) || ($parent instanceof Issue && $labels->contains(fn (Label $label): bool => $label->repository_id !== $parent->repository_id))) {
-            $this->captureError = 'One or more selected labels are no longer available. Refresh and try again.';
-
-            return;
-        }
-        $repository = GitHubRepository::query()->where('full_name', config('github.owner').'/'.config('github.repository'))->first();
-        if (! $repository instanceof GitHubRepository) {
-            $this->captureError = 'The repository is not configured or not available locally. Refresh and try again.';
-
-            return;
-        }
-        $issue = null;
-        DB::transaction(function () use (&$issue, &$group, $project, $priority, $labels, $parent, $repository): void {
-            if (trim($this->captureNewGroup) !== '') {
-                $groupField = $project->fields()->where('semantic_key', 'group')->where('is_available', true)->first();
-                $existingGroup = $groupField?->options()->whereRaw('LOWER(name) = LOWER(?)', [trim($this->captureNewGroup)])->first();
-                if ($existingGroup instanceof ProjectFieldOption) {
-                    $group = $existingGroup;
-                } else {
-                    $newOption = ProjectFieldOption::create([
-                        'project_field_id' => $groupField->id,
-                        'github_option_id' => null,
-                        'name' => trim($this->captureNewGroup),
-                        'color' => 'GRAY',
-                        'position' => (int) $groupField->options()->max('position') + 1,
-                    ]);
-                    app(EnqueueGitHubPush::class)->handle('create_group_option', 'project_field_option', $newOption->id, ['name' => $newOption->name, 'color' => 'GRAY'], 'group_option:create:'.$newOption->id);
-                    $group = $newOption;
-                }
-            }
-            if (trim($this->captureNewLabel) !== '') {
-                $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [trim($this->captureNewLabel)])->first();
-                if ($existingLabel instanceof Label) {
-                    $labels->push($existingLabel);
-                } else {
-                    $newLabel = Label::create([
-                        'repository_id' => $repository->id,
-                        'github_node_id' => null,
-                        'name' => trim($this->captureNewLabel),
-                        'color' => '6B7280',
-                        'is_available' => true,
-                    ]);
-                    app(EnqueueGitHubPush::class)->handle('create_label', 'label', $newLabel->id, ['name' => $newLabel->name, 'color' => '6B7280', 'description' => null], 'label:create:'.$newLabel->id);
-                    $labels->push($newLabel);
-                }
-            }
-            $issue = Issue::create([
-                'repository_id' => $repository->id,
-                'github_node_id' => null,
-                'github_number' => null,
-                'title' => trim($this->newTitle),
-                'body' => $this->newBody === '' ? null : $this->newBody,
-                'state' => 'OPEN',
-                'sibling_position' => 0,
-                'is_available' => true,
-                'last_seen_at' => now(),
-            ]);
-            app(EnqueueGitHubPush::class)->handle('create_issue', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:create:'.$issue->id);
-            if ($project instanceof GitHubProject) {
-                $item = ProjectItem::create([
-                    'project_id' => $project->id,
-                    'issue_id' => $issue->id,
-                    'github_node_id' => null,
-                    'content_type' => 'ISSUE',
-                    'is_available' => true,
-                    'group_option_id' => $group?->id,
-                    'priority_option_id' => $priority?->id,
-                    'last_seen_at' => now(),
-                ]);
-                app(EnqueueGitHubPush::class)->handle('add_project_membership', 'project_item', $item->id, [], 'project_item:create:'.$item->id);
-                if ($group instanceof ProjectFieldOption) {
-                    app(EnqueueGitHubPush::class)->handle('set_project_item_group', 'project_item', $item->id, ['group_option_id' => $group->id], 'project_item:group:'.$item->id);
-                }
-                if ($priority instanceof ProjectFieldOption) {
-                    app(EnqueueGitHubPush::class)->handle('set_project_item_priority', 'project_item', $item->id, ['priority_option_id' => $priority->id], 'project_item:priority:'.$item->id);
-                }
-            }
-            if ($labels->isNotEmpty()) {
-                $issue->labels()->syncWithoutDetaching($labels->pluck('id'));
-                app(EnqueueGitHubPush::class)->handle('add_issue_labels', 'issue', $issue->id, ['label_ids' => $labels->pluck('id')->all()], 'issue:labels:'.$issue->id);
-            }
-            if ($parent instanceof Issue) {
-                $sibling_position = (int) Issue::query()->where('parent_issue_id', $parent->id)->max('sibling_position') + 1;
-                $issue->update(['parent_issue_id' => $parent->id, 'sibling_position' => $sibling_position]);
-                app(EnqueueGitHubPush::class)->handle('set_issue_parent', 'issue', $issue->id, ['parent_issue_id' => $parent->id], 'issue:parent:'.$issue->id);
-            }
-        });
         $this->selected = $issue->id;
         $this->reset('newTitle', 'newBody', 'captureGroup', 'capturePriority', 'captureLabels', 'captureNewGroup', 'captureNewLabel', 'captureParentSearch');
         $this->captureOpen = false;
