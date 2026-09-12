@@ -1,0 +1,37 @@
+name: todo
+services:
+  app:
+    container_name: todo-app
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./:/var/www/html
+    ports:
+      - "127.0.0.1:${APP_PORT:-8095}:80"
+  scheduler:
+    container_name: todo-scheduler
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - ./:/var/www/html
+  worker:
+    container_name: todo-worker
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "database", "--queue=github,default", "--tries=3", "--backoff=5"]
+    volumes:
+      - ./:/var/www/html
+  node:
+    image: node:22
+    profiles: [tools]
+    working_dir: /var/www/html
+    user: "1000:1000"
+    volumes:
+      - ./:/var/www/html
