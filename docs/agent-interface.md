@@ -1,42 +1,50 @@
 # MCP agent interface
 
-Status: MCP is the canonical planned interface; the documented Artisan CLI fallback is implemented. GitHub remains authoritative for issues, comments, labels, native parents, Project membership, Group, and Priority. SQLite is the synchronized read model plus local-only agent state.
+Status: MCP is the canonical planned interface; the documented Artisan CLI fallback is implemented. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records (see GitHub issue #37, loki495/Todo, for the full architecture record). GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue (#49) — there is no inbound webhook receiver and no scheduled freshness polling.
 
 ## Boundary
 
-Agents run on the host and connect to a stdio MCP server. The server exposes Todo tools and delegates to the same application Actions as the workspace. `php artisan todo:agent:*` is retained as a local recovery and smoke-test fallback. There is no unauthenticated HTTP API and no GitHub credential in an agent prompt, browser bundle, or command argument. The MCP server and CLI read the server-side `GITHUB_TOKEN` only when a GitHub-first Action needs it.
+Agents run on the host and connect to a stdio MCP server. The server exposes Todo tools and delegates to the same application Actions as the workspace. Those Actions write SQLite directly as the confirmed result and enqueue a GitHub push rather than calling the GitHub API inline. `php artisan todo:agent:*` is retained as a local recovery and smoke-test fallback. There is no unauthenticated HTTP API and no GitHub credential in an agent prompt, browser bundle, or command argument. The MCP server and CLI read the server-side `GITHUB_TOKEN` only when the push-queue worker needs it to reach GitHub.
 
-Implemented commands: `list`, `show`, `claim`, `release`, `comment`, and `complete`. The remaining write commands follow the same contract.
+Implemented commands: `list`, `show`, `claim`, `release`, `heartbeat`, `comment`, and `complete`. The remaining write commands follow the same contract.
 
 The command surface is:
 
-- `todo:agent:list` — read current tasks, parent context, Group, Project, labels, Priority, and sync state from SQLite.
+- `todo:agent:list` — read current tasks, parent context, Group, Project, labels, Priority, and local push-queue state from SQLite.
 - `todo:agent:show ISSUE` — read one task with description, comments, hierarchy, and relevant Project fields.
-- `todo:agent:create` — GitHub-first issue creation with Project, Group, parent, labels, and Priority.
-- `todo:agent:update ISSUE` — intentional-field patches only; title/body, metadata, and Priority use the existing Actions.
-- `todo:agent:comment ISSUE` and `todo:agent:complete ISSUE` — GitHub-first mutations using existing comment/close Actions.
+- `todo:agent:claim ISSUE --agent=NAME --pid=PID [--minutes=30]` — claim a task for the calling agent's own OS process. Returns a `capability_token` in the response **once, in plaintext** — the caller must hold onto it; it's required for every subsequent `heartbeat`/`release` on that claim and is never shown again (only its hash is stored). `--pid` must be the calling agent's own real process ID — the server independently verifies it via `/proc` rather than trusting it blindly (see "Claims and checkpoints" below).
+- `todo:agent:heartbeat ISSUE --pid=PID --token=TOKEN [--minutes=30]` — renew a live claim's lease. Re-verifies the process is still alive on every call; a claim cannot renew itself back to life once its process is confirmed dead.
+- `todo:agent:release ISSUE --pid=PID --token=TOKEN` — release a claim. Requires the exact capability token and pid returned by `claim`; nothing else can release another worker's claim.
+- `todo:agent:create` — create locally with Project, Group, parent, labels, and Priority; enqueues the GitHub push.
+- `todo:agent:update ISSUE` — intentional-field patches only; title/body, metadata, and Priority write SQLite and enqueue the push.
+- `todo:agent:comment ISSUE` and `todo:agent:complete ISSUE` — write SQLite and enqueue the corresponding GitHub push. `complete` is currently stale (still calls the old synchronous `CloseGitHubIssue` directly, from before #49's push-queue conversion) — fixing this is part of #45.
 
-Machine-readable JSON is the default output. Human output is opt-in. Commands reject malformed IDs, unavailable local records, wrong Project-field options, and a missing server token before GitHub is contacted.
+Machine-readable JSON is the default output. Human output is opt-in. Commands reject malformed IDs, unavailable local records, and wrong Project-field options before any write.
 
 ## MCP tools
 
-The initial tool names and inputs are `todo_list` (area/group/priority/knowledge filters), `todo_show` (local issue ID), `todo_claim` (issue, agent, session, minutes), `todo_release` (issue, session), `todo_comment` (issue, body), and `todo_complete` (issue). Future `todo_create` and field-patch `todo_update` tools must preserve the mutation ledger and reconcile ambiguous outcomes before retrying.
+The initial tool names and inputs are `todo_list` (area/group/priority/knowledge filters), `todo_show` (local issue ID), `todo_claim` (issue, agent, pid, minutes — returns a capability token), `todo_heartbeat` (issue, pid, token, minutes), `todo_release` (issue, pid, token), `todo_comment` (issue, body), and `todo_complete` (issue). Future `todo_create` and field-patch `todo_update` tools write SQLite and enqueue a push. A `todo_queue_status` tool exposes pending/failed/needs-attention push-queue counts and per-item detail (#50).
 
-Every tool returns structured JSON with stable local IDs and GitHub URLs when available. Stdio is local-only; no network listener, browser credential, or MCP tool argument contains a GitHub token.
+Note on `pid`: per #56's research, the MCP protocol itself has no session/process identity a server can read from a tool call — a stdio server's own parent process *is* the connecting client, so once #41 builds the real MCP server it can read that PID directly via `getppid()` without the client needing to supply anything. The CLI fallback has no equivalent (each Artisan invocation is its own short-lived process, not the long-running agent), so it requires an explicit `--pid=` naming the calling agent's own process — the shared Actions underneath verify whichever PID they're given the same way regardless of which surface it came from.
+
+Every tool returns structured JSON with stable local IDs, GitHub URLs when pushed, and push-queue status when relevant. Stdio is local-only; no network listener, browser credential, or MCP tool argument contains a GitHub token.
 
 ## Claims and checkpoints
 
-The local-only `agent_sessions` and `task_claims` models bind a task to an explicit worker identity with an expiry and renewal time. A claim is not a GitHub lock: it prevents accidental duplicate local-agent work. Workspace display remains pending. A worker must post concise checkpoint comments for a material result, decision, blocker, or verification result, never raw tool logs.
+The local-only `agent_sessions` and `task_claims` models bind a task to an explicit worker identity with an expiry and renewal time. A claim is not a GitHub lock: it prevents accidental duplicate local-agent work sharing one local database. This contract is explicitly scoped to multiple agents/processes on **one** local database — it does not arbitrate ownership across independent databases or between different users. Multi-user/multi-instance collaboration is a direction Andres wants to keep open but is explicitly deferred (see #38); no distributed conflict-resolution design exists yet. Workspace display of claims is pending (#46). A worker must post concise checkpoint comments for a material result, decision, blocker, or verification result, never raw tool logs.
 
-Claims, session metadata, and explicit checkout bindings are local durable data. They are not part of the rebuildable GitHub snapshot and need backup with SQLite.
+**Hardened as of #40 (2026-09-12):** a claim binds to the caller's real OS process, not a self-reported string. `App\Services\Process\LinuxProcessLiveness` reads `/proc/<pid>/stat` directly to confirm a claimed pid genuinely exists and matches the start time recorded when the claim was made — a PID that's since been reused by an unrelated process cannot keep an old claim (or its heartbeat) valid. This requires the `todo-app` container to see host PIDs (`pid: "host"` in `docker-compose.yml`), since agents run on the host while the app runs in a container — without that, `/proc` inside the container only reflects the container's own PID namespace and can't verify anything about a host-side process. When liveness genuinely can't be verified (that setting removed, or a container/namespace situation where it doesn't apply), a claim still succeeds but is flagged `is_verified_live: false` — treated as weaker assurance, never auto-reclaimed as "dead," only as expired.
+
+Claims, session metadata, and explicit checkout bindings are local durable data. GitHub no longer holds the sole durable copy of anything, so these still need backup with SQLite same as before.
 
 ## Retry and conflict rules
 
-- Reads are retry-safe after normal synchronization.
-- An ambiguous GitHub create/comment result is marked `reconciliation_needed`; the command reconciles before any retry and does not blindly create another object.
-- Updates patch only requested fields. A remote rejection retains local drafts/intent and reports the GitHub error.
-- A command records the agent identity and intent in the mutation ledger before a multi-step write.
-- The first release has no unattended scheduler that creates, edits, completes, or comments on GitHub. An agent explicitly invoking a command is the triggering event.
+- Reads are always against local SQLite and are retry-safe.
+- A write commits to SQLite immediately as the confirmed result and enqueues a push-queue row; the command does not wait on GitHub.
+- A push-queue row that fails to apply to GitHub (rejected, conflicting edit, rate-limited) is marked `needs_attention` for human review rather than silently retried into a duplicate or silently discarded.
+- Updates patch only requested fields, locally and in the resulting push. A push rejection does not roll back the local write; it surfaces via the queue.
+- A command records the agent identity and intent in the local record before a multi-step write.
+- The first release has no unattended scheduler that creates, edits, completes, or comments through the MCP surface itself — an agent explicitly invoking a command is the triggering event. The push-queue worker draining to GitHub is a separate, already-authorized background process, not an "unattended agent write."
 
 ## Website convention
 

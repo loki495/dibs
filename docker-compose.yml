@@ -6,6 +6,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     restart: unless-stopped
+    pid: "host"
     volumes:
       - ./:/var/www/html
     ports:

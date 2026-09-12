@@ -11,14 +11,21 @@ use Illuminate\Support\Carbon;
 
 class AgentReleaseTaskCommand extends Command
 {
-    protected $signature = 'todo:agent:release {issue : Local Todo issue ID} {--session= : Stable local session key}';
+    protected $signature = 'todo:agent:release {issue : Local Todo issue ID} {--pid= : The calling agent\'s own OS process ID} {--token= : The capability token returned by todo:agent:claim}';
 
     protected $description = 'Release a host-local agent task claim as JSON';
 
     public function handle(ReleaseTaskClaim $release): int
     {
+        $pid = $this->option('pid');
+        $token = (string) $this->option('token');
+        if ($pid === null || ! ctype_digit($pid) || $token === '') {
+            $this->error('The calling agent\'s own numeric --pid and the claim\'s --token are required.');
+
+            return self::FAILURE;
+        }
         try {
-            $claim = $release->handle((int) $this->argument('issue'), (string) $this->option('session'));
+            $claim = $release->handle((int) $this->argument('issue'), (int) $pid, $token);
         } catch (DomainException $exception) {
             $this->error($exception->getMessage());
 
