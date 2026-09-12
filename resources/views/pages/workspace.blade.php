@@ -1,11 +1,16 @@
 <?php declare(strict_types=1);
 
 use App\Actions\BuildIssueTree;
+use App\Actions\CreateTodoComment;
 use App\Actions\CreateTodoIssue;
 use App\Actions\EnqueueGitHubPush;
 use App\Actions\GetIssueDetails;
+use App\Actions\ReviseTodoComment;
 use App\Actions\SyncGitHub;
 use App\Actions\UpdateGitHubProject;
+use App\Exceptions\TodoRecordNotFoundException;
+use App\Exceptions\TodoRecordUnavailableException;
+use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
 use App\Models\Comment;
 use App\Models\GitHubProject;
@@ -86,6 +91,8 @@ new class extends Component
 
     public string $editCommentBody = '';
 
+    public int $editCommentRevision = 0;
+
     public int $captureArea = 0;
 
     public int $captureParent = 0;
@@ -127,7 +134,7 @@ new class extends Component
     public function updatedSelected(): void
     {
         $this->captureParent = $this->selectedParentId();
-        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editNewLabel', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody');
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editNewLabel', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision');
     }
 
     public function chooseArea(int $id): void
@@ -499,14 +506,7 @@ new class extends Component
 
             return;
         }
-        $comment = Comment::create([
-            'issue_id' => $issue->id,
-            'github_node_id' => null,
-            'body' => trim($this->newCommentBody),
-            'is_available' => true,
-            'last_seen_at' => now(),
-        ]);
-        app(EnqueueGitHubPush::class)->handle('create_comment', 'comment', $comment->id, [], 'comment:create:'.$comment->id);
+        app(CreateTodoComment::class)->handle($issue->id, $this->newCommentBody);
         $this->reset('newCommentBody', 'commentError');
     }
 
@@ -518,26 +518,30 @@ new class extends Component
         }
         $this->editingComment = $comment->id;
         $this->editCommentBody = $comment->body;
+        $this->editCommentRevision = $comment->revision;
         $this->reset('commentError');
     }
 
     public function cancelEditComment(): void
     {
-        $this->reset('editingComment', 'editCommentBody', 'commentError');
+        $this->reset('editingComment', 'editCommentBody', 'editCommentRevision', 'commentError');
     }
 
     public function saveComment(): void
     {
         $this->reset('commentError');
         $this->validate(['editCommentBody' => ['required', 'string', 'max:65535']]);
-        $comment = Comment::query()->where('is_available', true)->where('issue_id', $this->selected)->find($this->editingComment);
-        if (! $comment instanceof Comment) {
+        try {
+            app(ReviseTodoComment::class)->handle($this->editingComment, $this->editCommentBody, $this->editCommentRevision);
+        } catch (TodoRecordNotFoundException|TodoRecordUnavailableException) {
             $this->cancelEditComment();
 
             return;
+        } catch (TodoStaleRevisionException) {
+            $this->commentError = 'This comment changed since you started editing it. Refresh and try again.';
+
+            return;
         }
-        $comment->update(['body' => trim($this->editCommentBody)]);
-        app(EnqueueGitHubPush::class)->handle('update_comment', 'comment', $comment->id, [], 'comment:update:'.$comment->id.':'.now()->timestamp);
         $this->cancelEditComment();
     }
 

@@ -60,7 +60,7 @@ class DescribeTodoIssue
             $result['comments'] = [
                 'items' => $paginator->getCollection()->map(fn ($comment): array => [
                     'id' => $comment->id, 'author' => $comment->author_login, 'body' => $comment->body,
-                    'createdAt' => $comment->remote_created_at?->toIso8601String(),
+                    'createdAt' => $comment->remote_created_at?->toIso8601String(), 'revision' => $comment->revision,
                 ])->all(),
                 'page' => $paginator->currentPage(), 'perPage' => $paginator->perPage(),
                 'total' => $paginator->total(), 'lastPage' => $paginator->lastPage(),
