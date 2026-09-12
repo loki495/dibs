@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\ClaimTodoTask;
 use App\Mcp\Tools\CommentOnTodoTask;
+use App\Mcp\Tools\CompleteTodoTaskTool;
 use App\Mcp\Tools\CreateTodoTask;
+use App\Mcp\Tools\DescribeTodoClaimTool;
 use App\Mcp\Tools\DescribeTodoContext;
 use App\Mcp\Tools\DescribeTodoIssue;
 use App\Mcp\Tools\DescribeTodoQueueStatus;
 use App\Mcp\Tools\DescribeTodoServer;
+use App\Mcp\Tools\HeartbeatTodoTask;
 use App\Mcp\Tools\ListTodoTasks;
+use App\Mcp\Tools\ReleaseTodoTask;
 use App\Mcp\Tools\ReviseTodoTask;
 use App\Mcp\Tools\ScaffoldTodoPlan;
 use Laravel\Mcp\Server;
@@ -33,6 +38,11 @@ class TodoServer extends Server
         ScaffoldTodoPlan::class,
         ReviseTodoTask::class,
         CommentOnTodoTask::class,
+        ClaimTodoTask::class,
+        HeartbeatTodoTask::class,
+        ReleaseTodoTask::class,
+        CompleteTodoTaskTool::class,
+        DescribeTodoClaimTool::class,
     ];
 
     protected array $resources = [
