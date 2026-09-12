@@ -35,7 +35,7 @@ Host Composer shortcuts: composer pint, composer phpstan, composer rector, compo
 
 ## Agent handoff
 
-Read CLAUDE.md and [.ai/plans/2026-09-08-foundation/PLAN.md](.ai/plans/2026-09-08-foundation/PLAN.md). STATE.md records verified progress and the next step; RESULT.md records checks. Follow the five-phase order and update state after each step. GitHub remains authoritative; do not seed fake task data or overwrite newer user organization changes.
+Read CLAUDE.md, then GitHub issues #36 (application context), #37 (the authoritative MCP/sync-pivot plan), and #38 (open questions) before coding. This project tracks its own multi-step work in its own GitHub issues rather than the global `.ai/plans/` file-based protocol — GitHub issues plus local SQLite are the source of truth for planning state here. Local SQLite is authoritative once imported; do not seed fake task data or overwrite newer user organization changes.
 
 ## Manual GitHub pull
 
@@ -70,15 +70,16 @@ Task capture uses a Flux modal. It creates in GitHub first, then projects the co
 
 ## Agent integration
 
-Todo’s intended agent interface is a host-local stdio MCP server. It will expose the same task, claim, and checkpoint operations as tools without giving agents a GitHub token. The current Artisan commands below are the recovery and smoke-test interface underneath that future MCP server: list and show read SQLite; comment and complete are GitHub-first writes.
+Todo's agent interface is a host-local stdio MCP server (`App\Mcp\Servers\TodoServer`, started with `php artisan mcp:start todo`), exposing 14 tools — context/read, create/revise/comment, and the full claim lifecycle (`todo_claim`, `todo_heartbeat`, `todo_release`, `todo_complete`, `todo_claim_status`) — without ever giving an agent a GitHub token. `todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete` identify the calling process via `posix_getppid()` automatically; the CLI fallback below needs an explicit `--pid=` since each Artisan invocation is its own short-lived process. The Artisan commands are the recovery and smoke-test interface underneath the MCP server, backed by the same shared Actions:
 
 ```bash
 docker compose exec -T -u www-data app php artisan todo:agent:list
 docker compose exec -T -u www-data app php artisan todo:agent:show 42
-docker compose exec -T -u www-data app php artisan todo:agent:claim 42 --agent=codex --session=work-123
-docker compose exec -T -u www-data app php artisan todo:agent:release 42 --session=work-123
-docker compose exec -T -u www-data app php artisan todo:agent:comment 42 "[CHECKPOINT] Tests passed"
-docker compose exec -T -u www-data app php artisan todo:agent:complete 42
+docker compose exec -T -u www-data app php artisan todo:agent:claim 42 --agent=codex --pid=$$
+docker compose exec -T -u www-data app php artisan todo:agent:heartbeat 42 --pid=$$ --token=TOKEN
+docker compose exec -T -u www-data app php artisan todo:agent:release 42 --pid=$$ --token=TOKEN
+docker compose exec -T -u www-data app php artisan todo:agent:comment 42 "Checkpoint: tests passed"
+docker compose exec -T -u www-data app php artisan todo:agent:complete 42 --pid=$$ --token=TOKEN --summary="Done"
 ```
 
-All commands emit JSON. `list` and `show` read SQLite; `claim` and `release` are local-only; `comment` and `complete` are GitHub-first writes. See `docs/agent-interface.md` for the MCP tool contract, CLI fallback, retries, and future website bindings.
+All commands emit JSON. `list` and `show` read SQLite; `claim`/`heartbeat`/`release`/`complete` are claim-scoped, local-first writes that enqueue a GitHub push where relevant (heartbeats do not); `comment` is a local-first write. See `docs/agent-interface.md` for the full MCP tool contract, CLI fallback, retries, and future website bindings.

@@ -56,7 +56,7 @@ Deferred tables when the corresponding behavior exists:
 
 - mutation_operations: durable outgoing command, target, payload, base remote state, status, attempts, error, request identity. Required before robust asynchronous editing, not for read-only sync.
 - preferences: expanded nodes, selected views, and filters if browser storage is insufficient.
-- agent_sessions / task_claims: local worker identity and expiring task claims; implemented with JSON CLI fallback commands. A local stdio MCP server will expose them as agent tools.
+- agent_sessions / task_claims: local worker identity and expiring task claims; implemented with JSON CLI fallback commands and exposed as MCP tools (`todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete`/`todo_claim_status`, #45).
 - website_bindings: explicit website parent → repository/local checkout metadata, before agents execute project work.
 
 ## Sync scheduling
