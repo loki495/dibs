@@ -1,6 +1,6 @@
 # MCP agent interface
 
-Status: the host-local stdio MCP server foundation is implemented (#41); read/write tools beyond the metadata tool are not yet built (#42-#45). The documented Artisan CLI fallback is implemented. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records (see GitHub issue #37, loki495/Todo, for the full architecture record). GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue (#49) — there is no inbound webhook receiver and no scheduled freshness polling.
+Status: the host-local stdio MCP server (#41) and its full read/write/claim tool surface (#42-#45) are implemented. The documented Artisan CLI fallback is implemented. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records (see GitHub issue #37, loki495/Todo, for the full architecture record). GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue (#49) — there is no inbound webhook receiver and no scheduled freshness polling. Remaining plan work: UI claim/plan visibility (#46), end-to-end verification (#47), and migrating shared workflow docs (#48).
 
 ## Server foundation (#41, 2026-09-12)
 
@@ -26,15 +26,35 @@ The command surface is:
 - `todo:agent:release ISSUE --pid=PID --token=TOKEN` — release a claim. Requires the exact capability token and pid returned by `claim`; nothing else can release another worker's claim.
 - `todo:agent:create` — create locally with Project, Group, parent, labels, and Priority; enqueues the GitHub push.
 - `todo:agent:update ISSUE` — intentional-field patches only; title/body, metadata, and Priority write SQLite and enqueue the push.
-- `todo:agent:comment ISSUE` and `todo:agent:complete ISSUE` — write SQLite and enqueue the corresponding GitHub push. `complete` is currently stale (still calls the old synchronous `CloseGitHubIssue` directly, from before #49's push-queue conversion) — fixing this is part of #45.
+- `todo:agent:comment ISSUE` — write SQLite and enqueue the corresponding GitHub push.
+- `todo:agent:complete ISSUE --pid=PID --token=TOKEN [--summary=TEXT]` — closes a claimed task, enqueues the GitHub push, optionally posts `--summary` as a result comment, and releases the claim. Claim-scoped like `release`/`heartbeat`: only the exact process holding the live claim can complete it (fixed in #45; previously called the old synchronous `CloseGitHubIssue` directly with no claim check at all, a leftover from before #49's push-queue conversion).
 
 Machine-readable JSON is the default output. Human output is opt-in. Commands reject malformed IDs, unavailable local records, and wrong Project-field options before any write.
 
 ## MCP tools
 
-The initial tool names and inputs are `todo_list` (area/group/priority/knowledge filters), `todo_show` (local issue ID), `todo_claim` (issue, agent, pid, minutes — returns a capability token), `todo_heartbeat` (issue, pid, token, minutes), `todo_release` (issue, pid, token), `todo_comment` (issue, body), and `todo_complete` (issue). Future `todo_create` and field-patch `todo_update` tools write SQLite and enqueue a push. A `todo_queue_status` tool exposes pending/failed/needs-attention push-queue counts and per-item detail (#50).
+Registered on `App\Mcp\Servers\TodoServer`, in this order:
 
-Note on `pid`: per #56's research, the MCP protocol itself has no session/process identity a server can read from a tool call — a stdio server's own parent process *is* the connecting client, so once #41 builds the real MCP server it can read that PID directly via `getppid()` without the client needing to supply anything. The CLI fallback has no equivalent (each Artisan invocation is its own short-lived process, not the long-running agent), so it requires an explicit `--pid=` naming the calling agent's own process — the shared Actions underneath verify whichever PID they're given the same way regardless of which surface it came from.
+| Tool | Purpose |
+|---|---|
+| `todo_status` | Server/repository identity and record counts — call first to confirm identity. |
+| `todo_context` | Areas (Projects), Groups, labels, live claims, and push-queue counts — orientation before acting. |
+| `todo_list` | Filtered/paginated task or knowledge listing (area/group/label/parent/state/search/view). |
+| `todo_show` | Full detail for one issue, optionally with paginated comments. |
+| `todo_queue_status` | Pending/failed/needs-attention push-queue counts and per-item detail (#50). |
+| `todo_create` | Create a task, plan, or knowledge record; enqueues the GitHub push. Idempotency-key supported. |
+| `todo_scaffold_plan` | Create a parent plan issue plus its child tasks atomically, in one transaction. |
+| `todo_revise` | Revise an issue's title/body/note with optimistic-concurrency (`revision`) protection; a stale write returns a non-error `{conflict: true, current: ...}` rather than erroring. |
+| `todo_comment` | Add a comment, or edit one (`commentId` + `expectedRevision`) with the same stale-conflict shape as `todo_revise`. |
+| `todo_claim` | Claim a task for the calling process. Returns a `capabilityToken` once, in plaintext. |
+| `todo_heartbeat` | Renew the calling process's own live claim lease. Creates no GitHub comment or push-queue entry. |
+| `todo_release` | Release the calling process's own live claim without completing the task. |
+| `todo_complete` | Close a claimed task, enqueue the push, optionally post a result summary comment, and release the claim. |
+| `todo_claim_status` | Read-only: whether a task has a live claim, and by whom — no capability token exposed. |
+
+Every write tool implements `Laravel\Mcp\Server\Contracts\Errable` and validates its own arguments via `Request::validate()` — confirmed empirically that `laravel/mcp` `1.0.0-beta.1` does not enforce a tool's declared JSON Schema before calling `handle()`, so schema-shaped input alone is not a safety guarantee.
+
+Note on `pid`: per #56's research, the MCP protocol itself has no session/process identity a server can read from a tool call — a stdio server's own parent process *is* the connecting client, so `todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete` read it directly via `posix_getppid()` and never accept it as a tool argument. The CLI fallback has no equivalent (each Artisan invocation is its own short-lived process, not the long-running agent), so it requires an explicit `--pid=` naming the calling agent's own process — the shared Actions underneath verify whichever PID they're given the same way regardless of which surface it came from.
 
 Every tool returns structured JSON with stable local IDs, GitHub URLs when pushed, and push-queue status when relevant. Stdio is local-only; no network listener, browser credential, or MCP tool argument contains a GitHub token.
 
