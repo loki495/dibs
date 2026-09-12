@@ -11,7 +11,7 @@ jobs:
     name: Pint, PHPStan, Rector, Pest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
