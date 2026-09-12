@@ -1,6 +1,6 @@
 <div class="space-y-5">
     <div class="space-y-4">
-        <flux:input {{ $autofocus ?? false ? 'autofocus' : '' }} wire:model="{{ $titleModel }}" label="{{ __('Title') }}" placeholder="{{ __('What needs doing?') }}" />
+        <flux:input :autofocus="$autofocus ?? false" wire:model="{{ $titleModel }}" label="{{ __('Title') }}" placeholder="{{ __('What needs doing?') }}" />
         <flux:textarea wire:model="{{ $bodyModel }}" label="{{ __('Description') }}" rows="5" placeholder="{{ __('Notes, links, context, or checklist') }}" />
     </div>
 
