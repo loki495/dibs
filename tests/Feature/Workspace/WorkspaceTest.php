@@ -491,6 +491,21 @@ it('adds and edits comments locally and enqueues GitHub operations', function ()
     expect(GitHubPushQueueItem::query()->where('operation', 'update_comment')->where('target_id', $comment->id)->count())->toBe(1);
 });
 
+it('refuses to save a comment edit that changed since editing began', function (): void {
+    $issue = Issue::factory()->create();
+    $comment = Comment::factory()->for($issue, 'issue')->create(['body' => 'Original', 'revision' => 1]);
+
+    $component = Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEditComment', $comment->id);
+
+    $comment->update(['body' => 'Changed elsewhere', 'revision' => 2]);
+
+    $component->set('editCommentBody', 'My conflicting edit')->call('saveComment')
+        ->assertSet('commentError', 'This comment changed since you started editing it. Refresh and try again.');
+
+    expect($comment->fresh()->body)->toBe('Changed elsewhere');
+});
+
 it('loads the same contextual fields in task editing as task creation', function (): void {
     $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
     $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);

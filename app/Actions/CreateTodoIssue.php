@@ -102,6 +102,7 @@ class CreateTodoIssue
                     'title' => trim($title),
                     'body' => $body === null || $body === '' ? null : $body,
                     'state' => 'OPEN',
+                    'revision' => 1,
                     'sibling_position' => 0,
                     'is_available' => true,
                     'last_seen_at' => now(),

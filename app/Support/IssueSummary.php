@@ -34,6 +34,7 @@ class IssueSummary
             'area' => $membership?->project instanceof GitHubProject ? ['id' => $membership->project->id, 'title' => $membership->project->title] : null,
             'group' => $membership?->groupOption?->name,
             'priority' => $membership?->priorityOption?->name,
+            'revision' => $issue->revision,
         ];
     }
 }
