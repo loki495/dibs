@@ -1,0 +1,849 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\AddIssueLabels;
+use App\Actions\AddIssueToGitHubProject;
+use App\Actions\BuildIssueTree;
+use App\Actions\ClearProjectItemGroup;
+use App\Actions\ClearProjectItemPriority;
+use App\Actions\CloseGitHubIssue;
+use App\Actions\CreateGitHubComment;
+use App\Actions\CreateGitHubIssue;
+use App\Actions\CreateGitHubLabel;
+use App\Actions\DeleteGitHubProjectItem;
+use App\Actions\DescribeGitHubSync;
+use App\Actions\EnsureGitHubGroupOption;
+use App\Actions\GetIssueDetails;
+use App\Actions\SetIssueLabels;
+use App\Actions\SetIssueParent;
+use App\Actions\SetProjectItemGroup;
+use App\Actions\SetProjectItemPriority;
+use App\Actions\SyncGitHub;
+use App\Actions\TrackGitHubMutation;
+use App\Actions\UpdateGitHubComment;
+use App\Actions\UpdateGitHubIssue;
+use App\Actions\UpdateGitHubProject;
+use App\Models\Comment;
+use App\Models\GitHubProject;
+use App\Models\Issue;
+use App\Models\Label;
+use App\Models\ProjectFieldOption;
+use App\Services\GitHub\GitHubSyncException;
+use Livewire\Attributes\Url;
+use Livewire\Component;
+
+new class extends Component
+{
+    #[Url]
+    public int $area = 0;
+
+    #[Url]
+    public string $view = 'tasks';
+
+    #[Url(as: 'q')]
+    public string $search = '';
+
+    #[Url]
+    public string $state = 'OPEN';
+
+    #[Url]
+    public int $group = 0;
+
+    #[Url]
+    public int $priority = 0;
+
+    #[Url]
+    public bool $rankPriority = false;
+
+    #[Url]
+    public array $labels = [];
+
+    #[Url(as: 'issue')]
+    public int $selected = 0;
+
+    public ?string $refreshMessage = null;
+
+    public string $newTitle = '';
+
+    public string $newBody = '';
+
+    public bool $editingIssue = false;
+
+    public string $editTitle = '';
+
+    public string $editBody = '';
+
+    public ?string $editError = null;
+
+    public int $editArea = 0;
+
+    public int $editGroup = 0;
+
+    public int $editPriority = 0;
+
+    public array $editLabels = [];
+
+    public string $editNewGroup = '';
+
+    public string $editNewLabel = '';
+
+    public int $editParent = 0;
+
+    public string $editParentSearch = '';
+
+    public string $newCommentBody = '';
+
+    public ?string $commentError = null;
+
+    public int $editingComment = 0;
+
+    public string $editCommentBody = '';
+
+    public int $captureArea = 0;
+
+    public int $captureParent = 0;
+
+    public int $captureGroup = 0;
+
+    public int $capturePriority = 0;
+
+    public array $captureLabels = [];
+
+    public string $captureNewGroup = '';
+
+    public string $captureNewLabel = '';
+
+    public string $captureParentSearch = '';
+
+    public bool $captureOpen = false;
+
+    public bool $projectSettingsOpen = false;
+
+    public int $projectSettingsProject = 0;
+
+    public string $projectSettingsTitle = '';
+
+    public string $projectSettingsColor = '';
+
+    public ?string $projectSettingsError = null;
+
+    public ?string $captureError = null;
+
+    public ?string $refreshError = null;
+
+    public function mount(): void
+    {
+        $this->captureArea = $this->area;
+        $this->captureParent = $this->selectedParentId();
+    }
+
+    public function updatedSelected(): void
+    {
+        $this->captureParent = $this->selectedParentId();
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editNewLabel', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody');
+    }
+
+    public function chooseArea(int $id): void
+    {
+        $this->area = $id;
+        $this->captureArea = $id;
+        if ($this->view === 'daily') {
+            $this->view = 'tasks';
+        }
+        $this->group = 0;
+        $this->selected = 0;
+        $this->captureParent = 0;
+    }
+
+    public function chooseMobileNavigation(string $value): void
+    {
+        if ($value === 'daily') {
+            $this->daily();
+
+            return;
+        }
+
+        $this->chooseArea((int) $value);
+    }
+
+    public function daily(): void
+    {
+        $this->reset('area', 'group', 'priority', 'rankPriority', 'labels', 'search', 'selected', 'state', 'captureArea', 'captureParent');
+        $this->view = 'daily';
+    }
+
+    public function clearFilters(): void
+    {
+        $this->reset('search', 'group', 'priority', 'rankPriority', 'labels', 'state');
+    }
+
+    public function toggleLabel(string $name): void
+    {
+        $this->labels = in_array($name, $this->labels, true)
+            ? array_values(array_diff($this->labels, [$name]))
+            : [...$this->labels, $name];
+    }
+
+    public function refreshFromGitHub(): void
+    {
+        $this->reset('refreshMessage', 'refreshError');
+
+        $token = (string) config('github.token');
+        if ($token === '') {
+            $this->refreshError = 'In-app refresh needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+
+            return;
+        }
+
+        try {
+            app(SyncGitHub::class)->handle($token, comments: true);
+            $this->refreshMessage = 'Updated from GitHub just now.';
+        } catch (GitHubSyncException $exception) {
+            $this->refreshError = $exception->getMessage();
+        }
+    }
+
+    public function openCapture(): void
+    {
+        $this->reset('captureError', 'newTitle', 'newBody', 'captureNewGroup', 'captureNewLabel', 'captureParentSearch', 'captureLabels');
+        $this->captureArea = $this->area;
+        $this->captureGroup = $this->group;
+        $this->capturePriority = 0;
+        $this->captureParent = $this->selectedParentId();
+        $this->captureOpen = true;
+    }
+
+    public function openProjectSettings(): void
+    {
+        $project = $this->area > 0 ? GitHubProject::query()->where('is_available', true)->find($this->area) : null;
+        if (! $project instanceof GitHubProject) {
+            return;
+        }
+
+        $this->reset('projectSettingsError');
+        $this->projectSettingsProject = $project->id;
+        $this->projectSettingsTitle = $project->title;
+        $this->projectSettingsColor = strtolower($project->color);
+        $this->projectSettingsOpen = true;
+    }
+
+    public function saveProjectSettings(): void
+    {
+        $this->reset('projectSettingsError');
+        $this->validate([
+            'projectSettingsTitle' => ['required', 'string', 'max:255'],
+            'projectSettingsColor' => ['required', 'string', 'regex:/^[a-fA-F0-9]{6}$/'],
+        ]);
+        $project = GitHubProject::query()->where('is_available', true)->find($this->projectSettingsProject);
+        if (! $project instanceof GitHubProject) {
+            $this->projectSettingsError = 'The selected project is no longer available. Refresh and try again.';
+
+            return;
+        }
+        $token = (string) config('github.token');
+        if ($token === '') {
+            $this->projectSettingsError = 'Project settings need a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+
+            return;
+        }
+
+        try {
+            if (trim($this->projectSettingsTitle) !== $project->title) {
+                $project = app(UpdateGitHubProject::class)->handle($token, $project, $this->projectSettingsTitle);
+            }
+            $project->update(['color' => strtolower($this->projectSettingsColor)]);
+        } catch (GitHubSyncException $exception) {
+            $this->projectSettingsError = $exception->getMessage();
+
+            return;
+        }
+
+        $this->projectSettingsOpen = false;
+    }
+
+    public function updatedCaptureGroup(int $value): void
+    {
+        if ($value !== -1) {
+            $this->captureNewGroup = '';
+        }
+    }
+
+    public function updatedEditGroup(int $value): void
+    {
+        if ($value !== -1) {
+            $this->editNewGroup = '';
+        }
+    }
+
+    public function toggleCaptureLabel(int $id): void
+    {
+        $this->captureLabels = in_array($id, $this->captureLabels, true)
+            ? array_values(array_diff($this->captureLabels, [$id]))
+            : [...$this->captureLabels, $id];
+    }
+
+    public function capture(): void
+    {
+        $this->reset('captureError');
+        $this->validate(['newTitle' => ['required', 'string', 'max:255'], 'newBody' => ['nullable', 'string', 'max:65535'], 'captureNewGroup' => ['nullable', 'string', 'max:50'], 'captureNewLabel' => ['nullable', 'string', 'max:50'], 'captureLabels' => ['array'], 'captureLabels.*' => ['integer']]);
+        $token = (string) config('github.token');
+        if ($token === '') {
+            $this->captureError = 'Task capture needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+
+            return;
+        }
+        $project = $this->captureArea > 0 ? GitHubProject::query()->where('is_available', true)->find($this->captureArea) : null;
+        if ($this->captureArea > 0 && ! $project instanceof GitHubProject) {
+            $this->captureError = 'The selected area is no longer available. Refresh and try again.';
+
+            return;
+        }
+        $parent = $this->captureParent > 0 ? Issue::query()->where('is_available', true)->find($this->captureParent) : null;
+        if ($this->captureParent > 0 && ! $parent instanceof Issue) {
+            $this->captureError = 'The selected parent is no longer available. Refresh and try again.';
+
+            return;
+        }
+        $group = $this->captureGroup > 0 ? ProjectFieldOption::query()->with('field')->find($this->captureGroup) : null;
+        if ($this->captureGroup > 0 && (! $group instanceof ProjectFieldOption || ! $project instanceof GitHubProject || $group->field?->project_id !== $project->id)) {
+            $this->captureError = 'The selected Group is no longer available in this area. Refresh and try again.';
+
+            return;
+        }
+        $priority = $this->capturePriority > 0 ? ProjectFieldOption::query()->with('field')->find($this->capturePriority) : null;
+        if ($this->capturePriority > 0 && (! $priority instanceof ProjectFieldOption || ! $project instanceof GitHubProject || $priority->field?->semantic_key !== 'priority' || $priority->field?->project_id !== $project->id)) {
+            $this->captureError = 'The selected Priority is no longer available in this area. Refresh and try again.';
+
+            return;
+        }
+        $labels = Label::query()->where('is_available', true)->whereIn('id', $this->captureLabels)->get();
+        if ($labels->count() !== count($this->captureLabels) || ($parent instanceof Issue && $labels->contains(fn (Label $label): bool => $label->repository_id !== $parent->repository_id))) {
+            $this->captureError = 'One or more selected labels are no longer available. Refresh and try again.';
+
+            return;
+        }
+        $mutation = app(TrackGitHubMutation::class)->begin('issue.create', null, [
+            'title' => $this->newTitle, 'body' => $this->newBody, 'project_id' => $this->captureArea,
+            'group_id' => $this->captureGroup, 'priority_id' => $this->capturePriority, 'parent_id' => $this->captureParent, 'label_ids' => $this->captureLabels,
+        ]);
+        try {
+            if (trim($this->captureNewGroup) !== '') {
+                if (! $project instanceof GitHubProject) {
+                    throw new GitHubSyncException('Choose an area before creating a Group.');
+                }
+                $group = app(EnsureGitHubGroupOption::class)->handle($token, $project, $this->captureNewGroup);
+            }
+            if (trim($this->captureNewLabel) !== '') {
+                $labels->push(app(CreateGitHubLabel::class)->handle($token, $this->captureNewLabel));
+            }
+            $issue = $this->newBody === ''
+                ? app(CreateGitHubIssue::class)->handle($token, $this->newTitle)
+                : app(CreateGitHubIssue::class)->handle($token, $this->newTitle, $this->newBody);
+        } catch (GitHubSyncException $exception) {
+            app(TrackGitHubMutation::class)->fail($mutation, $exception);
+            $this->captureError = $exception->getMessage();
+
+            return;
+        }
+        $this->reset('newTitle', 'newBody');
+        $this->selected = $issue->id;
+        $placement = null;
+        try {
+            $item = null;
+            if ($project instanceof GitHubProject) {
+                $placement = 'area';
+                $item = app(AddIssueToGitHubProject::class)->handle($token, $issue, $project);
+            }
+            if ($item !== null && $group instanceof ProjectFieldOption) {
+                $placement = 'group';
+                app(SetProjectItemGroup::class)->handle($token, $item, $group);
+            }
+            if ($item !== null && $priority instanceof ProjectFieldOption) {
+                $placement = 'priority';
+                app(SetProjectItemPriority::class)->handle($token, $item, $priority);
+            }
+            if ($labels->isNotEmpty()) {
+                $placement = 'labels';
+                app(AddIssueLabels::class)->handle($token, $issue, $labels->all());
+            }
+            if ($parent instanceof Issue) {
+                $placement = 'parent';
+                app(SetIssueParent::class)->handle($token, $issue, $parent);
+            }
+        } catch (GitHubSyncException $exception) {
+            app(TrackGitHubMutation::class)->fail($mutation, $exception);
+            $this->captureError = match ($placement) {
+                'area' => 'Task was created, but could not be added to '.$project->title.'. '.$exception->getMessage(),
+                'parent' => 'Task was created, but could not be added under '.$parent->title.'. '.$exception->getMessage(),
+                default => 'Task was created, but its organization could not be completed. '.$exception->getMessage(),
+            };
+
+            return;
+        }
+        app(TrackGitHubMutation::class)->confirm($mutation);
+        $this->reset('captureGroup', 'capturePriority', 'captureLabels', 'captureNewGroup', 'captureNewLabel', 'captureParentSearch');
+        $this->captureOpen = false;
+    }
+
+    public function beginEdit(): void
+    {
+        $issue = Issue::query()->where('is_available', true)->with(['labels', 'projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')])->find($this->selected);
+        if (! $issue instanceof Issue) {
+            $this->selected = 0;
+
+            return;
+        }
+        $membership = $issue->projectItems->first();
+        $this->editTitle = $issue->title;
+        $this->editBody = $issue->body ?? '';
+        $this->editArea = $membership?->project_id ?? 0;
+        $this->editGroup = $membership?->group_option_id ?? 0;
+        $this->editPriority = $membership?->priority_option_id ?? 0;
+        $this->editLabels = $issue->labels->where('is_available', true)->pluck('id')->all();
+        $this->editParent = $issue->parent_issue_id ?? 0;
+        $this->reset('editNewGroup', 'editNewLabel', 'editParentSearch', 'editError');
+        $this->editingIssue = true;
+    }
+
+    public function toggleEditLabel(int $id): void
+    {
+        $this->editLabels = in_array($id, $this->editLabels, true)
+            ? array_values(array_diff($this->editLabels, [$id]))
+            : [...$this->editLabels, $id];
+    }
+
+    public function cancelEdit(): void
+    {
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editNewLabel', 'editParent', 'editParentSearch');
+    }
+
+    public function saveIssue(): void
+    {
+        $this->reset('editError');
+        $this->validate(['editTitle' => ['required', 'string', 'max:255'], 'editBody' => ['nullable', 'string', 'max:65535'], 'editNewGroup' => ['nullable', 'string', 'max:50'], 'editNewLabel' => ['nullable', 'string', 'max:50'], 'editLabels' => ['array'], 'editLabels.*' => ['integer']]);
+        $issue = Issue::query()->where('is_available', true)->with(['projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')])->find($this->selected);
+        if (! $issue instanceof Issue) {
+            $this->selected = 0;
+
+            return;
+        }
+        $token = (string) config('github.token');
+        if ($token === '') {
+            $this->editError = 'Editing needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+
+            return;
+        }
+        $project = $this->editArea > 0 ? GitHubProject::query()->where('is_available', true)->find($this->editArea) : null;
+        $parent = $this->editParent > 0 ? Issue::query()->where('is_available', true)->find($this->editParent) : null;
+        $group = $this->editGroup > 0 ? ProjectFieldOption::query()->with('field')->find($this->editGroup) : null;
+        $priority = $this->editPriority > 0 ? ProjectFieldOption::query()->with('field')->find($this->editPriority) : null;
+        $labels = Label::query()->where('is_available', true)->whereIn('id', $this->editLabels)->get();
+        if (($this->editArea > 0 && ! $project instanceof GitHubProject) || ($this->editParent > 0 && ! $parent instanceof Issue) || $labels->count() !== count($this->editLabels)) {
+            $this->editError = 'One or more selected task fields are no longer available. Refresh and try again.';
+
+            return;
+        }
+        if ($group instanceof ProjectFieldOption && (! $project instanceof GitHubProject || $group->field?->project_id !== $project->id)) {
+            $this->editError = 'The selected Group is not available in this Area. Refresh and try again.';
+
+            return;
+        }
+        if ($priority instanceof ProjectFieldOption && (! $project instanceof GitHubProject || $priority->field?->semantic_key !== 'priority' || $priority->field?->project_id !== $project->id)) {
+            $this->editError = 'The selected Priority is not available in this Area. Refresh and try again.';
+
+            return;
+        }
+        $mutation = app(TrackGitHubMutation::class)->begin('issue.edit', $issue, [
+            'title' => $this->editTitle, 'body' => $this->editBody, 'project_id' => $this->editArea,
+            'group_id' => $this->editGroup, 'priority_id' => $this->editPriority, 'parent_id' => $this->editParent, 'label_ids' => $this->editLabels,
+        ]);
+        try {
+            if (trim($this->editNewGroup) !== '') {
+                if (! $project instanceof GitHubProject) {
+                    throw new GitHubSyncException('Choose an area before creating a Group.');
+                }
+                $group = app(EnsureGitHubGroupOption::class)->handle($token, $project, $this->editNewGroup);
+            }
+            if (trim($this->editNewLabel) !== '') {
+                $labels->push(app(CreateGitHubLabel::class)->handle($token, $this->editNewLabel));
+            }
+            app(UpdateGitHubIssue::class)->handle($token, $issue, $this->editTitle, $this->editBody);
+            app(SetIssueLabels::class)->handle($token, $issue, $labels->all());
+            app(SetIssueParent::class)->handle($token, $issue, $parent);
+            $item = null;
+            if ($project instanceof GitHubProject) {
+                $item = $issue->projectItems->firstWhere('project_id', $project->id) ?? app(AddIssueToGitHubProject::class)->handle($token, $issue, $project);
+                foreach ($issue->projectItems->where('project_id', '!==', $project->id) as $obsolete) {
+                    app(DeleteGitHubProjectItem::class)->handle($token, $obsolete);
+                }
+                if ($group instanceof ProjectFieldOption) {
+                    app(SetProjectItemGroup::class)->handle($token, $item, $group);
+                } else {
+                    app(ClearProjectItemGroup::class)->handle($token, $item);
+                }
+                if ($priority instanceof ProjectFieldOption) {
+                    app(SetProjectItemPriority::class)->handle($token, $item, $priority);
+                } else {
+                    app(ClearProjectItemPriority::class)->handle($token, $item);
+                }
+            } else {
+                foreach ($issue->projectItems as $obsolete) {
+                    app(DeleteGitHubProjectItem::class)->handle($token, $obsolete);
+                }
+            }
+        } catch (GitHubSyncException $exception) {
+            app(TrackGitHubMutation::class)->fail($mutation, $exception);
+            $this->editError = $exception->getMessage();
+
+            return;
+        }
+        app(TrackGitHubMutation::class)->confirm($mutation);
+        $this->cancelEdit();
+    }
+
+    public function closeIssue(): void
+    {
+        $this->reset('editError');
+        $issue = Issue::query()->where('is_available', true)->find($this->selected);
+        if (! $issue instanceof Issue) {
+            $this->selected = 0;
+
+            return;
+        }
+        $token = (string) config('github.token');
+        if ($token === '') {
+            $this->editError = 'Completing a task needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+
+            return;
+        }
+        try {
+            app(CloseGitHubIssue::class)->handle($token, $issue);
+        } catch (GitHubSyncException $exception) {
+            $this->editError = $exception->getMessage();
+        }
+    }
+
+    public function addComment(): void
+    {
+        $this->reset('commentError');
+        $this->validate(['newCommentBody' => ['required', 'string', 'max:65535']]);
+        $issue = Issue::query()->where('is_available', true)->find($this->selected);
+        if (! $issue instanceof Issue) {
+            $this->selected = 0;
+
+            return;
+        }
+        $token = (string) config('github.token');
+        if ($token === '') {
+            $this->commentError = 'Adding a comment needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+
+            return;
+        }
+        try {
+            app(CreateGitHubComment::class)->handle($token, $issue, $this->newCommentBody);
+        } catch (GitHubSyncException $exception) {
+            $this->commentError = $exception->getMessage();
+
+            return;
+        }
+        $this->reset('newCommentBody', 'commentError');
+    }
+
+    public function beginEditComment(int $id): void
+    {
+        $comment = Comment::query()->where('is_available', true)->where('issue_id', $this->selected)->find($id);
+        if (! $comment instanceof Comment) {
+            return;
+        }
+        $this->editingComment = $comment->id;
+        $this->editCommentBody = $comment->body;
+        $this->reset('commentError');
+    }
+
+    public function cancelEditComment(): void
+    {
+        $this->reset('editingComment', 'editCommentBody', 'commentError');
+    }
+
+    public function saveComment(): void
+    {
+        $this->reset('commentError');
+        $this->validate(['editCommentBody' => ['required', 'string', 'max:65535']]);
+        $comment = Comment::query()->where('is_available', true)->where('issue_id', $this->selected)->find($this->editingComment);
+        if (! $comment instanceof Comment) {
+            $this->cancelEditComment();
+
+            return;
+        }
+        $token = (string) config('github.token');
+        if ($token === '') {
+            $this->commentError = 'Editing a comment needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
+
+            return;
+        }
+        try {
+            app(UpdateGitHubComment::class)->handle($token, $comment, $this->editCommentBody);
+        } catch (GitHubSyncException $exception) {
+            $this->commentError = $exception->getMessage();
+
+            return;
+        }
+        $this->cancelEditComment();
+    }
+
+    private function selectedParentId(): int
+    {
+        if ($this->selected === 0) {
+            return 0;
+        }
+
+        return Issue::query()->where('is_available', true)->whereKey($this->selected)->value('id') ?? 0;
+    }
+
+    public function with(): array
+    {
+        $captureParents = Issue::query()->where('is_available', true)
+            ->when($this->captureParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
+                $matches->where('title', 'like', '%'.$this->captureParentSearch.'%')
+                    ->orWhere('github_number', $this->captureParentSearch);
+            }))->orderBy('title')->limit(100)->get(['id', 'github_number', 'title']);
+        $captureGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->captureArea))->orderBy('position')->get();
+        $capturePriorities = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'priority')->where('project_id', $this->captureArea))->orderBy('position')->get();
+        $editParents = Issue::query()->where('is_available', true)->whereKeyNot($this->selected)
+            ->when($this->editParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
+                $matches->where('title', 'like', '%'.$this->editParentSearch.'%')->orWhere('github_number', $this->editParentSearch);
+            }))->orderBy('title')->limit(100)->get(['id', 'github_number', 'title']);
+        $editGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->editArea))->orderBy('position')->get();
+        $editPriorities = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'priority')->where('project_id', $this->editArea))->orderBy('position')->get();
+        $labelOptions = Label::query()->where('is_available', true)->orderBy('name')->get(['id', 'name']);
+
+        return [...app(BuildIssueTree::class)->handle($this->area, $this->view, $this->search, $this->state, $this->group, $this->labels, $this->priority, $this->rankPriority),
+            'detail' => $this->selected > 0 ? app(GetIssueDetails::class)->handle($this->selected) : null,
+            'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $labelOptions,
+            'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $labelOptions,
+            'freshness' => app(DescribeGitHubSync::class)->handle()];
+    }
+}; ?>
+
+<div class="pb-8 pt-3" x-data="todoFreshness({ endpoint: @js(route('freshness')), version: @js($freshness['version']) })" x-init="init()" @keydown.escape.window="$wire.set('selected', 0)">
+    <header class="mb-8 flex items-center justify-between gap-4">
+        <a href="{{ route('workspace') }}" class="flex items-center gap-3 text-xl font-semibold tracking-tight">
+            <span class="flex size-10 items-center justify-center rounded-xl bg-teal-800 text-white"><flux:icon.check class="size-6" /></span>
+            {{ config('app.name') }}
+        </a>
+        <div class="flex items-center gap-2">
+            <flux:button type="button" wire:click="refreshFromGitHub" wire:loading.attr="disabled" wire:target="refreshFromGitHub" variant="ghost" size="sm">
+                <span wire:loading.remove wire:target="refreshFromGitHub">{{ __('Refresh from GitHub') }}</span>
+                <span wire:loading wire:target="refreshFromGitHub">{{ __('Refreshing…') }}</span>
+            </flux:button>
+            <form method="POST" action="{{ route('logout') }}">@csrf<flux:button type="submit" variant="ghost" size="sm">{{ __('Sign out') }}</flux:button></form>
+        </div>
+    </header>
+    @if ($refreshMessage)<p role="status" class="mb-6 rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:bg-teal-950 dark:text-teal-100">{{ $refreshMessage }}</p>@endif
+    @if ($refreshError)<p role="alert" class="mb-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $refreshError }}</p>@endif
+    <div class="grid items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-10">
+            <div class="mb-4 md:hidden">
+                <flux:select wire:change="chooseMobileNavigation($event.target.value)" aria-label="{{ __('Workspace area') }}">
+                    <option value="daily" @selected($view === 'daily')>{{ __('Daily') }} · {{ $dailyCount }}</option>
+                    <option value="0" @selected($area === 0 && $view !== 'daily')>{{ __('All projects') }} · {{ $taskCount }}</option>
+                    @foreach ($projects as $project)<option value="{{ $project->id }}" @selected($area === $project->id && $view !== 'daily')>{{ $project->title }} · {{ $areaCounts[$project->id] ?? 0 }}</option>@endforeach
+                </flux:select>
+            </div>
+        <aside class="hidden lg:sticky lg:top-6 md:block">
+            <nav aria-label="{{ __('Workspace navigation') }}" class="space-y-1">
+                <div class="flex gap-1">
+                    <button wire:click="daily" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200' => $view === 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $view !== 'daily'])>
+                        <flux:icon.sun class="size-4" /><span>{{ __('Daily') }}</span><span class="text-xs tabular-nums">{{ $dailyCount }}</span>
+                    </button>
+                    <button wire:click="chooseArea(0)" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-slate-200/70 dark:bg-slate-800' => $area === 0 && $view !== 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== 0 || $view === 'daily'])>
+                        <flux:icon.squares-2x2 class="size-4" /><span>{{ __('All') }}</span><span class="text-xs tabular-nums">{{ $taskCount }}</span>
+                    </button>
+                </div>
+                <p class="px-3 pb-2 pt-5 text-xs font-medium uppercase tracking-widest text-slate-500">{{ __('Areas') }}</p>
+                <div class="grid grid-cols-2 gap-1 lg:grid-cols-1">
+                    @foreach ($projects as $project)
+                        <button wire:click="chooseArea({{ $project->id }})" @class(['flex min-h-9 items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm', 'bg-slate-200/70 font-medium dark:bg-slate-800' => $area === $project->id, 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== $project->id]) aria-pressed="{{ $area === $project->id ? 'true' : 'false' }}">
+                            <span class="size-1.5 shrink-0 rounded-full" style="background-color: #{{ $project->color }}"></span><span class="flex-1">{{ $project->title }}</span><span class="text-xs tabular-nums text-slate-500">{{ $areaCounts[$project->id] ?? 0 }}</span>
+                        </button>
+                    @endforeach
+                </div>
+            </nav>
+            <div class="mt-6 border-t border-slate-200 px-3 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800" aria-live="polite">
+                @if ($sync?->last_success_at)
+                    <span class="mr-1 inline-block size-1.5 rounded-full bg-teal-600"></span>{{ __('Last synced :time', ['time' => $sync->last_success_at->diffForHumans()]) }}
+                @else
+                    {{ __('Waiting for the first import') }}
+                @endif
+                @if ($freshness['isPending'])<p class="mt-2 text-teal-700 dark:text-teal-400">{{ __('Reconciling GitHub in the background…') }}</p>
+                @elseif ($freshness['retryAfter'])<p class="mt-2 text-amber-700 dark:text-amber-400">{{ __('GitHub asked us to wait before retrying. Showing the last saved data.') }}</p>
+                @elseif ($freshness['lastError'])<p class="mt-2 text-amber-700 dark:text-amber-400">{{ __('Sync needs attention. Showing the last saved data.') }}</p>
+                @elseif ($freshness['isStale'])<p class="mt-2 text-amber-700 dark:text-amber-400">{{ __('This saved view is stale. A refresh will be requested.') }}</p>@endif
+                <p x-cloak x-show="offline" class="mt-2 text-amber-700 dark:text-amber-400">{{ __('Connection to Todo needs attention. Showing the last saved data.') }}</p>
+            </div>
+        </aside>
+
+        <section class="min-w-0">
+            <div class="mb-6">
+                <p class="mb-2 text-xs font-medium uppercase tracking-widest text-teal-700 dark:text-teal-400">{{ $view === 'daily' ? \Illuminate\Support\Carbon::parse($today)->format('l, F j') : __('Your workspace') }}</p>
+                <div class="flex flex-wrap items-center gap-3"><h1 class="text-3xl font-semibold tracking-tight">{{ $view === 'daily' ? __('Daily list') : ($projects->firstWhere('id', $area)?->title ?? __('All areas')) }}</h1>@if ($area > 0 && $view !== 'daily')<flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth">{{ __('Project settings') }}</flux:button>@endif</div>
+                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ $view === 'daily' ? __('Planned work, deadlines, and your picks for today.') : __('A little structure for everything on your mind.') }}</p>
+            </div>
+            <div class="mb-5">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex rounded-lg border border-slate-200 p-1 dark:border-slate-800" aria-label="{{ __('Content type') }}">
+                        @foreach (['tasks' => __('Tasks'), 'knowledge' => __('Knowledge')] as $mode => $title)
+                            <button wire:click="$set('view', '{{ $mode }}')" @class(['min-h-9 rounded-md px-3 text-sm sm:px-4', 'bg-white font-medium shadow-sm dark:bg-slate-800' => $view === $mode, 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100' => $view !== $mode]) aria-pressed="{{ $view === $mode ? 'true' : 'false' }}">{{ $title }}</button>
+                        @endforeach
+                    </div>
+                    <flux:button type="button" wire:click="openCapture" icon="plus" size="sm" class="bg-teal-700! text-white! hover:bg-teal-600! dark:bg-teal-600! dark:hover:bg-teal-500!">{{ __('Add task') }}</flux:button>
+                </div>
+                <div class="mt-3"><flux:input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="Search titles, notes, or #number" aria-label="Search tasks" /></div>
+            </div>
+            <div class="mb-4 space-y-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <flux:select wire:model.live="group" class="min-w-44" aria-label="Website or group">
+                        <option value="0">{{ __('All groups') }}</option>
+                        @foreach ($groups as $id => $name)<option value="{{ $id }}">{{ $name }}</option>@endforeach
+                    </flux:select>
+                    @if ($view !== 'daily')
+                        <flux:select wire:model.live="state" class="w-32" aria-label="Issue state"><option value="OPEN">{{ __('Open') }}</option><option value="CLOSED">{{ __('Closed') }}</option><option value="ALL">{{ __('All states') }}</option></flux:select>
+                    @endif
+                    <flux:select wire:model.live="priority" class="w-28" aria-label="{{ __('Priority') }}"><option value="0">{{ __('Any priority') }}</option>@foreach (range(1, 5) as $value)<option value="{{ $value }}">{{ __('P:value', ['value' => $value]) }}</option>@endforeach</flux:select>
+                    <button type="button" wire:click="$toggle('rankPriority')" @class(['min-h-9 rounded-lg border px-3 text-sm', 'border-violet-500 bg-violet-100 text-violet-900 dark:border-violet-500 dark:bg-violet-950 dark:text-violet-100' => $rankPriority, 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! $rankPriority]) aria-pressed="{{ $rankPriority ? 'true' : 'false' }}">{{ __('Rank priority') }}</button>
+                </div>
+                @if ($labelOptions)
+                    <div x-data="{ open: false }" class="flex items-start gap-1.5" aria-label="{{ __('Labels') }}">
+                        <div class="flex max-h-8 flex-1 flex-nowrap gap-1.5 overflow-hidden md:max-h-none md:flex-wrap" :class="open ? 'max-h-40 flex-wrap' : ''">
+                            @foreach ($labelOptions as $name)
+                                <button wire:click="toggleLabel(@js($name))" @class(['shrink-0 rounded-full border px-2 py-1 text-xs transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => in_array($name, $labels, true), 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! in_array($name, $labels, true)]) aria-pressed="{{ in_array($name, $labels, true) ? 'true' : 'false' }}">{{ $name }}</button>
+                            @endforeach
+                        </div>
+                        <button type="button" @click="open = ! open" class="flex size-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 md:hidden dark:hover:bg-slate-800" :aria-expanded="open.toString()" aria-label="{{ __('Show all labels') }}"><flux:icon.chevron-right class="size-4 transition-transform" ::class="open ? 'rotate-90' : ''" /></button>
+                    </div>
+                @endif
+            </div>
+            <div wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$rankPriority.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 text-xs text-slate-500 dark:border-slate-800">
+                    <span aria-live="polite">{{ trans_choice(':count result|:count results', $matchCount, ['count' => $matchCount]) }}{{ $filtered ? ' · '.__('with parent context') : '' }}</span>
+                    <button @click="toggleAll(@js(array_column($rows, 'id')))" x-text="allOpen(@js(array_column($rows, 'id'))) ? @js(__('Collapse all')) : @js(__('Expand all'))" class="min-h-10 px-2 hover:text-slate-900 dark:hover:text-slate-100"></button>
+                </div>
+                <div role="list" aria-label="{{ __('Task hierarchy') }}">
+                    @forelse ($rows as $row)
+                        @if ($row['virtual'])
+                            <div wire:key="group-row-{{ $row['id'] }}" data-group-root="{{ substr($row['id'], 6) }}" role="listitem" x-show="visible(@js($row['ancestors']))" x-cloak class="border-b border-slate-100 last:border-0 dark:border-slate-800/70">
+                                <div data-project-color="{{ $row['projectColor'] }}" role="button" tabindex="0" @click="toggle(@js($row['id']))" @keydown.enter.prevent="toggle(@js($row['id']))" @keydown.space.prevent="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" class="flex min-h-14 cursor-pointer items-center gap-1 py-2 pr-3" style="padding-left: calc(0.5rem + {{ min($row['depth'], 5) }} * 1rem); @if ($row['projectColor']) background-color: color-mix(in srgb, {{ $row['projectColor'] }} 10%, transparent); @else background-color: rgb(248 250 252 / .7); @endif">
+                                    <button @click.stop="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" aria-label="{{ __('Expand or collapse :title', ['title' => $row['title']]) }}" class="flex size-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><flux:icon.chevron-right class="size-4 transition-transform" ::class="isOpen(@js($row['id'])) ? 'rotate-90' : ''" /></button>
+                                    <span class="flex h-10 w-5 shrink-0 items-center text-teal-700 dark:text-teal-400"><flux:icon.folder class="size-4" /></span>
+                                    <div class="min-w-0 flex-1 py-1"><span class="block break-words text-sm font-semibold leading-6">{{ $row['title'] }}</span>@if ($area === 0 && $row['projectTitle'])<span class="mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium" style="border-color: {{ $row['projectColor'] }}; background-color: color-mix(in srgb, {{ $row['projectColor'] }} 14%, transparent); color: {{ $row['projectColor'] }}">{{ $row['projectTitle'] }}</span>@endif</div>
+                                    <span class="text-xs text-slate-500">{{ __('Group') }}</span>
+                                </div>
+                            </div>
+                        @else
+                            <div wire:key="issue-row-{{ $row['id'] }}" data-issue-number="{{ $row['number'] }}" role="listitem" x-show="visible(@js($row['ancestors']))" x-cloak class="border-b border-slate-100 last:border-0 dark:border-slate-800/70">
+                                <div data-project-color="{{ $row['projectColor'] }}" class="flex min-h-16 items-start gap-1 py-2 pr-3 hover:brightness-[.98] dark:hover:brightness-125" style="padding-left: calc(0.5rem + {{ min($row['depth'], 5) }} * 1rem); @if ($row['projectColor']) background-color: color-mix(in srgb, {{ $row['projectColor'] }} {{ min(9 + ($row['depth'] * 5), 34) }}%, transparent); @endif">
+                                    @if ($row['hasChildren'])
+                                        <button @click="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" aria-label="{{ __('Expand or collapse :title', ['title' => $row['title']]) }}" class="flex size-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><flux:icon.chevron-right class="size-4 transition-transform" ::class="isOpen(@js($row['id'])) ? 'rotate-90' : ''" /></button>
+                                    @else <span class="w-10 shrink-0" aria-hidden="true"></span> @endif
+                                    <button wire:click="$set('selected', {{ $row['id'] }})" class="min-w-0 flex-1 py-2 text-left" aria-label="{{ __('Open issue :number: :title', ['number' => $row['number'], 'title' => $row['title']]) }}">
+                                        <span @class(['block break-words text-sm leading-6', 'font-medium' => $row['container'], 'text-slate-500 dark:text-slate-400' => $row['context'], 'line-through opacity-70' => $row['state'] === 'CLOSED'])>{{ $row['title'] }}</span>
+                                        <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                            <span>#{{ $row['number'] }}</span>
+                                            @if ($row['outsideArea'])<span>{{ __('Parent from another area') }}</span>@elseif ($row['context'])<span>{{ __('Parent context') }}</span>@endif
+                                            @if ($row['unresolvedParent'])<span>{{ __('Parent not imported') }}</span>@endif
+                                            @foreach ($row['memberships'] as $membership)
+                                                @if ($area === 0 && $row['depth'] === 0 && $membership['groupId'] === null)<span class="rounded-full border px-1.5 py-0.5 font-medium" style="border-color: {{ $membership['color'] }}; background-color: color-mix(in srgb, {{ $membership['color'] }} 14%, transparent); color: {{ $membership['color'] }}">{{ $membership['title'] }}</span>@elseif ($area === 0)<span>{{ $membership['title'] }}</span>@endif
+                                                @if ($membership['priority'])<span class="rounded-full border border-violet-300 bg-violet-50 px-1.5 py-0.5 font-medium text-violet-800 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-200">{{ __('P:priority', ['priority' => $membership['priority']]) }}</span>@endif
+                                                @if ($membership['due'])<span @class(['text-amber-700 dark:text-amber-400' => $membership['due'] <= $today])>{{ __('Due :date', ['date' => $membership['due']]) }}</span>@endif
+                                                @if ($membership['planned'])<span>{{ __('Planned :date', ['date' => $membership['planned']]) }}</span>@endif
+                                            @endforeach
+                                            @foreach ($row['labelData'] as $badge)<span data-label="{{ $badge['name'] }}" class="rounded border px-1.5" @if ($badge['color']) style="border-color: {{ $badge['color'] }}; background-color: color-mix(in srgb, {{ $badge['color'] }} 16%, transparent); color: {{ $badge['color'] }}" @endif>{{ $badge['name'] }}</span>@endforeach
+                                        </span>
+                                    </button>
+                                </div>
+                            </div>
+                        @endif
+                    @empty
+                        <div class="px-6 py-14 text-center">
+                            <flux:icon.inbox class="mx-auto mb-4 size-8 text-slate-400" />
+                            <h2 class="font-medium">{{ $projects->isEmpty() ? __('Your workspace is ready') : __('Nothing here just yet') }}</h2>
+                            <p class="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-500">{{ $view === 'daily' ? __('No open tasks are planned, due, or picked for today.') : __('Try another area or clear your filters to find more.') }}</p>
+                            @if ($filtered || $state !== 'OPEN')<flux:button wire:click="clearFilters" variant="ghost" size="sm" class="mt-4">{{ __('Clear filters') }}</flux:button>@endif
+                        </div>
+                    @endforelse
+                </div>
+            </div>
+        </section>
+    </div>
+    @if ($detail)
+        @include('partials.issue-detail', ['detail' => $detail])
+    @endif
+    <flux:modal wire:model="captureOpen" name="capture-task" class="w-full max-w-2xl">
+        <form wire:submit="capture" class="space-y-5">
+            <div>
+                <flux:heading size="lg">{{ __('Add task') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('Choose only the context this task needs.') }}</flux:text>
+            </div>
+            @include('partials.task-form-fields', ['autofocus' => true, 'titleModel' => 'newTitle', 'bodyModel' => 'newBody', 'areaModel' => 'captureArea', 'groupModel' => 'captureGroup', 'newGroupModel' => 'captureNewGroup', 'parentSearchModel' => 'captureParentSearch', 'parentModel' => 'captureParent', 'toggleLabelMethod' => 'toggleCaptureLabel', 'selectedLabelsForForm' => $captureLabels, 'labelOptionsForForm' => $captureLabelOptions, 'groupsForForm' => $captureGroups, 'priorityModel' => 'capturePriority', 'prioritiesForForm' => $capturePriorities, 'parentsForForm' => $captureParents, 'newLabelModel' => 'captureNewLabel', 'groupValueForForm' => $captureGroup])
+            @error('newTitle')<flux:text class="text-amber-700 dark:text-amber-400">{{ $message }}</flux:text>@enderror
+            @if ($captureError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $captureError }}</p>@endif
+            <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit" wire:loading.attr="disabled" wire:target="capture"><span wire:loading.remove wire:target="capture">{{ __('Create task') }}</span><span wire:loading wire:target="capture">{{ __('Saving…') }}</span></flux:button></div>
+        </form>
+    </flux:modal>
+    <flux:modal wire:model="projectSettingsOpen" name="project-settings" class="w-full max-w-lg">
+        <form wire:submit="saveProjectSettings" class="space-y-5">
+            <div>
+                <flux:heading size="lg">{{ __('Project settings') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('The name is saved in GitHub. The color is used by Todo to make this area easier to scan.') }}</flux:text>
+            </div>
+            <flux:input wire:model="projectSettingsTitle" label="{{ __('Project name') }}" autocomplete="off" />
+            <div class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+                <div class="flex items-end gap-3"><span class="size-10 shrink-0 rounded-xl border border-black/10" style="background-color: #{{ $projectSettingsColor ?: '0f766e' }}"></span><div class="min-w-0 flex-1"><flux:input wire:model="projectSettingsColor" label="{{ __('Color') }}" prefix="#" maxlength="6" autocomplete="off" /><flux:text class="mt-1">{{ __('Six hexadecimal characters, such as 0f766e.') }}</flux:text></div></div>
+            </div>
+            @error('projectSettingsTitle')<flux:text class="text-amber-700 dark:text-amber-400">{{ $message }}</flux:text>@enderror
+            @error('projectSettingsColor')<flux:text class="text-amber-700 dark:text-amber-400">{{ __('Use a six-character hexadecimal color.') }}</flux:text>@enderror
+            @if ($projectSettingsError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $projectSettingsError }}</p>@endif
+            <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit" wire:loading.attr="disabled" wire:target="saveProjectSettings"><span wire:loading.remove wire:target="saveProjectSettings">{{ __('Save project') }}</span><span wire:loading wire:target="saveProjectSettings">{{ __('Saving…') }}</span></flux:button></div>
+        </form>
+    </flux:modal>
+</div>
+
