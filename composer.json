@@ -73,7 +73,8 @@
         "pest": "docker compose exec -T -e PAO_FORCE=true -u www-data app vendor/bin/pest",
         "pint": "docker compose exec -T -e PAO_FORCE=true -u www-data app vendor/bin/pint --format=agent",
         "phpstan": "docker compose exec -T -e PAO_FORCE=true -u www-data app vendor/bin/phpstan analyse --memory-limit=512M",
-        "rector": "docker compose exec -T -e PAO_FORCE=true -u www-data app vendor/bin/rector process --dry-run"
+        "rector": "docker compose exec -T -e PAO_FORCE=true -u www-data app vendor/bin/rector process --dry-run",
+        "artisan": "docker compose exec -T -e PAO_FORCE=true -u www-data app php artisan"
     },
     "extra": {
         "laravel": {
