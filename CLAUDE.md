@@ -175,3 +175,5 @@ Inbound GitHub webhooks and automatic freshness polling have been removed as of 
 ## Local agent interface and MCP
 
 The canonical interface is a host-local stdio MCP server. Its tools must delegate to typed GitHub-first Actions and use the local claim/session records; never pass GitHub credentials through tool arguments or output. `todo:agent:list`, `show`, `claim`, `release`, `comment`, and `complete` remain JSON CLI fallback commands for recovery and smoke testing. `docs/agent-interface.md` is the detailed MCP/CLI contract.
+
+The server foundation is implemented (#41): `App\Mcp\Servers\TodoServer`, registered in `routes/ai.php`, started with `php artisan mcp:start todo`. It runs on `laravel/mcp` `1.0.0-beta.1` specifically — not the stable `0.9.x` line — since only that pre-release targets the stateless MCP 2026-07-28 revision the claim/capability-token design assumes; the stable line still has the old `initialize` handshake. A `todo_status` tool reports server/repository identity for smoke-testing. Read/write task and knowledge tools (#42-#45) are not yet built.

@@ -1,6 +1,15 @@
 # MCP agent interface
 
-Status: MCP is the canonical planned interface; the documented Artisan CLI fallback is implemented. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records (see GitHub issue #37, loki495/Todo, for the full architecture record). GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue (#49) — there is no inbound webhook receiver and no scheduled freshness polling.
+Status: the host-local stdio MCP server foundation is implemented (#41); read/write tools beyond the metadata tool are not yet built (#42-#45). The documented Artisan CLI fallback is implemented. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records (see GitHub issue #37, loki495/Todo, for the full architecture record). GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue (#49) — there is no inbound webhook receiver and no scheduled freshness polling.
+
+## Server foundation (#41, 2026-09-12)
+
+`laravel/mcp` is pinned to `1.0.0-beta.1`, not the stable `0.9.x` line composer would otherwise resolve. Confirmed by reading the package's own release notes and source: the stable line still implements the old stateful protocol (an `initialize` handshake, server-side session state), while only `1.0.0-beta.1` (per its changelog: "Serve only MCP 2026-07-28 and drop the initialize handshake") targets the stateless 2026-07-28 revision that #37/#56's entire claim/capability-token design assumes. Building the server foundation against the stable line would have meant implementing the wrong protocol version. Also confirmed while reading the package source: `laravel/mcp` has no dependency on the separate official `modelcontextprotocol/php-sdk` — it implements the protocol independently, resolving one of #38's open research questions.
+
+- Server: `App\Mcp\Servers\TodoServer`, registered in `routes/ai.php` via `Mcp::local('todo', TodoServer::class)`. Start it with `php artisan mcp:start todo`.
+- `todo_status` (`App\Mcp\Tools\DescribeTodoServer`, backed by the `App\Actions\DescribeTodoServer` Action) is the health/metadata tool: app name/environment, configured GitHub owner/repository, whether it's been imported locally, and issue/label/project counts. Never returns `GITHUB_TOKEN` or any other secret.
+- Verified end to end against the real stdio process (`php artisan mcp:start todo` piped raw JSON-RPC): a `tools/call` for `todo_status` returns real data in one clean JSON-RPC line with empty stderr; `tools/list` correctly lists it; an unknown method, a request missing the required `_meta` protocol-version member, and malformed JSON each return a structured JSON-RPC error (`-32601`, `-32602`, `-32700`) without crashing the process or corrupting the stream.
+- **Known gap:** `laravel/mcp` `1.0.0-beta.1` has no `notifications/cancelled` handling at all — a cancellation notification is silently dropped as an unrecognized notification (harmless, but not real cancellation). Acceptable for now since every current tool handler is a short synchronous DB read; revisit if a long-running tool is ever added (#38).
 
 ## Boundary
 
