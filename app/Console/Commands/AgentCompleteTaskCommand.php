@@ -4,34 +4,34 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Actions\CloseGitHubIssue;
-use App\Models\Issue;
-use App\Services\GitHub\GitHubSyncException;
+use App\Actions\CompleteTodoTask;
+use App\Exceptions\TodoRecordUnavailableException;
+use DomainException;
 use Illuminate\Console\Command;
 
 class AgentCompleteTaskCommand extends Command
 {
-    protected $signature = 'todo:agent:complete {issue : Local Todo issue ID}';
+    protected $signature = 'todo:agent:complete {issue : Local Todo issue ID} {--pid= : The calling agent\'s own OS process ID} {--token= : The capability token returned by todo:agent:claim} {--summary= : An optional result summary, posted as a comment}';
 
-    protected $description = 'Complete a task through GitHub for a host-local agent as JSON';
+    protected $description = 'Complete a claimed host-local agent task as JSON';
 
-    public function handle(CloseGitHubIssue $close): int
+    public function handle(CompleteTodoTask $complete): int
     {
-        $issue = Issue::query()->where('is_available', true)->find($this->argument('issue'));
-        $token = (string) config('github.token');
-        if (! $issue instanceof Issue || $token === '') {
-            $this->error('A current local Todo issue and server-side GitHub token are required.');
+        $pid = $this->option('pid');
+        $token = (string) $this->option('token');
+        if ($pid === null || ! ctype_digit($pid) || $token === '') {
+            $this->error('The calling agent\'s own numeric --pid and the claim\'s --token are required.');
 
             return self::FAILURE;
         }
         try {
-            $result = $close->handle($token, $issue);
-        } catch (GitHubSyncException $exception) {
+            $issue = $complete->handle((int) $this->argument('issue'), (int) $pid, $token, $this->option('summary'));
+        } catch (DomainException|TodoRecordUnavailableException $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
         }
-        $this->line(json_encode(['issue_id' => $result->id, 'state' => $result->state, 'url' => $result->url], JSON_PRETTY_PRINT));
+        $this->line(json_encode(['issue_id' => $issue->id, 'state' => $issue->state, 'url' => $issue->url], JSON_PRETTY_PRINT));
 
         return self::SUCCESS;
     }

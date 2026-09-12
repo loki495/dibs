@@ -2,26 +2,44 @@
 
 declare(strict_types=1);
 
-use App\Actions\CloseGitHubIssue;
+use App\Actions\ClaimTaskForAgent;
+use App\Models\Comment;
+use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
-use App\Services\GitHub\GitHubSyncException;
 
-it('completes a task through the shared GitHub-first Action', function (): void {
-    config(['github.token' => 'test-token']);
-    $issue = Issue::factory()->create();
-    $action = Mockery::mock(CloseGitHubIssue::class);
-    $action->shouldReceive('handle')->once()->with('test-token', Mockery::on(fn (Issue $candidate): bool => $candidate->is($issue)))->andReturn($issue);
-    app()->instance(CloseGitHubIssue::class, $action);
+it('completes a claimed task through the CLI as JSON', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+    $result = app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
 
-    $this->artisan('todo:agent:complete', ['issue' => $issue->id])->expectsOutputToContain('issue_id')->assertSuccessful();
+    $this->artisan('todo:agent:complete', [
+        'issue' => $issue->id,
+        '--pid' => (string) getmypid(),
+        '--token' => $result['capability_token'],
+        '--summary' => 'Shipped it.',
+    ])->expectsOutputToContain('issue_id')->assertSuccessful();
+
+    expect($issue->fresh()->state)->toBe('CLOSED')
+        ->and(GitHubPushQueueItem::query()->where('operation', 'close_issue')->exists())->toBeTrue()
+        ->and(Comment::query()->where('issue_id', $issue->id)->sole()->body)->toBe('**Completed:** Shipped it.');
 });
 
-it('reports a failed completion without crashing', function (): void {
-    config(['github.token' => 'test-token']);
-    $issue = Issue::factory()->create();
-    $action = Mockery::mock(CloseGitHubIssue::class);
-    $action->shouldReceive('handle')->once()->andThrow(new GitHubSyncException('GitHub unavailable'));
-    app()->instance(CloseGitHubIssue::class, $action);
+it('refuses completion without the matching capability token', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
 
-    $this->artisan('todo:agent:complete', ['issue' => $issue->id])->expectsOutput('GitHub unavailable')->assertFailed();
+    $this->artisan('todo:agent:complete', [
+        'issue' => $issue->id,
+        '--pid' => (string) getmypid(),
+        '--token' => 'wrong-token',
+    ])->expectsOutput('No live claim for this task matches that capability token and process.')->assertFailed();
+
+    expect($issue->fresh()->state)->toBe('OPEN');
+});
+
+it('rejects completion without a numeric --pid or --token', function (): void {
+    $issue = Issue::factory()->create();
+
+    $this->artisan('todo:agent:complete', ['issue' => $issue->id])
+        ->expectsOutputToContain('numeric --pid')
+        ->assertFailed();
 });
