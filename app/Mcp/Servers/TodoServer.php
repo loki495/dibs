@@ -16,6 +16,7 @@ use App\Mcp\Tools\DescribeTodoServer;
 use App\Mcp\Tools\HeartbeatTodoTask;
 use App\Mcp\Tools\ListTodoTasks;
 use App\Mcp\Tools\ReleaseTodoTask;
+use App\Mcp\Tools\ReportBugTool;
 use App\Mcp\Tools\ReviseTodoTask;
 use App\Mcp\Tools\ScaffoldTodoPlan;
 use Laravel\Mcp\Server;
@@ -43,6 +44,7 @@ class TodoServer extends Server
         ReleaseTodoTask::class,
         CompleteTodoTaskTool::class,
         DescribeTodoClaimTool::class,
+        ReportBugTool::class,
     ];
 
     protected array $resources = [
