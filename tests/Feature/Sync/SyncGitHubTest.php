@@ -24,7 +24,7 @@ it('preserves a successful snapshot and records a failed fetch with backoff', fu
 });
 
 it('does not fetch while another sync owns the lock', function (): void {
-    $lock = Cache::lock('github:loki495/Todo', 900);
+    $lock = Cache::lock('github:'.config('github.owner').'/'.config('github.repository'), 900);
     $lock->get();
     $fetch = Mockery::mock(FetchGitHubSnapshot::class);
     $fetch->shouldNotReceive('handle');
