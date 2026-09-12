@@ -2,18 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Actions\AddIssueToGitHubProject;
-use App\Actions\CloseGitHubIssue;
-use App\Actions\CreateGitHubComment;
 use App\Actions\CreateGitHubIssue;
 use App\Actions\GetIssueDetails;
-use App\Actions\SetIssueParent;
 use App\Actions\SyncGitHub;
-use App\Actions\UpdateGitHubComment;
-use App\Actions\UpdateGitHubIssue;
 use App\Actions\UpdateGitHubProject;
 use App\Models\Comment;
 use App\Models\GitHubProject;
+use App\Models\GitHubPushQueueItem;
+use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectField;
@@ -21,6 +17,7 @@ use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Models\User;
 use App\Services\GitHub\GitHubSyncException;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 
 it('browses an area and opens the selected issue without network access', function (): void {
@@ -93,33 +90,31 @@ it('keeps the cached workspace visible when a refresh fails', function (): void 
         ->assertSee('GitHub HTTP 429; check access or retry later.');
 });
 
-it('quickly captures a task through GitHub and selects its local projection', function (): void {
-    config(['github.token' => 'test-token']);
-    $issue = Issue::factory()->create(['title' => 'Capture this']);
-    $create = Mockery::mock(CreateGitHubIssue::class);
-    $create->shouldReceive('handle')->once()->with('test-token', 'Capture this')->andReturn($issue);
-    app()->instance(CreateGitHubIssue::class, $create);
+it('quickly captures a task locally without calling GitHub', function (): void {
+    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Http::fake();
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('newTitle', 'Capture this')
         ->call('capture')
         ->assertSet('newTitle', '')
         ->assertSet('captureError', null)
-        ->assertSet('selected', $issue->id);
+        ->assertSet('captureOpen', false);
+
+    expect(Issue::count())->toBe(1);
+    expect(GitHubPushQueueItem::where('operation', 'create_issue')->count())->toBe(1);
+    Http::assertNothingSent();
 });
 
-it('keeps a quick-capture draft and explains GitHub write errors', function (): void {
-    config(['github.token' => 'test-token']);
-    $create = Mockery::mock(CreateGitHubIssue::class);
-    $create->shouldReceive('handle')->once()->with('test-token', 'Capture this')->andThrow(new GitHubSyncException('GitHub is temporarily unavailable.'));
-    app()->instance(CreateGitHubIssue::class, $create);
+it('keeps a quick-capture draft when the repository is not available locally', function (): void {
+    Http::fake();
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('newTitle', 'Capture this')
         ->call('capture')
         ->assertSet('newTitle', 'Capture this')
-        ->assertSet('captureError', 'GitHub is temporarily unavailable.')
-        ->assertSee('GitHub is temporarily unavailable.');
+        ->assertSet('captureError', 'The repository is not configured or not available locally. Refresh and try again.')
+        ->assertSee('The repository is not configured or not available locally.');
 });
 
 it('requires a title before quick capture', function (): void {
@@ -128,43 +123,38 @@ it('requires a title before quick capture', function (): void {
         ->assertHasErrors(['newTitle' => 'required']);
 });
 
-it('places a quick-captured task in its selected area', function (): void {
-    config(['github.token' => 'test-token']);
-    $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
-    $issue = Issue::factory()->create(['title' => 'Capture this']);
-    $create = Mockery::mock(CreateGitHubIssue::class);
-    $create->shouldReceive('handle')->once()->with('test-token', 'Capture this')->andReturn($issue);
-    $add = Mockery::mock(AddIssueToGitHubProject::class);
-    $add->shouldReceive('handle')->once()->with('test-token', $issue, Mockery::on(fn (GitHubProject $area): bool => $area->is($project)));
-    app()->instance(CreateGitHubIssue::class, $create);
-    app()->instance(AddIssueToGitHubProject::class, $add);
+it('places a quick-captured task in its selected area locally', function (): void {
+    $project = GitHubProject::factory()->create(['title' => 'Personal Projects', 'github_node_id' => 'P_test']);
+    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Http::fake();
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('captureArea', $project->id)
         ->set('newTitle', 'Capture this')
         ->call('capture')
-        ->assertSet('captureError', null)
-        ->assertSet('selected', $issue->id);
+        ->assertSet('captureError', null);
+
+    expect(Issue::count())->toBe(1);
+    $issue = Issue::first();
+    expect(ProjectItem::where('project_id', $project->id)->where('issue_id', $issue->id)->count())->toBe(1);
+    expect(GitHubPushQueueItem::where('operation', 'add_project_membership')->count())->toBe(1);
+    Http::assertNothingSent();
 });
 
-it('keeps no duplicate-prone quick-capture draft after the issue succeeds but area placement fails', function (): void {
-    config(['github.token' => 'test-token']);
-    $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
-    $issue = Issue::factory()->create(['title' => 'Capture this']);
-    $create = Mockery::mock(CreateGitHubIssue::class);
-    $create->shouldReceive('handle')->once()->with('test-token', 'Capture this')->andReturn($issue);
-    $add = Mockery::mock(AddIssueToGitHubProject::class);
-    $add->shouldReceive('handle')->once()->with('test-token', $issue, Mockery::any())->andThrow(new GitHubSyncException('GitHub is temporarily unavailable.'));
-    app()->instance(CreateGitHubIssue::class, $create);
-    app()->instance(AddIssueToGitHubProject::class, $add);
+it('retains a quick-capture draft when the selected area becomes unavailable during capture', function (): void {
+    $project = GitHubProject::factory()->create(['title' => 'Personal Projects', 'is_available' => false]);
+    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Http::fake();
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('captureArea', $project->id)
         ->set('newTitle', 'Capture this')
         ->call('capture')
-        ->assertSet('newTitle', '')
-        ->assertSet('selected', $issue->id)
-        ->assertSet('captureError', 'Task was created, but could not be added to Personal Projects. GitHub is temporarily unavailable.');
+        ->assertSet('newTitle', 'Capture this')
+        ->assertSet('captureError', 'The selected area is no longer available. Refresh and try again.');
+
+    expect(Issue::count())->toBe(0);
+    expect(GitHubPushQueueItem::count())->toBe(0);
 });
 
 it('retains a quick-capture draft when its selected area is no longer available', function (): void {
@@ -182,47 +172,45 @@ it('retains a quick-capture draft when its selected area is no longer available'
 });
 
 it('uses a selected organizational parent as the default for quick capture', function (): void {
-    config(['github.token' => 'test-token']);
     $parent = Issue::factory()->create(['title' => 'Career']);
     $label = Label::factory()->for($parent->repository, 'repository')->create(['name' => 'parent']);
     $parent->labels()->attach($label);
-    $child = Issue::factory()->for($parent->repository, 'repository')->create(['title' => 'Capture this']);
-    $create = Mockery::mock(CreateGitHubIssue::class);
-    $create->shouldReceive('handle')->once()->with('test-token', 'Capture this')->andReturn($child);
-    $setParent = Mockery::mock(SetIssueParent::class);
-    $setParent->shouldReceive('handle')->once()->with('test-token', $child, Mockery::on(fn (Issue $candidate): bool => $candidate->is($parent)));
-    app()->instance(CreateGitHubIssue::class, $create);
-    app()->instance(SetIssueParent::class, $setParent);
+    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Http::fake();
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('selected', $parent->id)
         ->assertSet('captureParent', $parent->id)
         ->set('newTitle', 'Capture this')
         ->call('capture')
-        ->assertSet('captureError', null)
-        ->assertSet('selected', $child->id);
+        ->assertSet('captureError', null);
+
+    expect(Issue::count())->toBe(2);
+    $child = Issue::where('title', 'Capture this')->first();
+    expect($child->parent_issue_id)->toBe($parent->id);
+    expect(GitHubPushQueueItem::where('operation', 'set_issue_parent')->count())->toBe(1);
+    Http::assertNothingSent();
 });
 
-it('preserves the created issue without retrying its title when parent placement fails', function (): void {
-    config(['github.token' => 'test-token']);
+it('creates an issue with a parent relationship set locally', function (): void {
     $parent = Issue::factory()->create(['title' => 'Career']);
     $label = Label::factory()->for($parent->repository, 'repository')->create(['name' => 'parent']);
     $parent->labels()->attach($label);
-    $child = Issue::factory()->for($parent->repository, 'repository')->create(['title' => 'Capture this']);
-    $create = Mockery::mock(CreateGitHubIssue::class);
-    $create->shouldReceive('handle')->once()->with('test-token', 'Capture this')->andReturn($child);
-    $setParent = Mockery::mock(SetIssueParent::class);
-    $setParent->shouldReceive('handle')->once()->with('test-token', $child, Mockery::any())->andThrow(new GitHubSyncException('GitHub is temporarily unavailable.'));
-    app()->instance(CreateGitHubIssue::class, $create);
-    app()->instance(SetIssueParent::class, $setParent);
+    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Http::fake();
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('captureParent', $parent->id)
         ->set('newTitle', 'Capture this')
         ->call('capture')
         ->assertSet('newTitle', '')
-        ->assertSet('selected', $child->id)
-        ->assertSet('captureError', 'Task was created, but could not be added under Career. GitHub is temporarily unavailable.');
+        ->assertSet('captureError', null);
+
+    expect(Issue::count())->toBe(2);
+    $child = Issue::where('title', 'Capture this')->first();
+    expect($child->parent_issue_id)->toBe($parent->id);
+    expect($child->sibling_position)->toBe(1);
+    expect(GitHubPushQueueItem::where('operation', 'set_issue_parent')->count())->toBe(1);
 });
 
 it('shows Groups as area roots and hides the virtual root when filtering by that Group', function (): void {
@@ -253,6 +241,20 @@ it('toggles compact label filters without hiding unlabelled selections by defaul
         ->assertSee('Other task');
 });
 
+it('renders an actual Title field in both the capture and edit forms, not just a bindable property', function (): void {
+    // Regression test: a bare {{ }} expression inside a <flux:input> tag (used to conditionally add
+    // `autofocus`) silently broke Blade's component-tag compiler, so the tag printed as literal dead
+    // text instead of rendering an input — invisible to tests that only ->set() the property, since
+    // that works regardless of whether the field is actually rendered on the page.
+    $issue = Issue::factory()->create();
+
+    $component = Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('openCapture')->assertSeeHtml('wire:model="newTitle"')->assertDontSeeHtml('<flux:input');
+
+    $component->call('cancelEdit')->set('selected', $issue->id)->call('beginEdit')
+        ->assertSeeHtml('wire:model="editTitle"')->assertDontSeeHtml('<flux:input');
+});
+
 it('opens task capture with the current Project and Group preselected', function (): void {
     $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
     $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
@@ -265,47 +267,162 @@ it('opens task capture with the current Project and Group preselected', function
         ->set('captureGroup', -1)->assertSee('New Group');
 });
 
-it('sends a capture description to GitHub with the new task', function (): void {
-    config(['github.token' => 'test-token']);
-    $issue = Issue::factory()->create(['title' => 'Capture this', 'body' => 'Useful context']);
-    $create = Mockery::mock(CreateGitHubIssue::class);
-    $create->shouldReceive('handle')->once()->with('test-token', 'Capture this', 'Useful context')->andReturn($issue);
-    app()->instance(CreateGitHubIssue::class, $create);
+it('captures a task with a description without calling GitHub', function (): void {
+    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Http::fake();
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('newTitle', 'Capture this')->set('newBody', 'Useful context')->call('capture')
-        ->assertSet('newTitle', '')->assertSet('newBody', '')->assertSet('selected', $issue->id);
+        ->assertSet('newTitle', '')->assertSet('newBody', '')->assertSet('captureOpen', false);
+
+    expect(Issue::count())->toBe(1);
+    $issue = Issue::first();
+    expect($issue->body)->toBe('Useful context');
+    Http::assertNothingSent();
 });
 
-it('edits a selected task title and description after GitHub confirms the update', function (): void {
-    config(['github.token' => 'test-token']);
-    $issue = Issue::factory()->create(['title' => 'Old title', 'body' => 'Old notes']);
-    $update = Mockery::mock(UpdateGitHubIssue::class);
-    $update->shouldReceive('handle')->once()->with('test-token', Mockery::on(fn (Issue $candidate): bool => $candidate->is($issue)), 'New title', 'New notes')
-        ->andReturnUsing(function () use ($issue): Issue {
-            $issue->update(['title' => 'New title', 'body' => 'New notes']);
-
-            return $issue->refresh();
-        });
-    app()->instance(UpdateGitHubIssue::class, $update);
+it('edits a selected task title and description locally without calling GitHub', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $issue = Issue::factory()->for($repository, 'repository')->create(['title' => 'Old title', 'body' => 'Old notes']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
         ->call('beginEdit')->assertSet('editingIssue', true)->assertSet('editTitle', 'Old title')->assertSet('editBody', 'Old notes')
         ->set('editTitle', 'New title')->set('editBody', 'New notes')->call('saveIssue')
         ->assertSet('editingIssue', false)->assertSet('editError', null)->assertSee('New title')->assertSee('New notes');
+
+    expect($issue->refresh())->title->toBe('New title')->body->toBe('New notes');
+    expect(GitHubPushQueueItem::query()->where('operation', 'update_issue_body')->where('target_id', $issue->id)->count())->toBe(1);
 });
 
-it('keeps an edit draft and explains a GitHub update failure', function (): void {
-    config(['github.token' => 'test-token']);
-    $issue = Issue::factory()->create(['title' => 'Old title']);
-    $update = Mockery::mock(UpdateGitHubIssue::class);
-    $update->shouldReceive('handle')->once()->andThrow(new GitHubSyncException('GitHub is temporarily unavailable.'));
-    app()->instance(UpdateGitHubIssue::class, $update);
+it('keeps the edit form open with an error instead of silently discarding the edit when a new Group has no Area', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $issue = Issue::factory()->for($repository, 'repository')->create(['title' => 'Old title']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
-        ->call('beginEdit')->set('editTitle', 'New title')->set('editBody', 'New notes')->call('saveIssue')
-        ->assertSet('editingIssue', true)->assertSet('editTitle', 'New title')->assertSet('editBody', 'New notes')
-        ->assertSet('editError', 'GitHub is temporarily unavailable.');
+        ->call('beginEdit')->set('editTitle', 'Should not save')->set('editNewGroup', 'New Group')->call('saveIssue')
+        ->assertSet('editingIssue', true)->assertSet('editError', 'Choose an area before creating a Group.');
+
+    expect($issue->refresh()->title)->toBe('Old title');
+    expect(GitHubPushQueueItem::query()->count())->toBe(0);
+});
+
+it('replaces task labels locally and enqueues the add/remove diff, not a full resync', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $issue = Issue::factory()->for($repository, 'repository')->create();
+    $kept = Label::factory()->for($repository, 'repository')->create(['name' => 'keep']);
+    $removed = Label::factory()->for($repository, 'repository')->create(['name' => 'drop']);
+    $added = Label::factory()->for($repository, 'repository')->create(['name' => 'new']);
+    $issue->labels()->attach([$kept->id, $removed->id]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->set('editLabels', [$kept->id, $added->id])->call('saveIssue')
+        ->assertSet('editingIssue', false);
+
+    expect($issue->labels()->pluck('labels.id')->sort()->values()->all())->toBe(collect([$kept->id, $added->id])->sort()->values()->all());
+    $enqueued = GitHubPushQueueItem::query()->where('operation', 'set_issue_labels')->where('target_id', $issue->id)->sole();
+    expect($enqueued->payload)->toBe(['add_label_ids' => [$added->id], 'remove_label_ids' => [$removed->id]]);
+});
+
+it('sets a new parent on an existing task and enqueues it', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $parent = Issue::factory()->for($repository, 'repository')->create();
+    $issue = Issue::factory()->for($repository, 'repository')->create(['parent_issue_id' => null]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->set('editParent', $parent->id)->call('saveIssue');
+
+    expect($issue->refresh()->parent_issue_id)->toBe($parent->id);
+    $enqueued = GitHubPushQueueItem::query()->where('operation', 'set_issue_parent')->where('target_id', $issue->id)->sole();
+    expect($enqueued->payload)->toBe(['parent_issue_id' => $parent->id]);
+});
+
+it('removes a previously pushed parent and enqueues its removal with the parent GitHub id', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $parent = Issue::factory()->for($repository, 'repository')->create(['github_node_id' => 'I_parent']);
+    $issue = Issue::factory()->for($repository, 'repository')->create(['parent_issue_id' => $parent->id, 'github_parent_node_id' => 'I_parent']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->set('editParent', 0)->call('saveIssue');
+
+    expect($issue->refresh())->parent_issue_id->toBeNull()->github_parent_node_id->toBeNull();
+    $enqueued = GitHubPushQueueItem::query()->where('operation', 'remove_issue_parent')->where('target_id', $issue->id)->sole();
+    expect($enqueued->payload)->toBe(['parent_github_node_id' => 'I_parent']);
+});
+
+it('removes an unpushed parent locally without enqueueing a remote removal', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $parent = Issue::factory()->for($repository, 'repository')->create(['github_node_id' => null]);
+    $issue = Issue::factory()->for($repository, 'repository')->create(['parent_issue_id' => $parent->id, 'github_parent_node_id' => null]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->set('editParent', 0)->call('saveIssue');
+
+    expect($issue->refresh()->parent_issue_id)->toBeNull();
+    expect(GitHubPushQueueItem::query()->where('operation', 'remove_issue_parent')->count())->toBe(0);
+});
+
+it('moves a task to a different Project, deleting the previously pushed membership and adding the new one', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $issue = Issue::factory()->for($repository, 'repository')->create();
+    $oldProject = GitHubProject::factory()->create();
+    $newProject = GitHubProject::factory()->create();
+    $oldItem = ProjectItem::factory()->for($oldProject, 'project')->for($issue, 'issue')->create(['github_node_id' => 'PVTI_old']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->set('editArea', $newProject->id)->call('saveIssue');
+
+    expect(ProjectItem::query()->where('project_id', $newProject->id)->where('issue_id', $issue->id)->exists())->toBeTrue();
+    $deleteEnqueued = GitHubPushQueueItem::query()->where('operation', 'delete_project_item')->where('target_id', $oldItem->id)->sole();
+    $newItem = ProjectItem::query()->where('project_id', $newProject->id)->where('issue_id', $issue->id)->sole();
+    $addEnqueued = GitHubPushQueueItem::query()->where('operation', 'add_project_membership')->where('target_id', $newItem->id)->sole();
+    expect($deleteEnqueued)->not->toBeNull()->and($addEnqueued)->not->toBeNull();
+});
+
+it('moves a task off a Project that was never pushed, without enqueueing a remote deletion', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $issue = Issue::factory()->for($repository, 'repository')->create();
+    $oldProject = GitHubProject::factory()->create();
+    $oldItem = ProjectItem::factory()->for($oldProject, 'project')->for($issue, 'issue')->create(['github_node_id' => null]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->set('editArea', 0)->call('saveIssue');
+
+    expect($oldItem->refresh()->is_available)->toBeFalse();
+    expect(GitHubPushQueueItem::query()->where('operation', 'delete_project_item')->count())->toBe(0);
+});
+
+it('sets and then clears a Group on an existing Project membership', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $issue = Issue::factory()->for($repository, 'repository')->create();
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create(['github_node_id' => 'PVTI_1', 'group_option_id' => null]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->set('editArea', $project->id)->set('editGroup', $group->id)->call('saveIssue');
+
+    expect($item->refresh()->group_option_id)->toBe($group->id);
+    expect(GitHubPushQueueItem::query()->where('operation', 'set_project_item_group')->where('target_id', $item->id)->count())->toBe(1);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->set('editGroup', 0)->call('saveIssue');
+
+    expect($item->refresh()->group_option_id)->toBeNull();
+    expect(GitHubPushQueueItem::query()->where('operation', 'clear_project_item_group')->where('target_id', $item->id)->count())->toBe(1);
+});
+
+it('resets editing when the issue becomes unavailable during edit', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $issue = Issue::factory()->for($repository, 'repository')->create(['title' => 'Old title', 'is_available' => true]);
+
+    $component = Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')->assertSet('editingIssue', true);
+
+    $issue->update(['is_available' => false]);
+
+    $component->call('saveIssue')
+        ->assertSet('editingIssue', false)->assertSet('selected', 0);
 });
 
 it('saves a project name in GitHub and its display color locally', function (): void {
@@ -349,43 +466,32 @@ it('switches the mobile workspace dropdown between Daily and an area', function 
         ->call('chooseMobileNavigation', (string) $project->id)->assertSet('view', 'tasks')->assertSet('area', $project->id);
 });
 
-it('closes a selected task from its detail drawer after GitHub confirms it', function (): void {
-    config(['github.token' => 'test-token']);
+it('closes a selected task locally and enqueues the GitHub close operation', function (): void {
     $issue = Issue::factory()->create(['state' => 'OPEN']);
-    $close = Mockery::mock(CloseGitHubIssue::class);
-    $close->shouldReceive('handle')->once()->with('test-token', Mockery::on(fn (Issue $candidate): bool => $candidate->is($issue)))
-        ->andReturnUsing(function () use ($issue): Issue {
-            $issue->update(['state' => 'CLOSED']);
-
-            return $issue->refresh();
-        });
-    app()->instance(CloseGitHubIssue::class, $close);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
         ->assertSee('Mark done')->call('closeIssue')->assertDontSee('Mark done');
+
+    expect($issue->refresh())->state->toBe('CLOSED');
+    expect(GitHubPushQueueItem::query()->where('operation', 'close_issue')->where('target_id', $issue->id)->count())->toBe(1);
 });
 
-it('adds and edits comments through the selected task drawer', function (): void {
-    config(['github.token' => 'test-token']);
+it('adds and edits comments locally and enqueues GitHub operations', function (): void {
     $issue = Issue::factory()->create();
     $comment = Comment::factory()->for($issue, 'issue')->create(['body' => 'Old comment']);
-    $create = Mockery::mock(CreateGitHubComment::class);
-    $create->shouldReceive('handle')->once()->with('test-token', Mockery::on(fn (Issue $candidate): bool => $candidate->is($issue)), 'New comment')
-        ->andReturn(Comment::factory()->for($issue, 'issue')->create(['body' => 'New comment']));
-    $update = Mockery::mock(UpdateGitHubComment::class);
-    $update->shouldReceive('handle')->once()->with('test-token', Mockery::on(fn (Comment $candidate): bool => $candidate->is($comment)), 'Edited comment')
-        ->andReturnUsing(function () use ($comment): Comment {
-            $comment->update(['body' => 'Edited comment']);
-
-            return $comment->refresh();
-        });
-    app()->instance(CreateGitHubComment::class, $create);
-    app()->instance(UpdateGitHubComment::class, $update);
 
     $component = Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
-        ->set('newCommentBody', 'New comment')->call('addComment')->assertSet('newCommentBody', '')->assertSee('New comment')
+        ->set('newCommentBody', 'New comment')->call('addComment')->assertSet('newCommentBody', '')->assertSee('New comment');
+
+    $newComment = Comment::query()->where('issue_id', $issue->id)->where('body', 'New comment')->firstOrFail();
+    expect(GitHubPushQueueItem::query()->where('operation', 'create_comment')->where('target_id', $newComment->id)->count())->toBe(1);
+
+    $component
         ->call('beginEditComment', $comment->id)->assertSet('editingComment', $comment->id)->assertSet('editCommentBody', 'Old comment')
         ->set('editCommentBody', 'Edited comment')->call('saveComment')->assertSet('editingComment', 0)->assertSee('Edited comment');
+
+    expect($comment->refresh())->body->toBe('Edited comment');
+    expect(GitHubPushQueueItem::query()->where('operation', 'update_comment')->where('target_id', $comment->id)->count())->toBe(1);
 });
 
 it('loads the same contextual fields in task editing as task creation', function (): void {

@@ -31,6 +31,11 @@ class ApplyGitHubSnapshot
             ]);
             $labels = [];
             foreach ($snapshot['labels'] as $remoteLabel) {
+                if (! is_string($remoteLabel['id'] ?? null) || $remoteLabel['id'] === '') {
+                    // labels.github_node_id is nullable to allow a local-first pending row (#49); a remote
+                    // label must still always carry a real id, so this is enforced here rather than by the column.
+                    throw new GitHubSyncException('GitHub returned a label without an id; snapshot was not applied.');
+                }
                 $label = Label::query()->updateOrCreate(['github_node_id' => $remoteLabel['id']], [
                     'repository_id' => $repo->id, 'name' => $remoteLabel['name'], 'color' => $remoteLabel['color'],
                     'description' => $remoteLabel['description'], ...$stamp,
@@ -57,6 +62,11 @@ class ApplyGitHubSnapshot
                 $issues[$remoteIssue['id']] = $issue;
                 if (isset($remoteIssue['comments'])) {
                     foreach ($remoteIssue['comments'] as $comment) {
+                        if (! is_string($comment['id'] ?? null) || $comment['id'] === '') {
+                            // comments.github_node_id is nullable to allow a local-first pending comment (#49);
+                            // a remote comment must still always carry a real id, enforced here instead.
+                            throw new GitHubSyncException('GitHub returned a comment without an id; snapshot was not applied.');
+                        }
                         Comment::query()->updateOrCreate(['github_node_id' => $comment['id']], [
                             'issue_id' => $issue->id, 'body' => $comment['body'], 'author_login' => $comment['author']['login'] ?? null,
                             'url' => $comment['url'], 'remote_created_at' => $comment['createdAt'], 'remote_updated_at' => $comment['updatedAt'], ...$stamp,
@@ -107,6 +117,11 @@ class ApplyGitHubSnapshot
             $field->fill(['project_id' => $project->id, 'name' => $remoteField['name'], 'data_type' => $remoteField['dataType'], 'configuration_json' => $remoteField, ...$stamp])->save();
             $fields[$remoteField['id']] = $field;
             foreach ($remoteField['options'] ?? [] as $position => $remoteOption) {
+                if (! is_string($remoteOption['id'] ?? null) || $remoteOption['id'] === '') {
+                    // project_field_options.github_option_id is nullable to allow a local-first pending Group
+                    // option (#49); a remote option must still always carry a real id, enforced here instead.
+                    throw new GitHubSyncException('GitHub returned a Project field option without an id; snapshot was not applied.');
+                }
                 $option = ProjectFieldOption::query()->updateOrCreate(['project_field_id' => $field->id, 'github_option_id' => $remoteOption['id']], [
                     'name' => $remoteOption['name'], 'color' => $remoteOption['color'], 'position' => $position,
                 ]);
@@ -126,6 +141,11 @@ class ApplyGitHubSnapshot
                 } elseif (in_array($semantic, ['status', 'group', 'priority'], true)) {
                     $values[$semantic.'_option_id'] = $options[$fieldId][$value['optionId'] ?? ''] ?? null;
                 }
+            }
+            if (! is_string($item['id'] ?? null) || $item['id'] === '') {
+                // project_items.github_node_id is nullable to allow a local-first pending row (#49); a
+                // remote item must still always carry a real id, so this is enforced here rather than by the column.
+                throw new GitHubSyncException('GitHub returned a Project item without an id; snapshot was not applied.');
             }
             $contentId = $item['content']['id'] ?? '';
             $issueId = $issues[$contentId]->id ?? null;
