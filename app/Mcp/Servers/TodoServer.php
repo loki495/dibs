@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\CommentOnTodoTask;
 use App\Mcp\Tools\CreateTodoTask;
 use App\Mcp\Tools\DescribeTodoContext;
 use App\Mcp\Tools\DescribeTodoIssue;
@@ -31,6 +32,7 @@ class TodoServer extends Server
         CreateTodoTask::class,
         ScaffoldTodoPlan::class,
         ReviseTodoTask::class,
+        CommentOnTodoTask::class,
     ];
 
     protected array $resources = [
