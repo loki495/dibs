@@ -1,6 +1,6 @@
 # Initial architecture proposal
 
-Status: foundation and manual import implemented; webhook receiver tested but activation pending. Laravel 13, Livewire 4 SFC, PHP 8.5, SQLite and private LAN access are settled. See the foundation PLAN.md and STATE.md for authoritative progress; later sections remain architectural guidance.
+Status: foundation and manual import implemented. Laravel 13, Livewire 4 SFC, PHP 8.5, SQLite and private LAN access are settled. GitHub issue #37 (loki495/Todo) is the authoritative current plan and architecture record — this file's later sections are historical design proposal, partially superseded by the sync-authority pivot described below and in #37.
 
 ## Stack recommendation
 
@@ -15,11 +15,13 @@ Status: foundation and manual import implemented; webhook receiver tested but ac
 
 Livewire components/controllers and Artisan commands delegate business logic to typed Actions. Actions use a GitHub service for external calls. Queue jobs orchestrate the same actions. No business logic hidden in a Blade component or queue handler.
 
-## Authority and local data
+## Authority and local data (superseded 2026-09-11 — see #37)
 
-GitHub remains authoritative for issues, labels, parent links, Project memberships, and Project fields. SQLite is a rebuildable read model of that data. The browser reads SQLite, not GitHub directly.
+Local SQLite is now authoritative for issues, comments, labels, parent links, Project memberships, Project fields, plans, tasks, and knowledge records. GitHub is an asynchronous, mostly-read-only mirror reached through a durable outbound push queue (#49) rather than a live sync source — there are no inbound webhooks and no scheduled freshness polling. The browser reads SQLite; it never reads GitHub directly, and SQLite is no longer "rebuildable from GitHub alone," since it can hold local writes GitHub hasn't received yet.
 
-Local-only preferences, future pending operations, session claims, and repository/checkout configuration are NOT disposable cache. Keep them distinguishable from replicated data and back them up if introduced. Never call the entire database disposable once it holds those records.
+Manual pull (the existing importer) remains for initial setup, disaster recovery, and bringing a second instance in sync — a read path only, and it must not overwrite unpushed local changes.
+
+Local-only preferences, pending push-queue operations, session claims, and repository/checkout configuration are NOT disposable cache — this was already true and matters more now that SQLite holds writes not yet confirmed in GitHub. Keep them distinguishable from mirrored data and back them up.
 
 Use local integer primary keys and unique GitHub node IDs on mirrored entities. Issue numbers are only unique within a repository. Display titles and field names are mutable; never use them as identity.
 
@@ -59,6 +61,8 @@ Deferred tables when the corresponding behavior exists:
 
 ## Sync scheduling
 
+(Historical — describes the inbound webhook/polling design that #37/#49 replace with an outbound push queue. Retained for design-rationale context; do not implement inbound polling/webhooks per this section.)
+
 The page can poll OUR SERVER about every 3–5 seconds while visible. That endpoint queries the local read model or lightweight sync revision, not the GitHub API. Stop/suspend hidden-page work; preserve client tree state across refreshes. Do not re-render an entire large tree merely because a timer fired.
 
 A shared, locked sync process decides whether GitHub is stale. Proposed starting interval: 30–60 seconds while at least one client is active, configurable. Refresh on page load when stale and after a successful app mutation. Provide an explicit Refresh button and last successful sync/status indicator.
@@ -74,6 +78,8 @@ Apply network results in short local transactions after network I/O. Never hold 
 State distinctions matter: closed issue, removed Project membership, deleted issue, and inaccessible issue are different. Preserve last-known data with an explicit unavailable/stale indication until absence is confirmed in the relevant scope. Do not automatically write cached state back to GitHub during an import.
 
 ## Writes: next slice after read-only sync
+
+(Superseded by the local-authoritative push-queue model in #37/#49 — a write commits to SQLite immediately as the confirmed result and enqueues the GitHub push; a GitHub-side conflict surfaces at push time as a `needs_attention` queue item, not as a pre-write blocking check. The principles below — one Action per intent, explicit pending/failed state, reconciling before retrying an ambiguous outcome — still apply, just against the push queue instead of a synchronous GitHub call.)
 
 One Action per intent (rename issue, complete issue, assign parent, change planned date), shared by UI and agent entry points. Prefer field-level changes over replacing an entire stale remote object.
 

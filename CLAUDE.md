@@ -4,7 +4,7 @@
 
 This is Andres's private global task and knowledge system for current work, personal projects, career development, learning, and everyday tasks.
 
-**Current: Phase 5 has begun with GitHub-first quick capture. Continue task editing and the shared local-agent interface using the agreements below.** The hierarchy UI includes a manual GitHub refresh. Read .ai/plans/2026-09-08-foundation/PLAN.md and STATE.md for the authoritative phase order and actual progress before coding.
+**Current: implementing the sync-authority pivot (local SQLite is now authoritative; GitHub becomes an asynchronously-pushed, mostly-read-only mirror via a durable push queue) as part of the MCP-backed agent-planning plan.** This project tracks its own multi-step work in its own GitHub issues rather than the global `.ai/plans/` file-based orchestrator-worker protocol — read issue #36 (application context), #37 (the authoritative MCP/sync-pivot plan), #38 (open questions), and #51 (dogfooding friction/lessons) before coding. Do not recreate `.ai/plans/` files for Todo's own work; GitHub issues plus local SQLite are the source of truth for planning state here.
 
 The user wants low-friction capture, editing, filtering, a collapsible task tree, website-specific knowledge, and a passive daily list. Notifications and calendar integration can follow. Preserve the existing GitHub issues and their identities when adding the UI.
 
@@ -14,8 +14,8 @@ The user wants low-friction capture, editing, filtering, a collapsible task tree
 - Local checkout: /home/andres/www/Todo
 - Remote: origin = git@github.com:loki495/Todo.git
 - Observed initial layout: one checkout on main tracking origin/main; no local/feature branches or extra worktrees. Reinspect before consequential git operations; do not assume the layout stays unchanged.
-- Laravel scaffolding, dependencies, schema files and tests now exist. Docker app service is todo-app; local Traefik override routes todo.ac495.net. See the foundation STATE.md for checks and incomplete work.
-- GitHub Issues and Projects hold the existing task data. The pinned usage guide is https://github.com/loki495/Todo/issues/20.
+- Laravel scaffolding, dependencies, schema files and tests now exist. Docker app service is todo-app; local Traefik override routes todo.ac495.net. See GitHub issue #37 for the authoritative implementation status and remaining work.
+- Local SQLite is authoritative once data is imported; GitHub Issues and Projects hold an asynchronously-pushed mirror of that same data, used as a manual-pull baseline and a fallback surface with no live Todo app (see #37). The pinned usage guide is https://github.com/loki495/Todo/issues/20.
 - GitHub CLI is installed and authenticated locally, with Projects access. Verify the actual account and permissions before writes. Do not expose tokens or embed local credentials in browser code.
 - All repository/project data is private. Keep any future hosting private as well.
 
@@ -53,13 +53,15 @@ Latest decision supersedes the earlier area-label scheme: **do not duplicate Pro
 
 | Purpose | Labels |
 |---|---|
-| Workflow | today, next, waiting, someday, recurring |
+| Workflow | today, next, waiting, someday, recurring, needs research |
 | Structure | parent, guide |
 | Content | bug, documentation, research, lesson, decision |
 
 Keep labels small and useful. Do not restore GitHub's unused default labels or add one label per website. Existing topics and category membership live in Group/parent/Project. Moving a task no longer requires maintaining an area label.
 
 Use documentation for actual documentation work, bug for a concrete defect, and the knowledge labels for the corresponding records. Do not label all code-study tasks as research or all AI-assisted work as a separate category by default.
+
+**`research` vs `needs research` (decided 2026-09-12 after a real mix-up):** `research` (and `lesson`/`decision`/`guide` alongside it) marks a completed knowledge *record* — the issue body itself is the maintained finding, and the app's Tasks/Knowledge toggle treats any of these four labels as Knowledge, hiding the issue from the default Tasks view. `needs research` is the opposite: a workflow marker on an ordinary *task* that still needs investigation before it can proceed — it does not affect Tasks/Knowledge classification. Applying `research` to a task that just needs research done (instead of `needs research`) will make it disappear from Tasks view, which is exactly what happened to #35 and looked like data loss.
 
 ## Website-specific research, lessons, and decisions
 
@@ -99,7 +101,7 @@ Existing views include All tasks, Daily, Today picks, Due, Timeline, group tabs,
 
 ## Next implementation: web UI
 
-Build on GitHub as the task/knowledge store. Existing issue IDs, URLs, labels, parents, and Project fields should remain usable from GitHub, the app, and agents. A cache may be useful, but do not introduce a second authoritative task database by accident.
+Local SQLite is the task/knowledge store; GitHub mirrors it asynchronously (see #37). Existing issue IDs, URLs, labels, parents, and Project fields should remain usable from GitHub, the app, and agents. This intentionally is the authoritative database now — the earlier caution against a second authoritative database no longer applies; the risk to guard against instead is SQLite and the GitHub mirror silently diverging, which the push queue's `needs_attention` state exists to surface.
 
 Requested behavior:
 
@@ -128,12 +130,12 @@ Proposed workflow to implement:
 6. Save durable knowledge in the agreed scoped records and instructions. Keep temporary execution notes in local session files; avoid making them a second permanent backlog.
 7. Define safe retries and conflict handling so repeated requests do not duplicate tasks, comments, or recurring occurrences.
 
-The agreed order is scaffolding → manual GitHub pull and issue webhooks → hierarchy UI → polling → create/edit operations and shared agent interface. The canonical agent interface is a host-local stdio MCP server; the Artisan CLI is its recovery and smoke-test fallback. This roadmap is not blanket authorization for unattended external writes, notifications, pushes, or deployments. Explicitly establish which routine agent updates may happen automatically before enabling that behavior.
+The original agreed order was scaffolding → manual GitHub pull and issue webhooks → hierarchy UI → polling → create/edit operations and shared agent interface; webhooks and polling are being removed in favor of local-authoritative writes with an asynchronous GitHub push queue (#37, #49). The canonical agent interface is a host-local stdio MCP server; the Artisan CLI is its recovery and smoke-test fallback. This roadmap is not blanket authorization for unattended external writes, notifications, pushes, or deployments. Explicitly establish which routine agent updates may happen automatically before enabling that behavior.
 
 ## Implementation decisions still open
 
 - Framework/runtime, credential provisioning, and webhook ingress are settled. LAN access uses todo.ac495.net through Traefik with application login.
-- Cache/offline needs and GitHub synchronization strategy.
+- Cache/offline needs beyond the push queue's own backlog (SQLite authority and the GitHub sync strategy are now settled — see #37/#49).
 - Agent interface, session identity/claims, concurrency, retry semantics, and automatic-write authorization boundaries.
 - Rules for synchronizing native issue open/closed state with Project Status.
 - Treatment of persistent knowledge records in progress counts and task views.
@@ -148,7 +150,7 @@ User preference: try to use test-driven development with Pest for anything non-o
 
 Prioritize action-level tests for sync idempotency, partial pagination failures, parent resolution/cycles, deletions vs lost access, field mappings, rate-limit/backoff handling, stale writes, recurrence, and agent claims. Include meaningful sad paths and specific expected outcomes. Add feature tests for authentication, validation, and HTTP/Livewire contracts. Fake GitHub requests; prevent stray real network calls in automated tests. Do not fabricate tests for trivial static markup or mirror implementation details. Never delete, weaken, or skip a failing test to make the suite pass.
 
-Initial architecture and sync/schema proposal: docs/architecture.md. Stack decisions are settled; scaffold and migrations are verified. The foundation PLAN.md supersedes earlier phase-order proposals.
+Initial architecture and sync/schema proposal: docs/architecture.md. Stack decisions are settled; scaffold and migrations are verified. GitHub issue #37 is the authoritative plan and supersedes earlier phase-order proposals.
 
 ## Safety and verification
 
@@ -160,15 +162,15 @@ Initial architecture and sync/schema proposal: docs/architecture.md. Stack decis
 
 ## Running the scaffold
 
-See README.md for setup. App: https://todo.ac495.net, container todo-app, PHP 8.5. Create a login with `docker compose exec -u www-data app php artisan todo:user`. Run PHP tooling inside that container; Node builds use `docker compose run --rm node npm run build`. No default account exists. Scaffold, manual import, read-only hierarchy UI, polling, live webhook delivery, and GitHub-first quick capture are complete. The Flux capture modal supports the viewed Project/Group, searchable parent selection, and existing or new labels/Groups; existing-task title/description editing is available; comments and completion are available. Scheduling fields remain pending; local-agent reads, claims, releases, comments, and completion are available through documented Artisan commands. Run scripts/github-pull (optionally --comments) to refresh with host gh authorization.
+See README.md for setup. App: https://todo.ac495.net, container todo-app, PHP 8.5. Create a login with `docker compose exec -u www-data app php artisan todo:user`. Run PHP tooling inside that container; Node builds use `docker compose run --rm node npm run build`. No default account exists. Scaffold, manual import, read-only hierarchy UI, and local-first quick capture (via the durable push queue, see #37/#49) are complete. Automatic polling and inbound webhook delivery were removed 2026-09-11 in favor of the push queue; manual `Refresh from GitHub` / `todo:sync` remain the only inbound path. The Flux capture modal supports the viewed Project/Group, searchable parent selection, and existing or new labels/Groups; existing-task title/description editing is available; comments and completion are available. Scheduling fields remain pending; local-agent reads, hardened claims/heartbeats/releases (PID+process-start-time verified via `/proc`, requiring `pid: "host"` on the `todo-app` container — see #40), comments, and completion are available through documented Artisan commands. Run scripts/github-pull (optionally --comments) to refresh with host gh authorization.
 
 ## Theme and sync additions
 
 Theme selector: System (default), Light or Dark. Preference persists in browser localStorage (`todo-theme`), applies before paint and follows OS changes in System mode. Verified at desktop and 390px mobile widths.
 
-Manual read-only import: `scripts/github-pull --comments` uses gh token over stdin. Initial and repeat imports verified with 35 issues and four Projects on 2026-09-08; query live data instead of treating that count as permanent. Repository/Project/issue/label/parent/schedule/comment data remains GitHub-authoritative. The read-only UI provides areas, recursive collapsed hierarchy, saved expansion, search with ancestor context, Group/label/state filters, Tasks/Knowledge, daily list, and safe issue details. Browser freshness checks use local SQLite every 10/60 seconds and coalesce GitHub reads at 30/60 seconds; the scheduler recovers Project-only changes every five minutes.
+Manual read-only import: `scripts/github-pull --comments` uses gh token over stdin. Initial and repeat imports verified with 35 issues and four Projects on 2026-09-08; query live data instead of treating that count as permanent. Repository/Project/issue/label/parent/schedule/comment data remains GitHub-authoritative. The read-only UI provides areas, recursive collapsed hierarchy, saved expansion, search with ancestor context, Group/label/state filters, Tasks/Knowledge, daily list, and safe issue details.
 
-Live webhook topology: the GitHub repository hook sends issues, issue_comment, label, and sub_issues JSON events to `https://todo.ac495.net/webhooks/github`. Cloudflare Access Bypass and the No bots WAF exception apply only to that exact path; the tunnel routes it as HTTPS to Traefik with Todo SNI, while the root remains behind Access. Laravel verifies GitHub HMAC and repository identity before queueing a canonical pull. Keep these scopes intact; do not widen the public path or remove HMAC validation.
+Inbound GitHub webhooks and automatic freshness polling have been removed as of 2026-09-11 (#49). GitHub sync is now one-directional (local SQLite → GitHub via a durable push queue); the only path for GitHub → local data is the manual `Refresh from GitHub` button / `todo:sync` command / `scripts/github-pull`.
 
 ## Local agent interface and MCP
 
