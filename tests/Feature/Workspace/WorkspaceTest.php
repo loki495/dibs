@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\CreateGitHubIssue;
 use App\Actions\GetIssueDetails;
 use App\Actions\SyncGitHub;
 use App\Actions\UpdateGitHubProject;
@@ -158,17 +157,15 @@ it('retains a quick-capture draft when the selected area becomes unavailable dur
 });
 
 it('retains a quick-capture draft when its selected area is no longer available', function (): void {
-    config(['github.token' => 'test-token']);
-    $create = Mockery::mock(CreateGitHubIssue::class);
-    $create->shouldNotReceive('handle');
-    app()->instance(CreateGitHubIssue::class, $create);
-
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('captureArea', 999_999)
         ->set('newTitle', 'Capture this')
         ->call('capture')
         ->assertSet('newTitle', 'Capture this')
         ->assertSet('captureError', 'The selected area is no longer available. Refresh and try again.');
+
+    expect(Issue::count())->toBe(0)
+        ->and(GitHubPushQueueItem::count())->toBe(0);
 });
 
 it('uses a selected organizational parent as the default for quick capture', function (): void {
