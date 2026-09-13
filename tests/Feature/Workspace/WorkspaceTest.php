@@ -58,7 +58,7 @@ it('refreshes the workspace from GitHub through the existing sync action', funct
     $sync->shouldReceive('handle')->once()->with('test-token', true);
     app()->instance(SyncGitHub::class, $sync);
 
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+    Livewire::actingAs(User::factory()->create())->test('top-bar')
         ->call('refreshFromGitHub')
         ->assertSet('refreshMessage', 'Updated from GitHub just now.')
         ->assertSet('refreshError', null)
@@ -68,24 +68,33 @@ it('refreshes the workspace from GitHub through the existing sync action', funct
 it('explains how to enable in-app refresh without a server-side credential', function (): void {
     config(['github.token' => null]);
 
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+    Livewire::actingAs(User::factory()->create())->test('top-bar')
         ->call('refreshFromGitHub')
         ->assertSet('refreshError', 'In-app refresh needs a server-side GitHub token. Set GITHUB_TOKEN and try again.')
         ->assertSet('refreshMessage', null)
         ->assertSee('In-app refresh needs a server-side GitHub token. Set GITHUB_TOKEN and try again.');
 });
 
-it('keeps the cached workspace visible when a refresh fails', function (): void {
+it('renders the workspace page together with the shared top bar', function (): void {
+    Issue::factory()->create(['title' => 'Still here']);
+
+    $this->actingAs(User::factory()->create())->get('/')
+        ->assertOk()
+        ->assertSee('Still here')
+        ->assertSeeHtml('aria-label="Settings"');
+});
+
+it('reports a refresh failure from the shared top bar without crashing', function (): void {
     config(['github.token' => 'test-token']);
     $sync = Mockery::mock(SyncGitHub::class);
     $sync->shouldReceive('handle')->once()->andThrow(new GitHubSyncException('GitHub HTTP 429; check access or retry later.'));
     app()->instance(SyncGitHub::class, $sync);
-    Issue::factory()->create(['title' => 'Still here']);
 
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+    // Refresh now lives on its own persistent top-bar component (resources/views/livewire/top-bar.blade.php),
+    // separate from the workspace page's own component — a failure here can no longer reset workspace state.
+    Livewire::actingAs(User::factory()->create())->test('top-bar')
         ->call('refreshFromGitHub')
         ->assertSet('refreshError', 'GitHub HTTP 429; check access or retry later.')
-        ->assertSee('Still here')
         ->assertSee('GitHub HTTP 429; check access or retry later.');
 });
 
@@ -455,12 +464,12 @@ it('keeps project settings open when GitHub rejects a renamed project', function
         ->assertSet('projectSettingsOpen', true)->assertSet('projectSettingsError', 'GitHub is temporarily unavailable.');
 });
 
-it('switches the mobile workspace dropdown between Daily and an area', function (): void {
+it('switches between Daily and an area via the navigation actions the mobile pill row uses', function (): void {
     $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('chooseMobileNavigation', 'daily')->assertSet('view', 'daily')->assertSet('area', 0)
-        ->call('chooseMobileNavigation', (string) $project->id)->assertSet('view', 'tasks')->assertSet('area', $project->id);
+        ->call('daily')->assertSet('view', 'daily')->assertSet('area', 0)
+        ->call('chooseArea', $project->id)->assertSet('view', 'tasks')->assertSet('area', $project->id);
 });
 
 it('closes a selected task locally and enqueues the GitHub close operation', function (): void {
