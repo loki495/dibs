@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 apt-get update
-apt-get install -y --no-install-recommends git unzip libzip-dev libsqlite3-dev libicu-dev
+apt-get install -y --no-install-recommends git unzip libzip-dev libsqlite3-dev libicu-dev openssh-client
 rm -rf /var/lib/apt/lists/*
 docker-php-ext-install pdo_sqlite zip intl pcntl
 usermod -u 1000 www-data
