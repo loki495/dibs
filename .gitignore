@@ -28,6 +28,7 @@ Thumbs.db
 
 /docker-compose.override.yml
 /database/*.sqlite*
+/CLAUDE.local.md
 /.ai/plans/*/scratch/
 /.phpunit.cache/
 /.phpstan/
