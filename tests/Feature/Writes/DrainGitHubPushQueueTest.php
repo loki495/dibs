@@ -267,6 +267,45 @@ it('closes an issue on GitHub', function (): void {
     expect($queueItem->refresh())->status->toBe('pushed');
 });
 
+it('deletes an issue on GitHub', function (): void {
+    $repository = GitHubRepository::factory()->create(['github_node_id' => 'R_test']);
+    $issue = Issue::factory()->create(['repository_id' => $repository->id, 'github_node_id' => 'I_test', 'is_available' => false]);
+    $queueItem = GitHubPushQueueItem::factory()->create(['operation' => 'delete_issue', 'target_type' => 'issue', 'target_id' => $issue->id]);
+    Http::fake(fn (Request $request) => Http::response(['data' => ['deleteIssue' => ['clientMutationId' => null]]], 200));
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
+    Http::assertSent(fn (Request $request): bool => str_contains((string) $request->data()['query'], 'deleteIssue')
+        && (array) $request->data()['variables'] === ['issueId' => 'I_test']);
+    expect($queueItem->refresh())->status->toBe('pushed');
+});
+
+it('waits to delete an issue until its own creation has reached GitHub', function (): void {
+    $issue = Issue::factory()->create(['github_node_id' => null, 'is_available' => false]);
+    GitHubPushQueueItem::factory()->create(['operation' => 'delete_issue', 'target_type' => 'issue', 'target_id' => $issue->id]);
+    Http::fake();
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 1]);
+    Http::assertNothingSent();
+});
+
+it('gives up deleting an issue that unexpectedly still has available children locally', function (): void {
+    $repository = GitHubRepository::factory()->create(['github_node_id' => 'R_test']);
+    $issue = Issue::factory()->create(['repository_id' => $repository->id, 'github_node_id' => 'I_test', 'is_available' => false]);
+    Issue::factory()->for($issue, 'parent')->for($repository, 'repository')->create();
+    $queueItem = GitHubPushQueueItem::factory()->create(['operation' => 'delete_issue', 'target_type' => 'issue', 'target_id' => $issue->id]);
+    Http::fake();
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 1, 'waiting' => 0]);
+    Http::assertNothingSent();
+    expect($queueItem->refresh())->status->toBe('needs_attention');
+});
+
 it('deletes a project membership on GitHub', function (): void {
     $project = GitHubProject::factory()->create(['github_node_id' => 'P_test']);
     $issue = Issue::factory()->create(['github_node_id' => 'I_test']);

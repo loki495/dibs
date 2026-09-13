@@ -571,6 +571,48 @@ it('closes a selected task locally and enqueues the GitHub close operation', fun
     expect(GitHubPushQueueItem::query()->where('operation', 'close_issue')->where('target_id', $issue->id)->count())->toBe(1);
 });
 
+it('shows the children choice only when the selected task has sub-tasks', function (): void {
+    $parent = Issue::factory()->create();
+    $child = Issue::factory()->for($parent, 'parent')->for($parent->repository, 'repository')->create();
+    $leaf = Issue::factory()->create();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $leaf->id)->call('openDeleteConfirm')
+        ->assertSet('deletingIssueChildrenCount', 0)
+        ->set('selected', $parent->id)->call('openDeleteConfirm')
+        ->assertSet('deletingIssueChildrenCount', 1);
+
+    expect($child->exists)->toBeTrue();
+});
+
+it('deletes a task locally, closes its detail panel, and offers an undo notice', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Delete me']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $issue->id)->call('openDeleteConfirm')
+        ->call('confirmDelete', false)
+        ->assertSet('selected', 0)
+        ->assertSet('deleteConfirmOpen', false)
+        ->assertSee('Delete me')
+        ->assertSee('Undo');
+
+    expect($issue->refresh()->is_available)->toBeFalse()
+        ->and(GitHubPushQueueItem::query()->where('operation', 'delete_issue')->where('target_id', $issue->id)->exists())->toBeTrue();
+});
+
+it('undoes a delete and restores the task', function (): void {
+    $issue = Issue::factory()->create();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $issue->id)->call('openDeleteConfirm')->call('confirmDelete', false)
+        ->call('undoDelete')
+        ->assertSet('recentlyDeleted', null)
+        ->assertSee('Restored');
+
+    expect($issue->refresh()->is_available)->toBeTrue()
+        ->and(GitHubPushQueueItem::query()->where('operation', 'delete_issue')->where('target_id', $issue->id)->exists())->toBeFalse();
+});
+
 it('adds and edits comments locally and enqueues GitHub operations', function (): void {
     $issue = Issue::factory()->create();
     $comment = Comment::factory()->for($issue, 'issue')->create(['body' => 'Old comment']);

@@ -3,10 +3,12 @@
 use App\Actions\BuildIssueTree;
 use App\Actions\CreateTodoComment;
 use App\Actions\CreateTodoIssue;
+use App\Actions\DeleteTodoIssue;
 use App\Actions\EnqueueGitHubPush;
 use App\Actions\GetIssueDetails;
 use App\Actions\ReleaseAbandonedTaskClaim;
 use App\Actions\ReviseTodoComment;
+use App\Actions\UndoDeleteTodoIssue;
 use App\Actions\UpdateGitHubProject;
 use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
@@ -123,6 +125,19 @@ new class extends Component
     public ?string $captureError = null;
 
     public ?string $claimError = null;
+
+    public bool $deleteConfirmOpen = false;
+
+    public int $deletingIssue = 0;
+
+    public int $deletingIssueChildrenCount = 0;
+
+    public ?string $deleteError = null;
+
+    /** @var array{deletedIds: list<int>, reparented: list<array<string, mixed>>, title: string}|null */
+    public ?array $recentlyDeleted = null;
+
+    public ?string $deleteUndoMessage = null;
 
     public function mount(): void
     {
@@ -468,6 +483,62 @@ new class extends Component
         app(EnqueueGitHubPush::class)->handle('close_issue', 'issue', $issue->id, [], 'issue:close:'.$issue->id);
     }
 
+    public function openDeleteConfirm(): void
+    {
+        $this->reset('deleteError');
+        $issue = Issue::query()->where('is_available', true)->find($this->selected);
+        if (! $issue instanceof Issue) {
+            return;
+        }
+        $this->deletingIssue = $issue->id;
+        $this->deletingIssueChildrenCount = $issue->children()->where('is_available', true)->count();
+        $this->deleteConfirmOpen = true;
+    }
+
+    public function confirmDelete(bool $cascadeChildren): void
+    {
+        $this->reset('deleteError');
+        $issue = Issue::query()->where('is_available', true)->find($this->deletingIssue);
+        if (! $issue instanceof Issue) {
+            $this->deleteError = 'The selected task is no longer available. Refresh and try again.';
+
+            return;
+        }
+
+        try {
+            $result = app(DeleteTodoIssue::class)->handle($issue, $cascadeChildren);
+        } catch (TodoValidationException $exception) {
+            $this->deleteError = $exception->getMessage();
+
+            return;
+        }
+
+        $this->recentlyDeleted = [...$result, 'title' => $issue->title];
+        $this->deleteUndoMessage = null;
+        $this->deleteConfirmOpen = false;
+        $this->deletingIssue = 0;
+        if (in_array($this->selected, $result['deletedIds'], true)) {
+            $this->selected = 0;
+        }
+    }
+
+    public function undoDelete(): void
+    {
+        if ($this->recentlyDeleted === null) {
+            return;
+        }
+        $result = app(UndoDeleteTodoIssue::class)->handle($this->recentlyDeleted['deletedIds'], $this->recentlyDeleted['reparented']);
+        $this->deleteUndoMessage = $result['tooLate'] === []
+            ? __('Restored.')
+            : trans_choice('Restored what was still pending — :count change had already synced to GitHub and could not be undone.|Restored what was still pending — :count changes had already synced to GitHub and could not be undone.', count($result['tooLate']), ['count' => count($result['tooLate'])]);
+        $this->recentlyDeleted = null;
+    }
+
+    public function dismissDeleteNotice(): void
+    {
+        $this->reset('recentlyDeleted', 'deleteUndoMessage');
+    }
+
     public function releaseClaim(): void
     {
         $this->reset('claimError');
@@ -603,6 +674,21 @@ new class extends Component
         </aside>
 
         <section class="min-w-0">
+            @if ($recentlyDeleted)
+                <div role="status" class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-100 px-4 py-3 text-sm dark:bg-slate-800">
+                    <span>{{ __('Deleted ":title". This can still be undone until it syncs to GitHub.', ['title' => $recentlyDeleted['title']]) }}</span>
+                    <div class="flex items-center gap-2">
+                        <flux:button type="button" wire:click="undoDelete" size="sm">{{ __('Undo') }}</flux:button>
+                        <button type="button" wire:click="dismissDeleteNotice" class="flex size-8 items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700" aria-label="{{ __('Dismiss') }}"><flux:icon.x-mark class="size-4" /></button>
+                    </div>
+                </div>
+            @endif
+            @if ($deleteUndoMessage)
+                <div role="status" class="mb-4 flex items-center justify-between gap-3 rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:bg-teal-950 dark:text-teal-100">
+                    <span>{{ $deleteUndoMessage }}</span>
+                    <button type="button" wire:click="dismissDeleteNotice" class="flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-teal-100 dark:hover:bg-teal-900" aria-label="{{ __('Dismiss') }}"><flux:icon.x-mark class="size-4" /></button>
+                </div>
+            @endif
             <div class="mb-5">
                 <div class="flex items-center justify-between gap-2">
                     <div class="flex rounded-lg border border-slate-200 p-1 dark:border-slate-800" aria-label="{{ __('Content type') }}">
@@ -738,5 +824,27 @@ new class extends Component
             @if ($projectSettingsError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $projectSettingsError }}</p>@endif
             <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit" wire:loading.attr="disabled" wire:target="saveProjectSettings"><span wire:loading.remove wire:target="saveProjectSettings">{{ __('Save project') }}</span><span wire:loading wire:target="saveProjectSettings">{{ __('Saving…') }}</span></flux:button></div>
         </form>
+    </flux:modal>
+    <flux:modal wire:model="deleteConfirmOpen" name="delete-task" class="w-full max-w-md">
+        <div class="space-y-5">
+            <div>
+                <flux:heading size="lg">{{ __('Delete task') }}</flux:heading>
+                @if ($deletingIssueChildrenCount > 0)
+                    <flux:text class="mt-1">{{ trans_choice('This task has :count sub-task. What should happen to it?|This task has :count sub-tasks. What should happen to them?', $deletingIssueChildrenCount, ['count' => $deletingIssueChildrenCount]) }}</flux:text>
+                @else
+                    <flux:text class="mt-1">{{ __('This deletes the task on GitHub. You can undo it right after, as long as it has not synced yet.') }}</flux:text>
+                @endif
+            </div>
+            @if ($deleteError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $deleteError }}</p>@endif
+            <div class="flex flex-wrap justify-end gap-2">
+                <flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close>
+                @if ($deletingIssueChildrenCount > 0)
+                    <flux:button type="button" wire:click="confirmDelete(false)" variant="ghost">{{ __('Move them up a level') }}</flux:button>
+                    <flux:button type="button" wire:click="confirmDelete(true)" variant="danger">{{ __('Delete them too') }}</flux:button>
+                @else
+                    <flux:button type="button" wire:click="confirmDelete(false)" variant="danger">{{ __('Delete task') }}</flux:button>
+                @endif
+            </div>
+        </div>
     </flux:modal>
 </div>
