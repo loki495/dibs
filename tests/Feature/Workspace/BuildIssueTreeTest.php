@@ -164,7 +164,8 @@ it('uses Group-only virtual roots in the All Projects view', function (): void {
         ->and(collect($rows)->firstWhere('id', 'group-'.$group->id)['projectTitle'])->toBe('Personal Projects')
         ->and(collect($rows)->firstWhere('id', 'group-'.$group->id)['projectColor'])->toBe('#'.$project->color)
         ->and(collect($rows)->firstWhere('id', $issue->id)['projectColor'])->toBe('#'.$project->color)
-        ->and(collect($rows)->firstWhere('id', $issue->id)['ancestors'])->toBe(['group-'.$group->id]);
+        // Default sort is "Project", which also wraps the All Projects view in a per-project virtual root.
+        ->and(collect($rows)->firstWhere('id', $issue->id)['ancestors'])->toBe(['group-'.$group->id, 'project-'.$project->id]);
 });
 
 it('derives container state and the parent filter from native child links', function (): void {
@@ -179,19 +180,68 @@ it('derives container state and the parent filter from native child links', func
         ->and(array_column($filtered['rows'], 'id'))->not->toContain($child->id);
 });
 
-it('filters and ranks sibling tasks by their Project Priority without flattening the tree', function (): void {
+it('sorts flat by newest first and newest last using the GitHub issue number', function (): void {
+    $oldest = Issue::factory()->create(['title' => 'Oldest', 'github_number' => 1]);
+    $newest = Issue::factory()->create(['title' => 'Newest', 'github_number' => 9]);
+    $middle = Issue::factory()->for($oldest->repository, 'repository')->create(['title' => 'Middle', 'github_number' => 5]);
+
+    expect(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_first')['rows'], 'title'))->toBe(['Newest', 'Middle', 'Oldest'])
+        ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_last')['rows'], 'title'))->toBe(['Oldest', 'Middle', 'Newest']);
+});
+
+it('sections the All Projects view by Project when sorting by Project, nesting Groups inside', function (): void {
+    $work = GitHubProject::factory()->create(['title' => 'Work', 'github_number' => 1]);
+    $personal = GitHubProject::factory()->create(['title' => 'Personal Projects', 'github_number' => 2]);
+    $field = ProjectField::factory()->for($personal, 'project')->create(['semantic_key' => 'group']);
+    $sessioneer = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Sessioneer']);
+    $workTask = Issue::factory()->create(['title' => 'Work task']);
+    $personalTask = Issue::factory()->for($workTask->repository, 'repository')->create(['title' => 'Personal task']);
+    ProjectItem::factory()->for($work, 'project')->for($workTask, 'issue')->create();
+    ProjectItem::factory()->for($personal, 'project')->for($personalTask, 'issue')->create(['group_option_id' => $sessioneer->id]);
+
+    $ids = array_column(app(BuildIssueTree::class)->handle(sortBy: 'project')['rows'], 'id');
+
+    expect($ids)->toBe(['project-'.$work->id, $workTask->id, 'project-'.$personal->id, 'group-'.$sessioneer->id, $personalTask->id]);
+});
+
+it('mixes Groups across Projects with no Project sectioning when sorting by Group', function (): void {
+    $work = GitHubProject::factory()->create(['title' => 'Work', 'github_number' => 1]);
+    $personal = GitHubProject::factory()->create(['title' => 'Personal Projects', 'github_number' => 2]);
+    $workField = ProjectField::factory()->for($work, 'project')->create(['semantic_key' => 'group']);
+    $personalField = ProjectField::factory()->for($personal, 'project')->create(['semantic_key' => 'group']);
+    $backend = ProjectFieldOption::factory()->for($workField, 'field')->create(['name' => 'Backend']);
+    $sessioneer = ProjectFieldOption::factory()->for($personalField, 'field')->create(['name' => 'Sessioneer']);
+    $workTask = Issue::factory()->create(['title' => 'Work task', 'github_number' => 1]);
+    $personalTask = Issue::factory()->for($workTask->repository, 'repository')->create(['title' => 'Personal task', 'github_number' => 9]);
+    ProjectItem::factory()->for($work, 'project')->for($workTask, 'issue')->create(['group_option_id' => $backend->id]);
+    ProjectItem::factory()->for($personal, 'project')->for($personalTask, 'issue')->create(['group_option_id' => $sessioneer->id]);
+
+    $ids = array_column(app(BuildIssueTree::class)->handle(sortBy: 'group')['rows'], 'id');
+
+    // Newest-first by each group's own root task, and no "project-*" wrapper anywhere -- unlike the
+    // Project sort, Groups from different Projects sit as peers.
+    expect($ids)->toBe(['group-'.$sessioneer->id, $personalTask->id, 'group-'.$backend->id, $workTask->id])
+        ->and($ids)->not->toContain('project-'.$work->id)
+        ->and($ids)->not->toContain('project-'.$personal->id);
+});
+
+it('sorts by Priority as a flat list, unprioritized last, with an inline parent reference', function (): void {
     $project = GitHubProject::factory()->create();
     $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'priority']);
     $one = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => '1', 'position' => 0]);
     $five = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => '5', 'position' => 4]);
     $later = Issue::factory()->create(['title' => 'Later task']);
     $first = Issue::factory()->create(['title' => 'First task']);
+    $child = Issue::factory()->for($later, 'parent')->for($later->repository, 'repository')->create(['title' => 'Unprioritized child']);
     ProjectItem::factory()->for($project, 'project')->for($later, 'issue')->create(['priority_option_id' => $five->id]);
     ProjectItem::factory()->for($project, 'project')->for($first, 'issue')->create(['priority_option_id' => $one->id]);
+    ProjectItem::factory()->for($project, 'project')->for($child, 'issue')->create(['priority_option_id' => null]);
 
-    $ranked = app(BuildIssueTree::class)->handle(area: $project->id, rankPriority: true);
+    $ranked = app(BuildIssueTree::class)->handle(area: $project->id, sortBy: 'priority');
     $filtered = app(BuildIssueTree::class)->handle(area: $project->id, priority: 1);
 
-    expect(array_column($ranked['rows'], 'title'))->toBe(['First task', 'Later task'])
+    expect(array_column($ranked['rows'], 'title'))->toBe(['First task', 'Later task', 'Unprioritized child'])
+        ->and(array_column($ranked['rows'], 'depth'))->toBe([0, 0, 0])
+        ->and(collect($ranked['rows'])->firstWhere('id', $child->id)['parentTitle'])->toBe('Later task')
         ->and(array_column($filtered['rows'], 'title'))->toBe(['First task']);
 });
