@@ -612,7 +612,9 @@ new class extends Component
                     </div>
                     <div class="flex items-center gap-2">
                         @if ($area > 0 && $view !== 'daily')
-                            <flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth" class="hidden md:inline-flex">{{ __('Project settings') }}</flux:button>
+                            <div class="hidden md:block">
+                                <flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth">{{ __('Project settings') }}</flux:button>
+                            </div>
                         @endif
                         <flux:button type="button" wire:click="openCapture" icon="plus" size="sm" class="bg-teal-700! text-white! hover:bg-teal-600! dark:bg-teal-600! dark:hover:bg-teal-500!">{{ __('Add task') }}</flux:button>
                     </div>
