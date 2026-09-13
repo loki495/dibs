@@ -37,7 +37,7 @@ class DrainGitHubPushQueue
         'create_issue', 'create_label', 'create_group_option',
         'add_project_membership', 'set_project_item_group', 'set_project_item_priority',
         'add_issue_labels', 'set_issue_parent',
-        'update_issue_body', 'close_issue',
+        'update_issue_body', 'close_issue', 'delete_issue',
         'delete_project_item', 'clear_project_item_group', 'clear_project_item_priority',
         'set_issue_labels', 'remove_issue_parent',
         'create_comment', 'update_comment',
@@ -62,6 +62,7 @@ class DrainGitHubPushQueue
                     'set_issue_parent' => $this->pushSetIssueParent($token, $item),
                     'update_issue_body' => $this->pushUpdateIssueBody($token, $item),
                     'close_issue' => $this->pushCloseIssue($token, $item),
+                    'delete_issue' => $this->pushDeleteIssue($token, $item),
                     'delete_project_item' => $this->pushDeleteProjectItem($token, $item),
                     'clear_project_item_group' => $this->pushClearProjectItemGroup($token, $item),
                     'clear_project_item_priority' => $this->pushClearProjectItemPriority($token, $item),
@@ -537,6 +538,44 @@ class DrainGitHubPushQueue
                 'state' => 'CLOSED', 'state_reason' => $remote['stateReason'] ?? null,
                 'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
             ]);
+            $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
+        });
+
+        return 'pushed';
+    }
+
+    /**
+     * The local write already happened synchronously in DeleteTodoIssue (is_available is already
+     * false by the time this row is ever picked up) -- this only needs to deliver the real GitHub
+     * deletion. A still-null github_node_id means the issue's own create_issue row hasn't reached
+     * GitHub yet (create_issue sorts earlier in OPERATION_ORDER, so within one drain pass it's
+     * usually already resolved by the time this runs); waiting lets that finish first rather than
+     * abandoning a task that was created and deleted before it ever synced.
+     */
+    private function pushDeleteIssue(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
+    {
+        $issue = Issue::query()->find($item->target_id);
+        if (! $issue instanceof Issue) {
+            return $this->giveUp($item, 'Target issue no longer exists locally.');
+        }
+        if ($issue->github_node_id === null) {
+            return 'waiting';
+        }
+        if ($issue->children()->where('is_available', true)->exists()) {
+            return $this->giveUp($item, 'This task still has available children locally; promote or delete them before it can be deleted.');
+        }
+
+        try {
+            (new GitHubClient($token))->query(
+                'mutation($issueId: ID!) { deleteIssue(input: {issueId: $issueId}) { clientMutationId } }',
+                ['issueId' => $issue->github_node_id],
+            );
+        } catch (GitHubSyncException $exception) {
+            return $this->deferOrFail($item, $exception);
+        }
+
+        DB::transaction(function () use ($issue, $item): void {
+            $issue->update(['last_synced_at' => now(), 'last_seen_at' => now()]);
             $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
         });
 
