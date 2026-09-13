@@ -17,6 +17,24 @@ it('lists queue rows and lets a signed-in user retry a stuck one', function (): 
     expect($stuck->refresh())->status->toBe('pending')->attempts->toBe(0);
 });
 
+it('lets a signed-in user discard a pending row without pushing it', function (): void {
+    $user = User::factory()->create();
+    $pending = GitHubPushQueueItem::factory()->create(['status' => 'pending']);
+
+    Livewire::actingAs($user)->test('pages::push-queue')
+        ->assertSeeHtml('discard('.$pending->id.')')
+        ->call('discard', $pending->id);
+
+    expect(GitHubPushQueueItem::query()->find($pending->id))->toBeNull();
+});
+
+it('does not offer discard for an already-pushed row', function (): void {
+    $user = User::factory()->create();
+    GitHubPushQueueItem::factory()->create(['status' => 'pushed']);
+
+    Livewire::actingAs($user)->test('pages::push-queue')->assertDontSee('Discard');
+});
+
 it('is unreachable to a guest', function (): void {
     $this->get('/push-queue')->assertRedirect('/login');
 });

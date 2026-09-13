@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\DescribeGitHubPushQueue;
+use App\Actions\DiscardGitHubPushQueueItem;
 use App\Actions\RetryGitHubPushQueueItem;
 use App\Models\GitHubPushQueueItem;
 use Livewire\Component;
@@ -31,6 +32,15 @@ new class extends Component
         $item = GitHubPushQueueItem::query()->find($id);
         if ($item instanceof GitHubPushQueueItem) {
             $retry->handle($item);
+        }
+        $this->refresh();
+    }
+
+    public function discard(int $id, DiscardGitHubPushQueueItem $discard): void
+    {
+        $item = GitHubPushQueueItem::query()->find($id);
+        if ($item instanceof GitHubPushQueueItem) {
+            $discard->handle($item);
         }
         $this->refresh();
     }
@@ -98,9 +108,14 @@ new class extends Component
                         <td class="max-w-xs truncate py-2 pr-4" title="{{ $item['last_error'] }}">{{ $item['last_error'] }}</td>
                         <td class="py-2 pr-4">{{ $item['queued_at'] }}</td>
                         <td class="py-2 pr-4">
-                            @if (in_array($item['status'], ['failed', 'needs_attention'], true))
-                                <button type="button" wire:click="retry({{ $item['id'] }})" wire:loading.attr="disabled" class="rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-700">{{ __('Retry') }}</button>
-                            @endif
+                            <div class="flex gap-2">
+                                @if (in_array($item['status'], ['failed', 'needs_attention'], true))
+                                    <button type="button" wire:click="retry({{ $item['id'] }})" wire:loading.attr="disabled" class="rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-700">{{ __('Retry') }}</button>
+                                @endif
+                                @if ($item['status'] !== 'pushed')
+                                    <button type="button" wire:click="discard({{ $item['id'] }})" wire:confirm="{{ __('Discard this change? It will never be pushed to GitHub.') }}" wire:loading.attr="disabled" class="rounded-lg border border-slate-300 px-2 py-1 text-xs text-red-700 dark:border-slate-700 dark:text-red-400">{{ __('Discard') }}</button>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                 @empty
