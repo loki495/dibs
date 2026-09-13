@@ -10,19 +10,24 @@
         'Segoe UI Symbol', 'Noto Color Emoji';
 
     /* Flux's components default to the zinc neutral scale, but this app is built entirely on slate
-       (backgrounds, borders, text throughout workspace.blade.php and friends). Without this, every
-       Flux modal/dropdown/etc. renders with a visibly different, slightly warmer gray than the rest
-       of the app, especially in dark mode. */
-    --color-zinc-50: var(--color-slate-50);
-    --color-zinc-100: var(--color-slate-100);
-    --color-zinc-200: var(--color-slate-200);
-    --color-zinc-300: var(--color-slate-300);
-    --color-zinc-400: var(--color-slate-400);
-    --color-zinc-500: var(--color-slate-500);
-    --color-zinc-600: var(--color-slate-600);
-    --color-zinc-700: var(--color-slate-700);
-    --color-zinc-800: var(--color-slate-800);
-    --color-zinc-900: var(--color-slate-900);
+       (backgrounds, borders, text throughout workspace.blade.php and friends) -- and its dark-mode
+       elevation convention runs one step darker than Flux's own default assumption (this app's
+       elevated cards sit at slate-900 over a slate-950 page, e.g. the task-tree container and the
+       top-bar's dropdown panel, where Flux's modal defaults to zinc-800 over an assumed zinc-900
+       page). Shifting the whole scale one step preserves Flux's own internal contrast relationships
+       (hover/active shades stay the same number of steps apart) while re-basing it onto this app's
+       actual elevation levels; light mode is unaffected since Flux's own "white card" surfaces (e.g.
+       the modal background) already use literal white, not a zinc shade. */
+    --color-zinc-50: var(--color-slate-100);
+    --color-zinc-100: var(--color-slate-200);
+    --color-zinc-200: var(--color-slate-300);
+    --color-zinc-300: var(--color-slate-400);
+    --color-zinc-400: var(--color-slate-500);
+    --color-zinc-500: var(--color-slate-600);
+    --color-zinc-600: var(--color-slate-700);
+    --color-zinc-700: var(--color-slate-800);
+    --color-zinc-800: var(--color-slate-900);
+    --color-zinc-900: var(--color-slate-950);
     --color-zinc-950: var(--color-slate-950);
 }
 
