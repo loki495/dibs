@@ -52,6 +52,50 @@ it('returns not found for an unavailable issue instead of leaking stale details'
     $this->actingAs(User::factory()->create())->get('/?issue='.$issue->id)->assertNotFound();
 });
 
+it('restores every filter -- including the project pill and sort -- from the URL query string on load', function (): void {
+    $project = GitHubProject::factory()->create();
+    $otherProject = GitHubProject::factory()->create();
+    $groupField = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $priorityField = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'priority']);
+    $group = ProjectFieldOption::factory()->for($groupField, 'field')->create(['name' => 'Career']);
+    $matchingPriority = ProjectFieldOption::factory()->for($priorityField, 'field')->create(['name' => '3']);
+    $otherPriority = ProjectFieldOption::factory()->for($priorityField, 'field')->create(['name' => '1']);
+    $newer = Issue::factory()->create(['title' => 'Resume Newer', 'state' => 'CLOSED', 'github_number' => 100]);
+    $older = Issue::factory()->for($newer->repository, 'repository')->create(['title' => 'Resume Older', 'state' => 'CLOSED', 'github_number' => 2]);
+    $wrongPriority = Issue::factory()->for($newer->repository, 'repository')->create(['title' => 'Resume wrong priority', 'state' => 'CLOSED']);
+    $wrongArea = Issue::factory()->for($newer->repository, 'repository')->create(['title' => 'Resume wrong area', 'state' => 'CLOSED']);
+    $lesson = Label::factory()->for($newer->repository, 'repository')->create(['name' => 'lesson']);
+    $next = Label::factory()->for($newer->repository, 'repository')->create(['name' => 'next']);
+    foreach ([$newer, $older, $wrongPriority, $wrongArea] as $issue) {
+        $issue->labels()->attach([$lesson->id, $next->id]);
+    }
+    ProjectItem::factory()->for($project, 'project')->for($newer, 'issue')->create(['group_option_id' => $group->id, 'priority_option_id' => $matchingPriority->id]);
+    ProjectItem::factory()->for($project, 'project')->for($older, 'issue')->create(['group_option_id' => $group->id, 'priority_option_id' => $matchingPriority->id]);
+    ProjectItem::factory()->for($project, 'project')->for($wrongPriority, 'issue')->create(['group_option_id' => $group->id, 'priority_option_id' => $otherPriority->id]);
+    ProjectItem::factory()->for($otherProject, 'project')->for($wrongArea, 'issue')->create();
+
+    $query = http_build_query([
+        'area' => $project->id, 'view' => 'knowledge', 'q' => 'resume', 'state' => 'ALL',
+        'group' => $group->id, 'priority' => 3, 'sortBy' => 'newest_first',
+    ]).'&labels[]=next';
+
+    // Assertions target the task-tree row marker (data-issue-number) rather than raw titles: the
+    // unrelated "Add task" modal's parent-picker lists up to 100 issues regardless of the active
+    // filters, so titles alone would appear on the page either way.
+    $this->actingAs(User::factory()->create())->get('/?'.$query)
+        ->assertOk()
+        ->assertSeeHtmlInOrder(['data-issue-number="100"', 'data-issue-number="2"'])
+        ->assertDontSeeHtml('data-issue-number="'.$wrongPriority->github_number.'"')
+        ->assertDontSeeHtml('data-issue-number="'.$wrongArea->github_number.'"');
+
+    // Without the query string, the defaults (view=tasks, state=OPEN) hide these CLOSED/knowledge-labeled
+    // issues entirely -- confirming the first request's visibility came from the URL, not always-on.
+    $this->actingAs(User::factory()->create())->get('/')
+        ->assertOk()
+        ->assertDontSeeHtml('data-issue-number="100"')
+        ->assertDontSeeHtml('data-issue-number="2"');
+});
+
 it('refreshes the workspace from GitHub through the existing sync action', function (): void {
     config(['github.token' => 'test-token']);
     $sync = Mockery::mock(SyncGitHub::class);
