@@ -13,5 +13,5 @@ it('counts each status bucket independently and totals actionable items', functi
 
     $counts = app(DescribeGitHubPushQueue::class)->counts();
 
-    expect($counts)->toBe(['pending' => 2, 'failed' => 1, 'needsAttention' => 3, 'actionable' => 4]);
+    expect($counts)->toBe(['pending' => 2, 'failed' => 1, 'needsAttention' => 3, 'pushed' => 1, 'actionable' => 4]);
 });

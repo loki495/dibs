@@ -14,14 +14,15 @@ use Illuminate\Support\Collection;
 
 class DescribeGitHubPushQueue
 {
-    /** @return array{pending: int, failed: int, needsAttention: int, actionable: int} */
+    /** @return array{pending: int, failed: int, needsAttention: int, pushed: int, actionable: int} */
     public function counts(): array
     {
         $pending = GitHubPushQueueItem::query()->where('status', 'pending')->count();
         $failed = GitHubPushQueueItem::query()->where('status', 'failed')->count();
         $needsAttention = GitHubPushQueueItem::query()->where('status', 'needs_attention')->count();
+        $pushed = GitHubPushQueueItem::query()->where('status', 'pushed')->count();
 
-        return ['pending' => $pending, 'failed' => $failed, 'needsAttention' => $needsAttention, 'actionable' => $failed + $needsAttention];
+        return ['pending' => $pending, 'failed' => $failed, 'needsAttention' => $needsAttention, 'pushed' => $pushed, 'actionable' => $failed + $needsAttention];
     }
 
     /**

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\ClearPushedGitHubPushQueueItems;
 use App\Actions\DescribeGitHubPushQueue;
 use App\Actions\DiscardGitHubPushQueueItem;
 use App\Actions\RetryGitHubPushQueueItem;
@@ -18,6 +19,8 @@ new class extends Component
     public int $failedCount = 0;
 
     public int $needsAttentionCount = 0;
+
+    public int $pushedCount = 0;
 
     public function mount(): void
     {
@@ -45,6 +48,12 @@ new class extends Component
         $this->refresh();
     }
 
+    public function clearPushed(ClearPushedGitHubPushQueueItems $clear): void
+    {
+        $clear->handle();
+        $this->refresh();
+    }
+
     private function refresh(): void
     {
         $rows = GitHubPushQueueItem::query()->orderByDesc('id')->limit(200)->get();
@@ -63,6 +72,7 @@ new class extends Component
         $this->pendingCount = $counts['pending'];
         $this->failedCount = $counts['failed'];
         $this->needsAttentionCount = $counts['needsAttention'];
+        $this->pushedCount = $counts['pushed'];
     }
 }; ?>
 
@@ -71,10 +81,14 @@ new class extends Component
     <h1 class="mt-2 text-2xl font-semibold tracking-tight">{{ __('GitHub push queue') }}</h1>
     <p class="mt-2 text-slate-600 dark:text-slate-400">{{ __('Local SQLite is already the confirmed result for each of these. This page only tracks delivery to GitHub.') }}</p>
 
-    <div class="mt-6 flex flex-wrap gap-3 text-sm">
+    <div class="mt-6 flex flex-wrap items-center gap-3 text-sm">
         <span class="rounded-lg bg-slate-100 px-3 py-1.5 dark:bg-slate-900">{{ __('Pending') }}: {{ $pendingCount }}</span>
         <span class="rounded-lg bg-amber-100 px-3 py-1.5 text-amber-900 dark:bg-amber-900/30 dark:text-amber-300">{{ __('Failed') }}: {{ $failedCount }}</span>
         <span class="rounded-lg bg-red-100 px-3 py-1.5 text-red-900 dark:bg-red-900/30 dark:text-red-300">{{ __('Needs attention') }}: {{ $needsAttentionCount }}</span>
+        <span class="rounded-lg bg-teal-100 px-3 py-1.5 text-teal-900 dark:bg-teal-900/30 dark:text-teal-300">{{ __('Pushed') }}: {{ $pushedCount }}</span>
+        @if ($pushedCount > 0)
+            <button type="button" wire:click="clearPushed" wire:confirm="{{ __('Clear all :count pushed rows? They already reached GitHub — this only removes their local history.', ['count' => $pushedCount]) }}" wire:loading.attr="disabled" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700">{{ __('Clear pushed') }}</button>
+        @endif
     </div>
 
     <div class="mt-6 overflow-x-auto">
@@ -112,9 +126,7 @@ new class extends Component
                                 @if (in_array($item['status'], ['failed', 'needs_attention'], true))
                                     <button type="button" wire:click="retry({{ $item['id'] }})" wire:loading.attr="disabled" class="rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-700">{{ __('Retry') }}</button>
                                 @endif
-                                @if ($item['status'] !== 'pushed')
-                                    <button type="button" wire:click="discard({{ $item['id'] }})" wire:confirm="{{ __('Discard this change? It will never be pushed to GitHub.') }}" wire:loading.attr="disabled" class="rounded-lg border border-slate-300 px-2 py-1 text-xs text-red-700 dark:border-slate-700 dark:text-red-400">{{ __('Discard') }}</button>
-                                @endif
+                                <button type="button" wire:click="discard({{ $item['id'] }})" wire:confirm="{{ $item['status'] === 'pushed' ? __('Remove this row from the queue history?') : __('Discard this change? It will never be pushed to GitHub.') }}" wire:loading.attr="disabled" class="rounded-lg border border-slate-300 px-2 py-1 text-xs text-red-700 dark:border-slate-700 dark:text-red-400">{{ __('Discard') }}</button>
                             </div>
                         </td>
                     </tr>
