@@ -45,7 +45,7 @@ new class extends Component
     public int $priority = 0;
 
     #[Url]
-    public bool $rankPriority = false;
+    public string $sortBy = 'project';
 
     #[Url]
     public array $labels = [];
@@ -149,13 +149,13 @@ new class extends Component
 
     public function daily(): void
     {
-        $this->reset('area', 'group', 'priority', 'rankPriority', 'labels', 'search', 'selected', 'state', 'captureArea', 'captureParent');
+        $this->reset('area', 'group', 'priority', 'sortBy', 'labels', 'search', 'selected', 'state', 'captureArea', 'captureParent');
         $this->view = 'daily';
     }
 
     public function clearFilters(): void
     {
-        $this->reset('search', 'group', 'priority', 'rankPriority', 'labels', 'state');
+        $this->reset('search', 'group', 'priority', 'sortBy', 'labels', 'state');
     }
 
     public function toggleLabel(string $name): void
@@ -549,7 +549,7 @@ new class extends Component
         $editPriorities = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'priority')->where('project_id', $this->editArea))->orderBy('position')->get();
         $labelOptions = Label::query()->where('is_available', true)->orderBy('name')->get(['id', 'name']);
 
-        return [...app(BuildIssueTree::class)->handle($this->area, $this->view, $this->search, $this->state, $this->group, $this->labels, $this->priority, $this->rankPriority),
+        return [...app(BuildIssueTree::class)->handle($this->area, $this->view, $this->search, $this->state, $this->group, $this->labels, $this->priority, $this->sortBy),
             'detail' => $this->selected > 0 ? app(GetIssueDetails::class)->handle($this->selected) : null,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $labelOptions,
             'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $labelOptions];
@@ -625,7 +625,13 @@ new class extends Component
                         <flux:select wire:model.live="state" class="w-32" aria-label="Issue state"><option value="OPEN">{{ __('Open') }}</option><option value="CLOSED">{{ __('Closed') }}</option><option value="ALL">{{ __('All states') }}</option></flux:select>
                     @endif
                     <flux:select wire:model.live="priority" class="w-28" aria-label="{{ __('Priority') }}"><option value="0">{{ __('Any priority') }}</option>@foreach (range(1, 5) as $value)<option value="{{ $value }}">{{ __('P:value', ['value' => $value]) }}</option>@endforeach</flux:select>
-                    <button type="button" wire:click="$toggle('rankPriority')" @class(['min-h-9 rounded-lg border px-3 text-sm', 'border-violet-500 bg-violet-100 text-violet-900 dark:border-violet-500 dark:bg-violet-950 dark:text-violet-100' => $rankPriority, 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! $rankPriority]) aria-pressed="{{ $rankPriority ? 'true' : 'false' }}">{{ __('Rank priority') }}</button>
+                    <flux:select wire:model.live="sortBy" class="w-40" aria-label="{{ __('Sort by') }}">
+                        <option value="project">{{ __('Sort: Project') }}</option>
+                        <option value="group">{{ __('Sort: Group') }}</option>
+                        <option value="newest_first">{{ __('Sort: Newest first') }}</option>
+                        <option value="newest_last">{{ __('Sort: Newest last') }}</option>
+                        <option value="priority">{{ __('Sort: Priority') }}</option>
+                    </flux:select>
                 </div>
                 @if ($labelOptions)
                     <div x-data="{ open: false }" class="flex items-start gap-1.5" aria-label="{{ __('Labels') }}">
@@ -638,7 +644,7 @@ new class extends Component
                     </div>
                 @endif
             </div>
-            <div wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$rankPriority.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <div wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$sortBy.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 text-xs text-slate-500 dark:border-slate-800">
                     <span aria-live="polite">{{ trans_choice(':count result|:count results', $matchCount, ['count' => $matchCount]) }}{{ $filtered ? ' · '.__('with parent context') : '' }}</span>
                     <button @click="toggleAll(@js(array_column($rows, 'id')))" x-text="allOpen(@js(array_column($rows, 'id'))) ? @js(__('Collapse all')) : @js(__('Expand all'))" class="min-h-10 px-2 hover:text-slate-900 dark:hover:text-slate-100"></button>
@@ -664,6 +670,7 @@ new class extends Component
                                         <span @class(['block break-words text-sm leading-6', 'font-medium' => $row['container'], 'text-slate-500 dark:text-slate-400' => $row['context'], 'line-through opacity-70' => $row['state'] === 'CLOSED'])>{{ $row['title'] }}</span>
                                         <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                                             <span>#{{ $row['number'] }}</span>
+                                            @if ($row['parentTitle'] ?? null)<span>{{ __('↳ :title', ['title' => $row['parentTitle']]) }}</span>@endif
                                             @if ($row['outsideArea'])<span>{{ __('Parent from another area') }}</span>@elseif ($row['context'])<span>{{ __('Parent context') }}</span>@endif
                                             @if ($row['unresolvedParent'])<span>{{ __('Parent not imported') }}</span>@endif
                                             @foreach ($row['memberships'] as $membership)

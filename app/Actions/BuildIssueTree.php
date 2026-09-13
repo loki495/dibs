@@ -13,11 +13,13 @@ use Illuminate\Support\Str;
 
 class BuildIssueTree
 {
+    private const array TREE_SORTS = ['project', 'group'];
+
     /**
      * @param  list<string>  $labels
      * @return array<string, mixed>
      */
-    public function handle(int $area = 0, string $view = 'tasks', string $search = '', string $state = 'OPEN', int $group = 0, array $labels = [], int $priority = 0, bool $rankPriority = false): array
+    public function handle(int $area = 0, string $view = 'tasks', string $search = '', string $state = 'OPEN', int $group = 0, array $labels = [], int $priority = 0, string $sortBy = 'project'): array
     {
         $issues = Issue::query()->where('is_available', true)->with([
             'labels' => fn ($query) => $query->where('is_available', true),
@@ -69,7 +71,7 @@ class BuildIssueTree
             $matches[$issue->id] = $inArea && $inGroup && $modeMatches && $stateMatches && $searchMatches && $labelMatches && $priorityMatches;
             $nodes[$issue->id] = ['id' => $issue->id, 'number' => $issue->github_number, 'title' => $issue->title, 'state' => $issue->state,
                 'parent' => $issue->parent_issue_id, 'remoteParent' => $issue->github_parent_node_id,
-                'container' => $container, 'knowledge' => $knowledge, 'memberships' => $memberships, 'projectTitle' => $memberships[0]['title'] ?? null, 'projectColor' => $memberships[0]['color'] ?? null, 'labels' => $names, 'labelData' => $issue->labels->map(fn (Label $label): array => ['name' => $label->name, 'color' => ctype_xdigit((string) $label->color) && strlen((string) $label->color) === 6 ? '#'.$label->color : null])->all(),
+                'container' => $container, 'knowledge' => $knowledge, 'memberships' => $memberships, 'projectTitle' => $memberships[0]['title'] ?? null, 'projectColor' => $memberships[0]['color'] ?? null, 'projectAreaId' => $memberships[0]['area'] ?? null, 'labels' => $names, 'labelData' => $issue->labels->map(fn (Label $label): array => ['name' => $label->name, 'color' => ctype_xdigit((string) $label->color) && strlen((string) $label->color) === 6 ? '#'.$label->color : null])->all(),
                 'context' => ! $matches[$issue->id], 'outsideArea' => ! $inArea];
         }
         $included = [];
@@ -91,40 +93,17 @@ class BuildIssueTree
                 $children[$parent][] = $id;
             }
         }
-        if ($rankPriority) {
-            $priorityFor = function (int $id) use ($nodes, $area): int {
-                $priorities = collect($nodes[$id]['memberships'])->filter(fn (array $membership): bool => $area === 0 || $membership['area'] === $area)
-                    ->pluck('priority')->filter(fn (?string $value): bool => ctype_digit((string) $value))->map(fn (string $value): int => (int) $value);
 
-                return $priorities->min() ?? 999;
-            };
-            foreach ($children as &$siblings) {
-                usort($siblings, fn (int $left, int $right): int => $priorityFor($left) <=> $priorityFor($right));
-            }
-            unset($siblings);
-        }
-        $rows = [];
-        $visited = [];
-        $walk = function (int $id, array $ancestors = []) use (&$walk, &$rows, &$visited, $nodes, $children): void {
-            if (isset($visited[$id])) {
-                return;
-            }
-            $visited[$id] = true;
-            $node = $nodes[$id];
-            $rows[] = [...$node, 'ancestors' => $ancestors, 'depth' => count($ancestors), 'hasChildren' => count($children[$id] ?? []) > 0,
-                'unresolvedParent' => $node['remoteParent'] !== null && ! isset($nodes[$node['parent']]), 'virtual' => false];
-            foreach ($children[$id] ?? [] as $child) {
-                $walk($child, [...$ancestors, $id]);
-            }
-        };
-        foreach ($children[0] ?? [] as $id) {
-            $walk($id);
-        }
-        foreach (array_keys($included) as $id) {
-            $walk($id);
-        }
-        if ($group === 0 && $view !== 'daily') {
+        $isTree = in_array($sortBy, self::TREE_SORTS, true);
+        $rows = $isTree
+            ? $this->buildTreeRows($nodes, $children, array_keys($included), $sortBy)
+            : $this->buildFlatRows($nodes, $matches, $sortBy, $area);
+
+        if ($isTree && $group === 0 && $view !== 'daily') {
             $rows = $this->insertGroupRoots($rows, $area);
+            if ($sortBy === 'project') {
+                $rows = $this->insertProjectRoots($rows, $area);
+            }
         }
         asort($groups);
         $labelOptions = Label::query()->where('is_available', true)->orderBy('name')->pluck('name', 'name')->all();
@@ -138,6 +117,103 @@ class BuildIssueTree
             'sync' => SyncState::query()->where('resource_key', 'github:'.config('github.owner').'/'.config('github.repository'))->first()];
     }
 
+    /** @param array<int, array<string, mixed>> $nodes
+     * @param  array<int, list<int>>  $children
+     * @param  list<int>  $includedIds
+     * @return list<array<string, mixed>>
+     */
+    private function buildTreeRows(array $nodes, array $children, array $includedIds, string $sortBy): array
+    {
+        if ($sortBy === 'group') {
+            foreach ($children as &$siblings) {
+                $siblings = array_reverse($siblings);
+            }
+            unset($siblings);
+        } elseif (isset($children[0])) {
+            $children[0] = $this->clusterRootsByProject($children[0], $nodes);
+        }
+
+        $rows = [];
+        $visited = [];
+        $walk = function (int $id, int $treeRootId, array $ancestors = []) use (&$walk, &$rows, &$visited, $nodes, $children): void {
+            if (isset($visited[$id])) {
+                return;
+            }
+            $visited[$id] = true;
+            $node = $nodes[$id];
+            $rows[] = [...$node, 'ancestors' => $ancestors, 'depth' => count($ancestors), 'hasChildren' => count($children[$id] ?? []) > 0,
+                'unresolvedParent' => $node['remoteParent'] !== null && ! isset($nodes[$node['parent']]), 'virtual' => false, 'parentTitle' => null, 'treeRootId' => $treeRootId];
+            foreach ($children[$id] ?? [] as $child) {
+                $walk($child, $treeRootId, [...$ancestors, $id]);
+            }
+        };
+        foreach ($children[0] ?? [] as $id) {
+            $walk($id, $id);
+        }
+        // Cycle members never resolve into $children[0] (each thinks the other is its parent), so walk
+        // every included id too -- $visited already skips anything the primary pass rendered.
+        foreach ($includedIds as $id) {
+            $walk($id, $id);
+        }
+
+        return $rows;
+    }
+
+    /** @param list<int> $rootIds
+     * @param  array<int, array<string, mixed>>  $nodes
+     * @return list<int>
+     */
+    private function clusterRootsByProject(array $rootIds, array $nodes): array
+    {
+        $buckets = [];
+        foreach ($rootIds as $id) {
+            $buckets[$nodes[$id]['projectAreaId'] ?? 0][] = $id;
+        }
+
+        $ordered = [];
+        foreach (GitHubProject::query()->where('is_available', true)->orderBy('github_number')->pluck('id') as $projectId) {
+            if (isset($buckets[$projectId])) {
+                array_push($ordered, ...$buckets[$projectId]);
+                unset($buckets[$projectId]);
+            }
+        }
+        foreach ($buckets as $remaining) {
+            array_push($ordered, ...$remaining);
+        }
+
+        return $ordered;
+    }
+
+    /** @param array<int, array<string, mixed>> $nodes
+     * @param  array<int, bool>  $matches
+     * @return list<array<string, mixed>>
+     */
+    private function buildFlatRows(array $nodes, array $matches, string $sortBy, int $area): array
+    {
+        $ids = array_keys(array_filter($matches));
+        $sortKey = fn (int $id): int => match ($sortBy) {
+            'newest_first' => -$nodes[$id]['number'],
+            'newest_last' => $nodes[$id]['number'],
+            default => $this->minPriority($nodes[$id], $area),
+        };
+        usort($ids, fn (int $left, int $right): int => $sortKey($left) <=> $sortKey($right) ?: $nodes[$left]['number'] <=> $nodes[$right]['number']);
+
+        return array_map(function (int $id) use ($nodes): array {
+            $node = $nodes[$id];
+            $parentTitle = $node['parent'] !== null && isset($nodes[$node['parent']]) ? $nodes[$node['parent']]['title'] : null;
+
+            return [...$node, 'ancestors' => [], 'depth' => 0, 'hasChildren' => false, 'unresolvedParent' => false, 'virtual' => false, 'parentTitle' => $parentTitle, 'treeRootId' => $id];
+        }, $ids);
+    }
+
+    /** @param array{memberships: list<array<string, mixed>>} $node */
+    private function minPriority(array $node, int $area): int
+    {
+        return collect($node['memberships'])->filter(fn (array $membership): bool => $area === 0 || $membership['area'] === $area)
+            ->pluck('priority')->filter(fn (?string $value): bool => ctype_digit((string) $value))->map(fn (string $value): int => (int) $value)
+            ->min() ?? 999;
+    }
+
     /** @param list<array<string, mixed>> $rows
      * @return list<array<string, mixed>>
      */
@@ -145,27 +221,18 @@ class BuildIssueTree
     {
         $rootGroups = [];
         foreach ($rows as $row) {
-            if ($row['ancestors'] !== []) {
+            if ($row['id'] !== $row['treeRootId']) {
                 continue;
             }
             foreach ($row['memberships'] as $membership) {
                 if (($area === 0 || $membership['area'] === $area) && $membership['groupId'] !== null && $membership['group'] !== null) {
-                    $rootGroups[$row['id']] = ['id' => 'group-'.$membership['groupId'], 'title' => $membership['group'], 'projectTitle' => $membership['title'], 'color' => $membership['color']];
+                    $rootGroups[$row['id']] = ['id' => 'group-'.$membership['groupId'], 'title' => $membership['group'], 'projectTitle' => $membership['title'], 'color' => $membership['color'], 'projectAreaId' => $membership['area']];
                     break;
                 }
             }
         }
 
-        // Partition into contiguous per-root segments (a root row plus its already-contiguous descendants,
-        // since $walk() emits each root's subtree depth-first) so every row belonging to one root task moves
-        // together as a unit.
-        $segments = [];
-        foreach ($rows as $row) {
-            if ($row['ancestors'] === []) {
-                $segments[] = ['rootId' => $row['id'], 'rows' => []];
-            }
-            $segments[array_key_last($segments)]['rows'][] = $row;
-        }
+        $segments = $this->segmentByTreeRoot($rows);
 
         // Collect every segment belonging to each group up front, regardless of where its root falls in the
         // global sibling/number order, so a group's tasks render as one contiguous block instead of scattered
@@ -191,10 +258,7 @@ class BuildIssueTree
                 continue;
             }
             $emittedGroups[$group['id']] = true;
-            $decorated[] = ['id' => $group['id'], 'number' => null, 'title' => $group['title'], 'state' => 'OPEN', 'parent' => null,
-                'remoteParent' => null, 'container' => true, 'knowledge' => false, 'memberships' => [], 'projectTitle' => $group['projectTitle'], 'projectColor' => $group['color'], 'labels' => [], 'labelData' => [],
-                'context' => false, 'outsideArea' => false, 'ancestors' => [], 'depth' => 0, 'hasChildren' => true,
-                'unresolvedParent' => false, 'virtual' => true];
+            $decorated[] = $this->virtualRow($group['id'], $group['title'], $group['projectTitle'], $group['color'], $group['projectAreaId']);
             foreach ($segmentsByGroup[$group['id']] as $segmentRows) {
                 foreach ($segmentRows as $row) {
                     $row['ancestors'] = [$group['id'], ...$row['ancestors']];
@@ -205,5 +269,93 @@ class BuildIssueTree
         }
 
         return $decorated;
+    }
+
+    /** Wraps each project's already-contiguous run of root segments (guaranteed by clusterRootsByProject,
+     * and preserved by insertGroupRoots since a Group only ever belongs to one project) with a virtual
+     * project header, driven by each segment's own root task -- never a descendant's own membership,
+     * which could legitimately differ from its root's ("Parent from another area") -- only in the All
+     * Projects view.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function insertProjectRoots(array $rows, int $area): array
+    {
+        if ($area !== 0) {
+            return $rows;
+        }
+
+        $rootProjects = [];
+        foreach ($rows as $row) {
+            if ($row['id'] === $row['treeRootId'] && isset($row['memberships'][0])) {
+                $membership = $row['memberships'][0];
+                $rootProjects[$row['id']] = ['id' => 'project-'.$membership['area'], 'title' => $membership['title'], 'color' => $membership['color'], 'projectAreaId' => $membership['area']];
+            }
+        }
+
+        $decorated = [];
+        $inserted = [];
+        foreach ($this->segmentByTreeRoot($rows) as $segment) {
+            $project = $rootProjects[$segment['rootId']] ?? null;
+            if ($project === null) {
+                array_push($decorated, ...$segment['rows']);
+
+                continue;
+            }
+            if (! isset($inserted[$project['id']])) {
+                $inserted[$project['id']] = true;
+                $decorated[] = $this->virtualRow($project['id'], $project['title'], null, $project['color'], $project['projectAreaId']);
+            }
+            foreach ($segment['rows'] as $row) {
+                $row['ancestors'] = [...$row['ancestors'], $project['id']];
+                $row['depth'] = count($row['ancestors']);
+                $decorated[] = $row;
+            }
+        }
+
+        return $decorated;
+    }
+
+    /** Partitions rows into contiguous per-tree-root segments (a root row plus its already-contiguous
+     * descendants, since buildTreeRows() emits each root's subtree depth-first) so every row belonging
+     * to one root task can be moved as a unit.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array{rootId: int, rows: list<array<string, mixed>>}>
+     */
+    private function segmentByTreeRoot(array $rows): array
+    {
+        $segments = [];
+        $pending = [];
+        foreach ($rows as $row) {
+            if ($row['virtual']) {
+                // A virtual header (e.g. a Group root inserted by insertGroupRoots) has no tree root of
+                // its own -- glue it onto the real segment that follows it, rather than letting it start
+                // an orphan segment attributed to no project.
+                $pending[] = $row;
+
+                continue;
+            }
+            if ($row['id'] === $row['treeRootId']) {
+                $segments[] = ['rootId' => $row['treeRootId'], 'rows' => $pending];
+                $pending = [];
+            }
+            $segments[array_key_last($segments)]['rows'][] = $row;
+        }
+        if ($pending !== []) {
+            $segments[] = ['rootId' => 0, 'rows' => $pending];
+        }
+
+        return $segments;
+    }
+
+    /** @return array<string, mixed> */
+    private function virtualRow(string $id, string $title, ?string $projectTitle, ?string $color, ?int $projectAreaId): array
+    {
+        return ['id' => $id, 'number' => null, 'title' => $title, 'state' => 'OPEN', 'parent' => null,
+            'remoteParent' => null, 'container' => true, 'knowledge' => false, 'memberships' => [], 'projectTitle' => $projectTitle, 'projectColor' => $color, 'projectAreaId' => $projectAreaId, 'labels' => [], 'labelData' => [],
+            'context' => false, 'outsideArea' => false, 'ancestors' => [], 'depth' => 0, 'hasChildren' => true,
+            'unresolvedParent' => false, 'virtual' => true, 'parentTitle' => null, 'treeRootId' => $id];
     }
 }
