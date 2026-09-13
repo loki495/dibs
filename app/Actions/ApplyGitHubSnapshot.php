@@ -36,10 +36,17 @@ class ApplyGitHubSnapshot
                     // label must still always carry a real id, so this is enforced here rather than by the column.
                     throw new GitHubSyncException('GitHub returned a label without an id; snapshot was not applied.');
                 }
-                $label = Label::query()->updateOrCreate(['github_node_id' => $remoteLabel['id']], [
-                    'repository_id' => $repo->id, 'name' => $remoteLabel['name'], 'color' => $remoteLabel['color'],
-                    'description' => $remoteLabel['description'], ...$stamp,
-                ]);
+                // A label already synced has this github_node_id. One created locally-first (via a
+                // write tool's newLabelName, never yet pushed) has no github_node_id but the same
+                // (repository_id, name) — reconcile onto that row instead of inserting a duplicate,
+                // which would violate the unique (repository_id, name) constraint.
+                $label = Label::query()->where('github_node_id', $remoteLabel['id'])->first()
+                    ?? Label::query()->where('repository_id', $repo->id)->whereRaw('LOWER(name) = LOWER(?)', [$remoteLabel['name']])->first()
+                    ?? new Label;
+                $label->fill([
+                    'repository_id' => $repo->id, 'github_node_id' => $remoteLabel['id'], 'name' => $remoteLabel['name'],
+                    'color' => $remoteLabel['color'], 'description' => $remoteLabel['description'], ...$stamp,
+                ])->save();
                 $labels[$remoteLabel['id']] = $label->id;
             }
             Label::query()->where('repository_id', $repo->id)->whereNotIn('github_node_id', array_keys($labels))->update(['is_available' => false]);
