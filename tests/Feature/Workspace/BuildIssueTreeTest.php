@@ -104,6 +104,32 @@ it('uses Group as a virtual root in an area and omits that root when filtering b
         ->and(collect($filteredRows)->firstWhere('id', $root->id)['ancestors'])->toBe([]);
 });
 
+it('keeps every root task of the same Group contiguous even when their sibling order interleaves another Group', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $sessioneer = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Sessioneer']);
+    $other = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Other']);
+
+    // Interleave the two groups' root tasks by github_number so a naive single-pass insertion would
+    // scatter the second and third Sessioneer roots instead of keeping them next to the first one.
+    $first = Issue::factory()->create(['title' => 'Sessioneer 8', 'github_number' => 8]);
+    $otherRoot = Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Other 12', 'github_number' => 12]);
+    $second = Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Sessioneer 16', 'github_number' => 16]);
+    $third = Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Sessioneer 86', 'github_number' => 86]);
+    foreach ([$first, $second, $third] as $issue) {
+        ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create(['group_option_id' => $sessioneer->id]);
+    }
+    ProjectItem::factory()->for($project, 'project')->for($otherRoot, 'issue')->create(['group_option_id' => $other->id]);
+
+    $rows = app(BuildIssueTree::class)->handle(area: $project->id)['rows'];
+    $ids = array_column($rows, 'id');
+    $sessioneerStart = array_search('group-'.$sessioneer->id, $ids, true);
+
+    expect(array_slice($ids, $sessioneerStart, 4))->toBe(['group-'.$sessioneer->id, $first->id, $second->id, $third->id])
+        ->and(collect($rows)->firstWhere('id', $second->id)['ancestors'])->toBe(['group-'.$sessioneer->id])
+        ->and(collect($rows)->firstWhere('id', $third->id)['ancestors'])->toBe(['group-'.$sessioneer->id]);
+});
+
 it('requires every selected label while leaving all issues visible without selected labels', function (): void {
     $first = Label::factory()->create(['name' => 'next']);
     $second = Label::factory()->for($first->repository, 'repository')->create(['name' => 'waiting']);
