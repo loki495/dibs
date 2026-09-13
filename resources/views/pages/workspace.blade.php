@@ -21,6 +21,7 @@ use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubSyncException;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -145,12 +146,14 @@ new class extends Component
         $this->group = 0;
         $this->selected = 0;
         $this->captureParent = 0;
+        $this->dispatch('area-changed', area: $this->area);
     }
 
     public function daily(): void
     {
         $this->reset('area', 'group', 'priority', 'sortBy', 'labels', 'search', 'selected', 'state', 'captureArea', 'captureParent');
         $this->view = 'daily';
+        $this->dispatch('area-changed', area: $this->area);
     }
 
     public function clearFilters(): void
@@ -175,6 +178,7 @@ new class extends Component
         $this->captureOpen = true;
     }
 
+    #[On('open-project-settings')]
     public function openProjectSettings(): void
     {
         $project = $this->area > 0 ? GitHubProject::query()->where('is_available', true)->find($this->area) : null;
@@ -608,7 +612,7 @@ new class extends Component
                     </div>
                     <div class="flex items-center gap-2">
                         @if ($area > 0 && $view !== 'daily')
-                            <flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth">{{ __('Project settings') }}</flux:button>
+                            <flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth" class="hidden md:inline-flex">{{ __('Project settings') }}</flux:button>
                         @endif
                         <flux:button type="button" wire:click="openCapture" icon="plus" size="sm" class="bg-teal-700! text-white! hover:bg-teal-600! dark:bg-teal-600! dark:hover:bg-teal-500!">{{ __('Add task') }}</flux:button>
                     </div>
@@ -624,7 +628,7 @@ new class extends Component
                     @if ($view !== 'daily')
                         <flux:select wire:model.live="state" class="w-32" aria-label="Issue state"><option value="OPEN">{{ __('Open') }}</option><option value="CLOSED">{{ __('Closed') }}</option><option value="ALL">{{ __('All states') }}</option></flux:select>
                     @endif
-                    <flux:select wire:model.live="priority" class="w-28" aria-label="{{ __('Priority') }}"><option value="0">{{ __('Any priority') }}</option>@foreach (range(1, 5) as $value)<option value="{{ $value }}">{{ __('P:value', ['value' => $value]) }}</option>@endforeach</flux:select>
+                    <flux:select wire:model.live="priority" class="w-36" aria-label="{{ __('Priority') }}"><option value="0">{{ __('Any priority') }}</option>@foreach (range(1, 5) as $value)<option value="{{ $value }}">{{ __('P:value', ['value' => $value]) }}</option>@endforeach</flux:select>
                     <flux:select wire:model.live="sortBy" class="w-40" aria-label="{{ __('Sort by') }}">
                         <option value="project">{{ __('Sort: Project') }}</option>
                         <option value="group">{{ __('Sort: Group') }}</option>
@@ -635,7 +639,7 @@ new class extends Component
                 </div>
                 @if ($labelOptions)
                     <div x-data="{ open: false }" class="flex items-start gap-1.5" aria-label="{{ __('Labels') }}">
-                        <div class="flex max-h-8 flex-1 flex-nowrap gap-1.5 overflow-hidden md:max-h-none md:flex-wrap" :class="open ? 'max-h-40 flex-wrap' : ''">
+                        <div class="flex max-h-8 flex-1 flex-nowrap gap-1.5 overflow-auto md:max-h-none md:flex-wrap md:overflow-visible" :class="open ? 'max-h-40 flex-wrap' : ''">
                             @foreach ($labelOptions as $name)
                                 <button wire:click="toggleLabel(@js($name))" @class(['shrink-0 rounded-full border px-2 py-1 text-xs transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => in_array($name, $labels, true), 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! in_array($name, $labels, true)]) aria-pressed="{{ in_array($name, $labels, true) ? 'true' : 'false' }}">{{ $name }}</button>
                             @endforeach
@@ -720,7 +724,12 @@ new class extends Component
             </div>
             <flux:input wire:model="projectSettingsTitle" label="{{ __('Project name') }}" autocomplete="off" />
             <div class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-                <div class="flex items-end gap-3"><span class="size-10 shrink-0 rounded-xl border border-black/10" style="background-color: #{{ $projectSettingsColor ?: '0f766e' }}"></span><div class="min-w-0 flex-1"><flux:input wire:model="projectSettingsColor" label="{{ __('Color') }}" prefix="#" maxlength="6" autocomplete="off" /><flux:text class="mt-1">{{ __('Six hexadecimal characters, such as 0f766e.') }}</flux:text></div></div>
+                <div class="flex items-end gap-3" x-data="{ color: @entangle('projectSettingsColor') }">
+                    <label class="relative block size-10 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-slate-300 dark:border-slate-600" :style="{ backgroundColor: '#' + (color || '0f766e') }">
+                        <input type="color" class="absolute inset-0 size-full cursor-pointer opacity-0" :value="'#' + (color || '0f766e')" @input="color = $event.target.value.replace('#', '')" aria-label="{{ __('Pick a color') }}">
+                    </label>
+                    <div class="min-w-0 flex-1"><flux:input wire:model="projectSettingsColor" label="{{ __('Color') }}" prefix="#" maxlength="6" autocomplete="off" /><flux:text class="mt-1">{{ __('Six hexadecimal characters, such as 0f766e.') }}</flux:text></div>
+                </div>
             </div>
             @error('projectSettingsTitle')<flux:text class="text-amber-700 dark:text-amber-400">{{ $message }}</flux:text>@enderror
             @error('projectSettingsColor')<flux:text class="text-amber-700 dark:text-amber-400">{{ __('Use a six-character hexadecimal color.') }}</flux:text>@enderror
