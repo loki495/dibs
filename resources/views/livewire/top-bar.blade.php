@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\SyncGitHub;
 use App\Services\GitHub\GitHubSyncException;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component
@@ -13,6 +14,19 @@ new class extends Component
     public ?string $refreshMessage = null;
 
     public ?string $refreshError = null;
+
+    public int $currentArea = 0;
+
+    public function mount(): void
+    {
+        $this->currentArea = (int) request()->query('area', 0);
+    }
+
+    #[On('area-changed')]
+    public function updateCurrentArea(int $area): void
+    {
+        $this->currentArea = $area;
+    }
 
     public function refreshFromGitHub(): void
     {
@@ -73,6 +87,9 @@ new class extends Component
                 <span wire:loading.remove wire:target="refreshFromGitHub">{{ __('Refresh from GitHub') }}</span>
                 <span wire:loading wire:target="refreshFromGitHub">{{ __('Refreshing…') }}</span>
             </button>
+            @if ($currentArea > 0)
+                <button type="button" wire:click="$dispatch('open-project-settings')" class="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden">{{ __('Project settings') }}</button>
+            @endif
         @endauth
         <label class="flex items-center justify-between gap-2 px-2 py-1.5 text-sm" for="theme">{{ __('Theme') }}
             <select id="theme" x-model="theme" @change="window.todoTheme.set(theme)" class="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900">

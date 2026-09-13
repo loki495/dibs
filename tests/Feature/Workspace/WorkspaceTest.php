@@ -27,6 +27,7 @@ it('browses an area and opens the selected issue without network access', functi
     $issue->labels()->attach($label);
     ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
     Livewire::actingAs($user)->test('pages::workspace')->call('chooseArea', $project->id)->assertSet('captureArea', $project->id)
+        ->assertDispatched('area-changed', area: $project->id)
         ->assertSee('A task to inspect')->assertSeeHtml('data-label="next"')->assertSeeHtml('data-project-color="#'.$project->color.'"')->set('selected', $issue->id)
         ->assertSee('Useful')->assertSee('Open in GitHub')->assertSee('Discussion & history')
         ->set('selected', 0)->assertDontSee('Discussion & history');
@@ -166,6 +167,24 @@ it('reports a refresh failure from the shared top bar without crashing', functio
         ->call('refreshFromGitHub')
         ->assertSet('refreshError', 'GitHub HTTP 429; check access or retry later.')
         ->assertSee('GitHub HTTP 429; check access or retry later.');
+});
+
+it('hides the mobile project-settings item until a project area is selected, then shows it reactively', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('top-bar')
+        ->assertDontSeeHtml("dispatch('open-project-settings')")
+        ->call('updateCurrentArea', 5)
+        ->assertSeeHtml("dispatch('open-project-settings')");
+});
+
+it('picks up the initial project area from the URL so the mobile item is correct on first load', function (): void {
+    // A genuine full-page GET, not Livewire::test() -- the component's mount() reads request()->query()
+    // directly only outside of Livewire's own AJAX request cycle, so a component-level test wouldn't
+    // exercise this path at all.
+    $project = GitHubProject::factory()->create();
+
+    $this->actingAs(User::factory()->create())->get('/?area='.$project->id)
+        ->assertOk()
+        ->assertSeeHtml("dispatch('open-project-settings')");
 });
 
 it('quickly captures a task locally without calling GitHub', function (): void {
