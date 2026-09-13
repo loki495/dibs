@@ -7,7 +7,6 @@ use App\Actions\EnqueueGitHubPush;
 use App\Actions\GetIssueDetails;
 use App\Actions\ReleaseAbandonedTaskClaim;
 use App\Actions\ReviseTodoComment;
-use App\Actions\SyncGitHub;
 use App\Actions\UpdateGitHubProject;
 use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
@@ -53,8 +52,6 @@ new class extends Component
 
     #[Url(as: 'issue')]
     public int $selected = 0;
-
-    public ?string $refreshMessage = null;
 
     public string $newTitle = '';
 
@@ -124,8 +121,6 @@ new class extends Component
 
     public ?string $captureError = null;
 
-    public ?string $refreshError = null;
-
     public ?string $claimError = null;
 
     public function mount(): void
@@ -152,17 +147,6 @@ new class extends Component
         $this->captureParent = 0;
     }
 
-    public function chooseMobileNavigation(string $value): void
-    {
-        if ($value === 'daily') {
-            $this->daily();
-
-            return;
-        }
-
-        $this->chooseArea((int) $value);
-    }
-
     public function daily(): void
     {
         $this->reset('area', 'group', 'priority', 'rankPriority', 'labels', 'search', 'selected', 'state', 'captureArea', 'captureParent');
@@ -179,25 +163,6 @@ new class extends Component
         $this->labels = in_array($name, $this->labels, true)
             ? array_values(array_diff($this->labels, [$name]))
             : [...$this->labels, $name];
-    }
-
-    public function refreshFromGitHub(): void
-    {
-        $this->reset('refreshMessage', 'refreshError');
-
-        $token = (string) config('github.token');
-        if ($token === '') {
-            $this->refreshError = 'In-app refresh needs a server-side GitHub token. Set GITHUB_TOKEN and try again.';
-
-            return;
-        }
-
-        try {
-            app(SyncGitHub::class)->handle($token, comments: true);
-            $this->refreshMessage = 'Updated from GitHub just now.';
-        } catch (GitHubSyncException $exception) {
-            $this->refreshError = $exception->getMessage();
-        }
     }
 
     public function openCapture(): void
@@ -592,28 +557,15 @@ new class extends Component
 }; ?>
 
 <div class="pb-8 pt-3" @keydown.escape.window="$wire.set('selected', 0)">
-    <header class="mb-8 flex items-center justify-between gap-4">
-        <a href="{{ route('workspace') }}" class="flex items-center gap-3 text-xl font-semibold tracking-tight">
-            <span class="flex size-10 items-center justify-center rounded-xl bg-teal-800 text-white"><flux:icon.check class="size-6" /></span>
-            {{ config('app.name') }}
-        </a>
-        <div class="flex items-center gap-2">
-            <flux:button type="button" wire:click="refreshFromGitHub" wire:loading.attr="disabled" wire:target="refreshFromGitHub" variant="ghost" size="sm">
-                <span wire:loading.remove wire:target="refreshFromGitHub">{{ __('Refresh from GitHub') }}</span>
-                <span wire:loading wire:target="refreshFromGitHub">{{ __('Refreshing…') }}</span>
-            </flux:button>
-            <form method="POST" action="{{ route('logout') }}">@csrf<flux:button type="submit" variant="ghost" size="sm">{{ __('Sign out') }}</flux:button></form>
-        </div>
-    </header>
-    @if ($refreshMessage)<p role="status" class="mb-6 rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:bg-teal-950 dark:text-teal-100">{{ $refreshMessage }}</p>@endif
-    @if ($refreshError)<p role="alert" class="mb-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $refreshError }}</p>@endif
     <div class="grid items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-10">
-            <div class="mb-4 md:hidden">
-                <flux:select wire:change="chooseMobileNavigation($event.target.value)" aria-label="{{ __('Workspace area') }}">
-                    <option value="daily" @selected($view === 'daily')>{{ __('Daily') }} · {{ $dailyCount }}</option>
-                    <option value="0" @selected($area === 0 && $view !== 'daily')>{{ __('All projects') }} · {{ $taskCount }}</option>
-                    @foreach ($projects as $project)<option value="{{ $project->id }}" @selected($area === $project->id && $view !== 'daily')>{{ $project->title }} · {{ $areaCounts[$project->id] ?? 0 }}</option>@endforeach
-                </flux:select>
+            <div class="mb-4 flex gap-1.5 overflow-x-auto pb-0.5 md:hidden" aria-label="{{ __('Workspace area') }}">
+                <button type="button" wire:click="daily" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $view === 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $view !== 'daily']) aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}">{{ __('Daily') }} · {{ $dailyCount }}</button>
+                <button type="button" wire:click="chooseArea(0)" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === 0 && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $area !== 0 || $view === 'daily']) aria-pressed="{{ $area === 0 && $view !== 'daily' ? 'true' : 'false' }}">{{ __('All') }} · {{ $taskCount }}</button>
+                @foreach ($projects as $project)
+                    <button type="button" wire:click="chooseArea({{ $project->id }})" @class(['flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === $project->id && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! ($area === $project->id && $view !== 'daily')]) aria-pressed="{{ $area === $project->id && $view !== 'daily' ? 'true' : 'false' }}">
+                        <span class="size-1.5 shrink-0 rounded-full" style="background-color: #{{ $project->color }}"></span>{{ $project->title }} · {{ $areaCounts[$project->id] ?? 0 }}
+                    </button>
+                @endforeach
             </div>
         <aside class="hidden lg:sticky lg:top-6 md:block">
             <nav aria-label="{{ __('Workspace navigation') }}" class="space-y-1">
@@ -641,14 +593,12 @@ new class extends Component
                     {{ __('Waiting for the first import') }}
                 @endif
             </div>
+            <div class="mt-2 border-t border-slate-200 pt-2 dark:border-slate-800">
+                <livewire:top-bar variant="labeled" />
+            </div>
         </aside>
 
         <section class="min-w-0">
-            <div class="mb-6">
-                <p class="mb-2 text-xs font-medium uppercase tracking-widest text-teal-700 dark:text-teal-400">{{ $view === 'daily' ? \Illuminate\Support\Carbon::parse($today)->format('l, F j') : __('Your workspace') }}</p>
-                <div class="flex flex-wrap items-center gap-3"><h1 class="text-3xl font-semibold tracking-tight">{{ $view === 'daily' ? __('Daily list') : ($projects->firstWhere('id', $area)?->title ?? __('All areas')) }}</h1>@if ($area > 0 && $view !== 'daily')<flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth">{{ __('Project settings') }}</flux:button>@endif</div>
-                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ $view === 'daily' ? __('Planned work, deadlines, and your picks for today.') : __('A little structure for everything on your mind.') }}</p>
-            </div>
             <div class="mb-5">
                 <div class="flex items-center justify-between gap-2">
                     <div class="flex rounded-lg border border-slate-200 p-1 dark:border-slate-800" aria-label="{{ __('Content type') }}">
@@ -656,7 +606,12 @@ new class extends Component
                             <button wire:click="$set('view', '{{ $mode }}')" @class(['min-h-9 rounded-md px-3 text-sm sm:px-4', 'bg-white font-medium shadow-sm dark:bg-slate-800' => $view === $mode, 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100' => $view !== $mode]) aria-pressed="{{ $view === $mode ? 'true' : 'false' }}">{{ $title }}</button>
                         @endforeach
                     </div>
-                    <flux:button type="button" wire:click="openCapture" icon="plus" size="sm" class="bg-teal-700! text-white! hover:bg-teal-600! dark:bg-teal-600! dark:hover:bg-teal-500!">{{ __('Add task') }}</flux:button>
+                    <div class="flex items-center gap-2">
+                        @if ($area > 0 && $view !== 'daily')
+                            <flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth">{{ __('Project settings') }}</flux:button>
+                        @endif
+                        <flux:button type="button" wire:click="openCapture" icon="plus" size="sm" class="bg-teal-700! text-white! hover:bg-teal-600! dark:bg-teal-600! dark:hover:bg-teal-500!">{{ __('Add task') }}</flux:button>
+                    </div>
                 </div>
                 <div class="mt-3"><flux:input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="Search titles, notes, or #number" aria-label="Search tasks" /></div>
             </div>
