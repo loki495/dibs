@@ -67,5 +67,5 @@ it('lists live claims with agent identity and verified-live status', function ()
 it('includes the push-queue counts', function (): void {
     $result = app(DescribeTodoContext::class)->handle();
 
-    expect($result['pushQueue'])->toBe(['pending' => 0, 'failed' => 0, 'needsAttention' => 0, 'actionable' => 0]);
+    expect($result['pushQueue'])->toBe(['pending' => 0, 'failed' => 0, 'needsAttention' => 0, 'pushed' => 0, 'actionable' => 0]);
 });

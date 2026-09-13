@@ -9,7 +9,7 @@ use App\Models\Issue;
 it('reports queue counts with no actionable items when the queue is empty', function (): void {
     $result = app(DescribeTodoQueueStatus::class)->handle();
 
-    expect($result['counts'])->toBe(['pending' => 0, 'failed' => 0, 'needsAttention' => 0, 'actionable' => 0])
+    expect($result['counts'])->toBe(['pending' => 0, 'failed' => 0, 'needsAttention' => 0, 'pushed' => 0, 'actionable' => 0])
         ->and($result['actionable'])->toBe([]);
 });
 
@@ -21,7 +21,7 @@ it('lists failed and needs_attention items with a human target description', fun
 
     $result = app(DescribeTodoQueueStatus::class)->handle();
 
-    expect($result['counts'])->toBe(['pending' => 1, 'failed' => 1, 'needsAttention' => 1, 'actionable' => 2])
+    expect($result['counts'])->toBe(['pending' => 1, 'failed' => 1, 'needsAttention' => 1, 'pushed' => 0, 'actionable' => 2])
         ->and($result['actionable'])->toHaveCount(2)
         ->and(collect($result['actionable'])->pluck('id')->sort()->values()->all())->toBe([$failed->id, $needsAttention->id])
         ->and(collect($result['actionable'])->firstWhere('id', $failed->id)['lastError'])->toBe('GitHub HTTP 500')

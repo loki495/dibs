@@ -28,11 +28,35 @@ it('lets a signed-in user discard a pending row without pushing it', function ()
     expect(GitHubPushQueueItem::query()->find($pending->id))->toBeNull();
 });
 
-it('does not offer discard for an already-pushed row', function (): void {
+it('lets a signed-in user discard an individual pushed row too', function (): void {
     $user = User::factory()->create();
-    GitHubPushQueueItem::factory()->create(['status' => 'pushed']);
+    $pushed = GitHubPushQueueItem::factory()->create(['status' => 'pushed']);
 
-    Livewire::actingAs($user)->test('pages::push-queue')->assertDontSee('Discard');
+    Livewire::actingAs($user)->test('pages::push-queue')
+        ->assertSeeHtml('discard('.$pushed->id.')')
+        ->call('discard', $pushed->id);
+
+    expect(GitHubPushQueueItem::query()->find($pushed->id))->toBeNull();
+});
+
+it('lets a signed-in user clear every pushed row at once', function (): void {
+    $user = User::factory()->create();
+    GitHubPushQueueItem::factory()->count(3)->create(['status' => 'pushed']);
+    $pending = GitHubPushQueueItem::factory()->create(['status' => 'pending']);
+
+    Livewire::actingAs($user)->test('pages::push-queue')
+        ->assertSee('Clear pushed')
+        ->call('clearPushed');
+
+    expect(GitHubPushQueueItem::query()->where('status', 'pushed')->count())->toBe(0)
+        ->and(GitHubPushQueueItem::query()->find($pending->id))->not->toBeNull();
+});
+
+it('hides the clear-pushed action when there is nothing pushed', function (): void {
+    $user = User::factory()->create();
+    GitHubPushQueueItem::factory()->create(['status' => 'pending']);
+
+    Livewire::actingAs($user)->test('pages::push-queue')->assertDontSee('Clear pushed');
 });
 
 it('is unreachable to a guest', function (): void {
