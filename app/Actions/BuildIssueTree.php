@@ -156,23 +156,52 @@ class BuildIssueTree
             }
         }
 
-        $decorated = [];
-        $inserted = [];
+        // Partition into contiguous per-root segments (a root row plus its already-contiguous descendants,
+        // since $walk() emits each root's subtree depth-first) so every row belonging to one root task moves
+        // together as a unit.
+        $segments = [];
         foreach ($rows as $row) {
-            $rootId = $row['ancestors'][0] ?? $row['id'];
-            $group = $rootGroups[$rootId] ?? null;
-            if ($group !== null) {
-                if (! isset($inserted[$group['id']])) {
-                    $decorated[] = ['id' => $group['id'], 'number' => null, 'title' => $group['title'], 'state' => 'OPEN', 'parent' => null,
-                        'remoteParent' => null, 'container' => true, 'knowledge' => false, 'memberships' => [], 'projectTitle' => $group['projectTitle'], 'projectColor' => $group['color'], 'labels' => [], 'labelData' => [],
-                        'context' => false, 'outsideArea' => false, 'ancestors' => [], 'depth' => 0, 'hasChildren' => true,
-                        'unresolvedParent' => false, 'virtual' => true];
-                    $inserted[$group['id']] = true;
-                }
-                $row['ancestors'] = [$group['id'], ...$row['ancestors']];
-                $row['depth'] = count($row['ancestors']);
+            if ($row['ancestors'] === []) {
+                $segments[] = ['rootId' => $row['id'], 'rows' => []];
             }
-            $decorated[] = $row;
+            $segments[array_key_last($segments)]['rows'][] = $row;
+        }
+
+        // Collect every segment belonging to each group up front, regardless of where its root falls in the
+        // global sibling/number order, so a group's tasks render as one contiguous block instead of scattered
+        // wherever each of that group's root tasks happens to sit relative to other groups' root tasks.
+        $segmentsByGroup = [];
+        foreach ($segments as $segment) {
+            $group = $rootGroups[$segment['rootId']] ?? null;
+            if ($group !== null) {
+                $segmentsByGroup[$group['id']][] = $segment['rows'];
+            }
+        }
+
+        $decorated = [];
+        $emittedGroups = [];
+        foreach ($segments as $segment) {
+            $group = $rootGroups[$segment['rootId']] ?? null;
+            if ($group === null) {
+                array_push($decorated, ...$segment['rows']);
+
+                continue;
+            }
+            if (isset($emittedGroups[$group['id']])) {
+                continue;
+            }
+            $emittedGroups[$group['id']] = true;
+            $decorated[] = ['id' => $group['id'], 'number' => null, 'title' => $group['title'], 'state' => 'OPEN', 'parent' => null,
+                'remoteParent' => null, 'container' => true, 'knowledge' => false, 'memberships' => [], 'projectTitle' => $group['projectTitle'], 'projectColor' => $group['color'], 'labels' => [], 'labelData' => [],
+                'context' => false, 'outsideArea' => false, 'ancestors' => [], 'depth' => 0, 'hasChildren' => true,
+                'unresolvedParent' => false, 'virtual' => true];
+            foreach ($segmentsByGroup[$group['id']] as $segmentRows) {
+                foreach ($segmentRows as $row) {
+                    $row['ancestors'] = [$group['id'], ...$row['ancestors']];
+                    $row['depth'] = count($row['ancestors']);
+                    $decorated[] = $row;
+                }
+            }
         }
 
         return $decorated;
