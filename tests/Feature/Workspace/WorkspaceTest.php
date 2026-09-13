@@ -32,6 +32,32 @@ it('browses an area and opens the selected issue without network access', functi
         ->set('selected', 0)->assertDontSee('Discussion & history');
 });
 
+it('applies the project filter when clicking a task row\'s project pill', function (): void {
+    $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
+    $issue = Issue::factory()->create(['title' => 'Pick me']);
+    ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    // The badge only appears on genuinely top-level rows -- in the default "Project" sort, every root
+    // task is already wrapped in its own project section header (depth > 0), so the badge would be
+    // redundant there. It's still reachable in "Group" sort and the flat sorts, where no such
+    // section-per-project wrapping happens.
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('sortBy', 'group')
+        ->assertSeeHtml('wire:click.stop="chooseArea('.$project->id.')"')
+        ->call('chooseArea', $project->id)
+        ->assertSet('area', $project->id);
+});
+
+it('applies the label filter when clicking a task row\'s label pill', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Pick me']);
+    $label = Label::factory()->for($issue->repository, 'repository')->create(['name' => 'next']);
+    $issue->labels()->attach($label);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->assertSeeHtml('wire:click.stop="toggleLabel(\'next\')"')
+        ->call('toggleLabel', 'next')
+        ->assertSet('labels', ['next']);
+});
+
 it('keeps a matched child visible with its parent during search', function (): void {
     $root = Issue::factory()->create(['title' => 'Website context']);
     Issue::factory()->for($root, 'parent')->create(['title' => 'Specific needle']);
