@@ -34,3 +34,5 @@ Thumbs.db
 /.phpstan/
 /.rector/
 /.playwright-mcp/
+/docker/ssh/capture_bridge_ed25519
+/docker/ssh/capture_bridge_ed25519.pub
