@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\ApplyGitHubSnapshot;
+use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectItem;
@@ -97,6 +98,30 @@ it('accepts re-added membership with a new GitHub item identity', function (): v
     $snapshot['projects'][0]['items'][0]['id'] = 'PI_NEW';
     app(ApplyGitHubSnapshot::class)->handle($snapshot);
     expect(ProjectItem::query()->where('is_available', true)->sole()->github_node_id)->toBe('PI_NEW');
+});
+
+it('reconciles a local-first label onto the same name instead of duplicating it, closing #61', function (): void {
+    $repository = GitHubRepository::factory()->create(['github_node_id' => 'R1']);
+    $local = Label::factory()->for($repository, 'repository')->create(['github_node_id' => null, 'name' => 'needs research']);
+
+    $snapshot = githubSnapshotFixture();
+    $snapshot['labels'][] = ['id' => 'L2', 'name' => 'needs research', 'color' => 'e4e669', 'description' => 'Workflow marker'];
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+
+    expect(Label::query()->where('name', 'needs research')->count())->toBe(1)
+        ->and($local->fresh()->github_node_id)->toBe('L2')
+        ->and($local->fresh()->color)->toBe('e4e669');
+});
+
+it('reconciles a local-first label by name case-insensitively', function (): void {
+    $repository = GitHubRepository::factory()->create(['github_node_id' => 'R1']);
+    Label::factory()->for($repository, 'repository')->create(['github_node_id' => null, 'name' => 'Needs Research']);
+
+    $snapshot = githubSnapshotFixture();
+    $snapshot['labels'][] = ['id' => 'L2', 'name' => 'needs research', 'color' => 'e4e669', 'description' => null];
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+
+    expect(Label::query()->where('github_node_id', 'L2')->count())->toBe(1);
 });
 
 it('preserves multiple memberships and non-issue content', function (): void {
