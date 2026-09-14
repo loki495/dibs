@@ -29,6 +29,21 @@
     --color-zinc-800: var(--color-slate-900);
     --color-zinc-900: var(--color-slate-950);
     --color-zinc-950: var(--color-slate-950);
+
+    /* Flux's own default accent is a plain black/white grayscale (zinc-800 in light mode, white in
+       dark mode) -- any Flux component that relies on the default "accent" semantic color instead of
+       an explicit teal override (e.g. the add-comment button, which uses flux:button's default
+       outline variant with no color prop) renders in that neutral gray instead of this app's teal
+       brand, clashing with the explicitly-teal buttons elsewhere (Add task, Mark done). */
+    --color-accent: var(--color-teal-700);
+    --color-accent-content: var(--color-teal-700);
+    --color-accent-foreground: var(--color-white);
+}
+
+.dark {
+    --color-accent: var(--color-teal-600);
+    --color-accent-content: var(--color-teal-600);
+    --color-accent-foreground: var(--color-white);
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
