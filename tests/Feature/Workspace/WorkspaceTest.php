@@ -74,6 +74,72 @@ it('applies the label filter when clicking a task row\'s label pill', function (
         ->assertSet('labels', ['next']);
 });
 
+it('selects tasks in bulk mode by clicking the row, and clears the selection when bulk mode is toggled off', function (): void {
+    $first = Issue::factory()->create(['title' => 'First']);
+    $second = Issue::factory()->create(['title' => 'Second']);
+
+    $component = Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->assertDontSeeHtml('toggleBulkSelect('.$first->id.')')
+        ->call('toggleBulkMode')->assertSet('bulkMode', true)
+        ->assertSeeHtml('toggleBulkSelect('.$first->id.')')
+        ->call('toggleBulkSelect', $first->id)->assertSet('bulkSelected', [$first->id])
+        ->call('toggleBulkSelect', $second->id)->assertSet('bulkSelected', [$first->id, $second->id])
+        ->call('toggleBulkSelect', $first->id)->assertSet('bulkSelected', [$second->id]);
+
+    $component->call('toggleBulkMode')->assertSet('bulkMode', false)->assertSet('bulkSelected', []);
+});
+
+it('bulk-moves selected tasks into a Group', function (): void {
+    Http::fake();
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Career']);
+    $first = Issue::factory()->create();
+    $second = Issue::factory()->create();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('toggleBulkMode')->call('toggleBulkSelect', $first->id)->call('toggleBulkSelect', $second->id)
+        ->call('openBulkGroup')->assertSet('bulkGroupOpen', true)
+        ->set('bulkGroupArea', $project->id)->set('bulkGroup', $group->id)->call('applyBulkGroup')
+        ->assertSet('bulkGroupOpen', false);
+
+    expect(ProjectItem::query()->where('issue_id', $first->id)->where('group_option_id', $group->id)->exists())->toBeTrue();
+    expect(ProjectItem::query()->where('issue_id', $second->id)->where('group_option_id', $group->id)->exists())->toBeTrue();
+});
+
+it('bulk-sets a parent on selected tasks', function (): void {
+    Http::fake();
+    $parent = Issue::factory()->create(['title' => 'Parent task']);
+    $first = Issue::factory()->create();
+    $second = Issue::factory()->create();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('toggleBulkMode')->call('toggleBulkSelect', $first->id)->call('toggleBulkSelect', $second->id)
+        ->call('openBulkParent')->assertSet('bulkParentOpen', true)
+        ->set('bulkParent', $parent->id)->call('applyBulkParent')
+        ->assertSet('bulkParentOpen', false);
+
+    expect($first->refresh()->parent_issue_id)->toBe($parent->id);
+    expect($second->refresh()->parent_issue_id)->toBe($parent->id);
+});
+
+it('bulk-adds a label to selected tasks', function (): void {
+    Http::fake();
+    $repository = GitHubRepository::factory()->create();
+    $label = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
+    $first = Issue::factory()->for($repository, 'repository')->create();
+    $second = Issue::factory()->for($repository, 'repository')->create();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('toggleBulkMode')->call('toggleBulkSelect', $first->id)->call('toggleBulkSelect', $second->id)
+        ->call('openBulkLabels')->assertSet('bulkLabelsOpen', true)
+        ->call('toggleBulkLabel', $label->id)->call('applyBulkLabels')
+        ->assertSet('bulkLabelsOpen', false);
+
+    expect($first->labels()->pluck('labels.id')->all())->toBe([$label->id]);
+    expect($second->labels()->pluck('labels.id')->all())->toBe([$label->id]);
+});
+
 it('keeps a matched child visible with its parent during search', function (): void {
     $root = Issue::factory()->create(['title' => 'Website context']);
     Issue::factory()->for($root, 'parent')->create(['title' => 'Specific needle']);

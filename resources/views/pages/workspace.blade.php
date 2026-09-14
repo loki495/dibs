@@ -1,6 +1,9 @@
 <?php declare(strict_types=1);
 
 use App\Actions\BuildIssueTree;
+use App\Actions\BulkAddLabelsToIssues;
+use App\Actions\BulkMoveIssuesToGroup;
+use App\Actions\BulkSetIssuesParent;
 use App\Actions\CreateTodoComment;
 use App\Actions\CreateTodoIssue;
 use App\Actions\DeleteGroupOption;
@@ -146,6 +149,34 @@ new class extends Component
     public string $managingLabelName = '';
 
     public ?string $manageLabelsError = null;
+
+    public bool $bulkMode = false;
+
+    /** @var list<int> */
+    public array $bulkSelected = [];
+
+    public bool $bulkGroupOpen = false;
+
+    public int $bulkGroupArea = 0;
+
+    public int $bulkGroup = 0;
+
+    public string $bulkGroupSearch = '';
+
+    public bool $bulkParentOpen = false;
+
+    public int $bulkParent = 0;
+
+    public string $bulkParentSearch = '';
+
+    public bool $bulkLabelsOpen = false;
+
+    /** @var list<int> */
+    public array $bulkLabels = [];
+
+    public string $bulkLabelSearch = '';
+
+    public ?string $bulkError = null;
 
     public ?string $captureError = null;
 
@@ -373,6 +404,105 @@ new class extends Component
         $this->labels = array_values(array_diff($this->labels, [$name]));
         $this->captureLabels = array_values(array_diff($this->captureLabels, [$id]));
         $this->editLabels = array_values(array_diff($this->editLabels, [$id]));
+    }
+
+    public function toggleBulkMode(): void
+    {
+        $this->bulkMode = ! $this->bulkMode;
+        $this->bulkSelected = [];
+    }
+
+    public function toggleBulkSelect(int $id): void
+    {
+        $this->bulkSelected = in_array($id, $this->bulkSelected, true)
+            ? array_values(array_diff($this->bulkSelected, [$id]))
+            : [...$this->bulkSelected, $id];
+    }
+
+    public function clearBulkSelection(): void
+    {
+        $this->bulkSelected = [];
+    }
+
+    public function openBulkGroup(): void
+    {
+        if ($this->bulkSelected === []) {
+            return;
+        }
+        $this->reset('bulkError', 'bulkGroup', 'bulkGroupSearch');
+        $this->bulkGroupArea = $this->area > 0 ? $this->area : 0;
+        $this->bulkGroupOpen = true;
+    }
+
+    public function applyBulkGroup(): void
+    {
+        if ($this->bulkGroupArea <= 0) {
+            $this->bulkError = 'Choose an area first.';
+
+            return;
+        }
+        try {
+            app(BulkMoveIssuesToGroup::class)->handle($this->bulkSelected, $this->bulkGroupArea, $this->bulkGroup > 0 ? $this->bulkGroup : null);
+        } catch (TodoValidationException $exception) {
+            $this->bulkError = $exception->getMessage();
+
+            return;
+        }
+        $this->bulkGroupOpen = false;
+    }
+
+    public function openBulkParent(): void
+    {
+        if ($this->bulkSelected === []) {
+            return;
+        }
+        $this->reset('bulkError', 'bulkParent', 'bulkParentSearch');
+        $this->bulkParentOpen = true;
+    }
+
+    public function applyBulkParent(): void
+    {
+        try {
+            app(BulkSetIssuesParent::class)->handle($this->bulkSelected, $this->bulkParent > 0 ? $this->bulkParent : null);
+        } catch (TodoValidationException $exception) {
+            $this->bulkError = $exception->getMessage();
+
+            return;
+        }
+        $this->bulkParentOpen = false;
+    }
+
+    public function openBulkLabels(): void
+    {
+        if ($this->bulkSelected === []) {
+            return;
+        }
+        $this->reset('bulkError', 'bulkLabels', 'bulkLabelSearch');
+        $this->bulkLabelsOpen = true;
+    }
+
+    public function toggleBulkLabel(int $id): void
+    {
+        $this->bulkLabels = in_array($id, $this->bulkLabels, true)
+            ? array_values(array_diff($this->bulkLabels, [$id]))
+            : [...$this->bulkLabels, $id];
+    }
+
+    public function applyBulkLabels(): void
+    {
+        if ($this->bulkLabels === []) {
+            $this->bulkError = 'Choose at least one label.';
+
+            return;
+        }
+        try {
+            app(BulkAddLabelsToIssues::class)->handle($this->bulkSelected, $this->bulkLabels);
+        } catch (TodoValidationException $exception) {
+            $this->bulkError = $exception->getMessage();
+
+            return;
+        }
+        $this->bulkLabelsOpen = false;
     }
 
     public function updatedCaptureGroup(int $value): void
@@ -784,6 +914,16 @@ new class extends Component
         $projectSettingsGroups = $this->projectSettingsProject > 0
             ? ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->projectSettingsProject))->orderBy('position')->get()
             : collect();
+        $bulkGroups = $this->bulkGroupArea > 0
+            ? ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->bulkGroupArea))->orderBy('position')->get()
+                ->filter(fn (ProjectFieldOption $option): bool => $this->bulkGroupSearch === '' || str_contains(Str::lower($option->name), Str::lower($this->bulkGroupSearch)))->values()
+            : collect();
+        $bulkParents = Issue::query()->where('is_available', true)->whereNotIn('id', $this->bulkSelected)->with(['projectItems.project', 'projectItems.groupOption'])
+            ->when($this->bulkParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
+                $matches->where('title', 'like', '%'.$this->bulkParentSearch.'%')->orWhere('github_number', $this->bulkParentSearch);
+            }))->orderBy('title')->limit(100)->get(['id', 'github_number', 'title']);
+        $bulkLabelOptions = Label::query()->where('is_available', true)->orderBy('name')->get(['id', 'name'])
+            ->filter(fn (Label $label): bool => $this->bulkLabelSearch === '' || str_contains(Str::lower($label->name), Str::lower($this->bulkLabelSearch)))->values();
         $captureParents = Issue::query()->where('is_available', true)->with(['projectItems.project', 'projectItems.groupOption'])
             ->when($this->captureParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
                 $matches->where('title', 'like', '%'.$this->captureParentSearch.'%')
@@ -814,11 +954,12 @@ new class extends Component
             'deletedRows' => $deletedRows,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $captureLabelOptions,
             'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions,
-            'projectSettingsGroups' => $projectSettingsGroups, 'manageLabelsList' => $labelOptions];
+            'projectSettingsGroups' => $projectSettingsGroups, 'manageLabelsList' => $labelOptions,
+            'bulkGroups' => $bulkGroups, 'bulkParents' => $bulkParents, 'bulkLabelOptions' => $bulkLabelOptions];
     }
 }; ?>
 
-<div class="pb-8 pt-3" @keydown.escape.window="$wire.set('selected', 0)" x-effect="document.documentElement.classList.toggle('overflow-hidden', $wire.captureOpen || $wire.projectSettingsOpen || $wire.manageLabelsOpen || $wire.deleteConfirmOpen || $wire.selected > 0)">
+<div class="pb-8 pt-3" @keydown.escape.window="$wire.set('selected', 0)" x-effect="document.documentElement.classList.toggle('overflow-hidden', $wire.captureOpen || $wire.projectSettingsOpen || $wire.manageLabelsOpen || $wire.bulkGroupOpen || $wire.bulkParentOpen || $wire.bulkLabelsOpen || $wire.deleteConfirmOpen || $wire.selected > 0)">
     <div class="grid items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-10">
             <div class="mb-4 flex gap-1.5 overflow-x-auto pb-0.5 md:hidden" aria-label="{{ __('Workspace area') }}">
                 <button type="button" wire:click="daily" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $view === 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $view !== 'daily']) aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}">{{ __('Daily') }} · {{ $dailyCount }}</button>
@@ -879,6 +1020,9 @@ new class extends Component
                             <div class="hidden md:block">
                                 <flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth">{{ __('Project settings') }}</flux:button>
                             </div>
+                        @endif
+                        @if ($view === 'tasks')
+                            <flux:button type="button" wire:click="toggleBulkMode" variant="{{ $bulkMode ? 'primary' : 'ghost' }}" size="sm" icon="check-circle">{{ $bulkMode ? __('Done selecting') : __('Select') }}</flux:button>
                         @endif
                         <flux:button type="button" wire:click="openCapture" icon="plus" size="sm" class="bg-teal-700! text-white! hover:bg-teal-600! dark:bg-teal-600! dark:hover:bg-teal-500!">{{ __('Add task') }}</flux:button>
                     </div>
@@ -944,6 +1088,17 @@ new class extends Component
                     </div>
                 </div>
             @else
+            @if ($bulkMode)
+                <div class="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm dark:border-teal-900 dark:bg-teal-950">
+                    <span class="font-medium text-teal-900 dark:text-teal-100">{{ trans_choice(':count task selected|:count tasks selected', count($bulkSelected), ['count' => count($bulkSelected)]) }}</span>
+                    @if ($bulkSelected !== [])
+                        <flux:button type="button" wire:click="openBulkGroup" variant="ghost" size="sm">{{ __('Move to group') }}</flux:button>
+                        <flux:button type="button" wire:click="openBulkParent" variant="ghost" size="sm">{{ __('Set parent') }}</flux:button>
+                        <flux:button type="button" wire:click="openBulkLabels" variant="ghost" size="sm">{{ __('Add labels') }}</flux:button>
+                        <flux:button type="button" wire:click="clearBulkSelection" variant="ghost" size="sm">{{ __('Clear selection') }}</flux:button>
+                    @endif
+                </div>
+            @endif
             <div wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$sortBy.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 text-xs text-slate-500 dark:border-slate-800">
                     <span aria-live="polite">{{ trans_choice(':count result|:count results', $matchCount, ['count' => $matchCount]) }}{{ $filtered ? ' · '.__('with parent context') : '' }}</span>
@@ -962,7 +1117,10 @@ new class extends Component
                             </div>
                         @else
                             <div wire:key="issue-row-{{ $row['id'] }}" data-issue-number="{{ $row['number'] }}" role="listitem" x-show="visible(@js($row['ancestors']))" x-cloak class="border-b border-slate-100 last:border-0 dark:border-slate-800/70">
-                                <div data-project-color="{{ $row['projectColor'] }}" role="button" tabindex="0" wire:click="$set('selected', {{ $row['id'] }})" @keydown.enter.prevent="$wire.set('selected', {{ $row['id'] }})" @keydown.space.prevent="$wire.set('selected', {{ $row['id'] }})" aria-label="{{ __('Open issue :number: :title', ['number' => $row['number'], 'title' => $row['title']]) }}" class="flex min-h-16 cursor-pointer items-start gap-1 py-2 pr-3 hover:brightness-[.98] dark:hover:brightness-125" style="padding-left: calc(0.5rem + {{ min($row['depth'], 5) }} * 1rem); @if ($row['projectColor']) background-color: color-mix(in srgb, {{ $row['projectColor'] }} {{ min(9 + ($row['depth'] * 5), 34) }}%, transparent); @endif">
+                                <div data-project-color="{{ $row['projectColor'] }}" role="button" tabindex="0" wire:click="{{ $bulkMode ? 'toggleBulkSelect('.$row['id'].')' : "\$set('selected', {$row['id']})" }}" @keydown.enter.prevent="$wire.set('selected', {{ $row['id'] }})" @keydown.space.prevent="$wire.set('selected', {{ $row['id'] }})" aria-label="{{ __('Open issue :number: :title', ['number' => $row['number'], 'title' => $row['title']]) }}" class="flex min-h-16 cursor-pointer items-start gap-1 py-2 pr-3 hover:brightness-[.98] dark:hover:brightness-125" style="padding-left: calc(0.5rem + {{ min($row['depth'], 5) }} * 1rem); @if ($row['projectColor']) background-color: color-mix(in srgb, {{ $row['projectColor'] }} {{ min(9 + ($row['depth'] * 5), 34) }}%, transparent); @endif">
+                                    @if ($bulkMode)
+                                        <input type="checkbox" wire:click.stop="toggleBulkSelect({{ $row['id'] }})" @checked(in_array($row['id'], $bulkSelected, true)) class="mt-3.5 size-4 shrink-0 self-start rounded border-slate-300 text-teal-600 focus:ring-teal-600 dark:border-slate-600" aria-label="{{ __('Select :title', ['title' => $row['title']]) }}">
+                                    @endif
                                     @if ($row['hasChildren'])
                                         <button @click.stop="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" aria-label="{{ __('Expand or collapse :title', ['title' => $row['title']]) }}" class="flex size-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><flux:icon.chevron-right class="size-4 transition-transform" ::class="isOpen('{{ $row['id'] }}') ? 'rotate-90' : ''" /></button>
                                     @else <span class="w-10 shrink-0" aria-hidden="true"></span> @endif
@@ -1080,6 +1238,83 @@ new class extends Component
             @if ($manageLabelsError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $manageLabelsError }}</p>@endif
             <div class="flex justify-end"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Close') }}</flux:button></flux:modal.close></div>
         </div>
+    </flux:modal>
+    <flux:modal wire:model="bulkGroupOpen" name="bulk-group" class="w-full max-w-md">
+        <form wire:submit="applyBulkGroup" class="space-y-5">
+            <div>
+                <flux:heading size="lg">{{ __('Move to group') }}</flux:heading>
+                <flux:text class="mt-1">{{ trans_choice('Move :count selected task to an area and Group.|Move :count selected tasks to an area and Group.', count($bulkSelected), ['count' => count($bulkSelected)]) }}</flux:text>
+            </div>
+            <flux:select wire:model.live="bulkGroupArea" label="{{ __('Area') }}">
+                <option value="0">{{ __('Choose an area') }}</option>
+                @foreach ($projects as $project)<option value="{{ $project->id }}">{{ $project->title }}</option>@endforeach
+            </flux:select>
+            @if ($bulkGroupArea > 0)
+                @include('partials.searchable-picker', [
+                    'label' => __('Group'),
+                    'searchModel' => 'bulkGroupSearch',
+                    'searchValue' => $bulkGroupSearch,
+                    'placeholder' => __('Search groups'),
+                    'options' => $bulkGroups,
+                    'optionLabel' => fn ($option) => $option->name,
+                    'mode' => 'single',
+                    'valueModel' => 'bulkGroup',
+                    'selectedId' => $bulkGroup,
+                    'emptyText' => __('No groups match.'),
+                ])
+            @endif
+            @if ($bulkError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $bulkError }}</p>@endif
+            <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit">{{ __('Move') }}</flux:button></div>
+        </form>
+    </flux:modal>
+    <flux:modal wire:model="bulkParentOpen" name="bulk-parent" class="w-full max-w-md">
+        <form wire:submit="applyBulkParent" class="space-y-5">
+            <div>
+                <flux:heading size="lg">{{ __('Set parent') }}</flux:heading>
+                <flux:text class="mt-1">{{ trans_choice('Set the parent for :count selected task.|Set the parent for :count selected tasks.', count($bulkSelected), ['count' => count($bulkSelected)]) }}</flux:text>
+            </div>
+            @include('partials.searchable-picker', [
+                'label' => __('Parent'),
+                'searchModel' => 'bulkParentSearch',
+                'searchValue' => $bulkParentSearch,
+                'placeholder' => __('Search task title or #number'),
+                'options' => $bulkParents,
+                'optionLabel' => function ($option) {
+                    $membership = $option->projectItems->first();
+                    $context = $membership ? ' — '.$membership->project->title.($membership->groupOption ? ' / '.$membership->groupOption->name : '') : '';
+
+                    return '#'.$option->github_number.' '.$option->title.$context;
+                },
+                'mode' => 'single',
+                'valueModel' => 'bulkParent',
+                'selectedId' => $bulkParent,
+                'emptyText' => __('No tasks match.'),
+            ])
+            @if ($bulkError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $bulkError }}</p>@endif
+            <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit">{{ __('Set parent') }}</flux:button></div>
+        </form>
+    </flux:modal>
+    <flux:modal wire:model="bulkLabelsOpen" name="bulk-labels" class="w-full max-w-md">
+        <form wire:submit="applyBulkLabels" class="space-y-5">
+            <div>
+                <flux:heading size="lg">{{ __('Add labels') }}</flux:heading>
+                <flux:text class="mt-1">{{ trans_choice('Add labels to :count selected task, keeping any it already has.|Add labels to :count selected tasks, keeping any they already have.', count($bulkSelected), ['count' => count($bulkSelected)]) }}</flux:text>
+            </div>
+            @include('partials.searchable-picker', [
+                'label' => __('Labels'),
+                'searchModel' => 'bulkLabelSearch',
+                'searchValue' => $bulkLabelSearch,
+                'placeholder' => __('Search labels'),
+                'options' => $bulkLabelOptions,
+                'optionLabel' => fn ($option) => $option->name,
+                'mode' => 'multi',
+                'toggleMethod' => 'toggleBulkLabel',
+                'selectedIds' => $bulkLabels,
+                'emptyText' => __('No labels match.'),
+            ])
+            @if ($bulkError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $bulkError }}</p>@endif
+            <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit">{{ __('Add labels') }}</flux:button></div>
+        </form>
     </flux:modal>
     <flux:modal wire:model="deleteConfirmOpen" name="delete-task" class="w-full max-w-md">
         <div class="space-y-5">
