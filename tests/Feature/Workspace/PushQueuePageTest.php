@@ -59,6 +59,60 @@ it('hides the clear-pushed action when there is nothing pushed', function (): vo
     Livewire::actingAs($user)->test('pages::push-queue')->assertDontSee('Clear pushed');
 });
 
+it('lets a signed-in user retry every retriable row at once', function (): void {
+    $user = User::factory()->create();
+    $failed = GitHubPushQueueItem::factory()->create(['status' => 'failed', 'attempts' => 2]);
+    $needsAttention = GitHubPushQueueItem::factory()->create(['status' => 'needs_attention', 'attempts' => 3]);
+
+    Livewire::actingAs($user)->test('pages::push-queue')
+        ->assertSee('Retry all retriable')
+        ->call('retryAllRetriable');
+
+    expect($failed->refresh()->status)->toBe('pending')
+        ->and($needsAttention->refresh()->status)->toBe('pending');
+});
+
+it('hides the retry-all action when nothing is retriable', function (): void {
+    $user = User::factory()->create();
+    GitHubPushQueueItem::factory()->create(['status' => 'pending']);
+
+    Livewire::actingAs($user)->test('pages::push-queue')->assertDontSee('Retry all retriable');
+});
+
+it('lets a signed-in user discard every needs_attention row at once', function (): void {
+    $user = User::factory()->create();
+    GitHubPushQueueItem::factory()->count(2)->create(['status' => 'needs_attention']);
+    $pending = GitHubPushQueueItem::factory()->create(['status' => 'pending']);
+
+    Livewire::actingAs($user)->test('pages::push-queue')
+        ->assertSee('Discard stuck rows')
+        ->call('discardAllNeedsAttention');
+
+    expect(GitHubPushQueueItem::query()->where('status', 'needs_attention')->count())->toBe(0)
+        ->and(GitHubPushQueueItem::query()->find($pending->id))->not->toBeNull();
+});
+
+it('hides the discard-stuck action when nothing needs attention', function (): void {
+    $user = User::factory()->create();
+    GitHubPushQueueItem::factory()->create(['status' => 'pending']);
+
+    Livewire::actingAs($user)->test('pages::push-queue')->assertDontSee('Discard stuck rows');
+});
+
+it('filters the rows shown by clicking a status pill, and toggles back to all on a second click', function (): void {
+    $user = User::factory()->create();
+    $pending = GitHubPushQueueItem::factory()->create(['status' => 'pending', 'operation' => 'create_issue']);
+    $pushed = GitHubPushQueueItem::factory()->create(['status' => 'pushed', 'operation' => 'delete_issue']);
+
+    $component = Livewire::actingAs($user)->test('pages::push-queue')
+        ->assertSee('create_issue')->assertSee('delete_issue')
+        ->call('setStatusFilter', 'pending')->assertSet('statusFilter', 'pending')
+        ->assertSee('create_issue')->assertDontSee('delete_issue');
+
+    $component->call('setStatusFilter', 'pending')->assertSet('statusFilter', 'all')
+        ->assertSee('create_issue')->assertSee('delete_issue');
+});
+
 it('is unreachable to a guest', function (): void {
     $this->get('/push-queue')->assertRedirect('/login');
 });
