@@ -28,7 +28,6 @@ Thumbs.db
 
 /docker-compose.override.yml
 /database/*.sqlite*
-/.env.demo
 /storage/demo-dbs/
 /storage/demo-template.sqlite
 /CLAUDE.local.md

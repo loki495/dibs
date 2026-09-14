@@ -5,20 +5,38 @@ infrastructure for one specific deployment, not a feature of the app itself --
 `config('dibs.demo_mode')` defaults to `false` and every piece here is a no-op
 on a normal install.
 
+## Where it runs
+
+On `media` (the always-on LAN box), not `work` (where the real
+`dibs.ac495.net` runs) -- matching where the sibling `homie`/`insights` demos
+already live (`~/demo/homie`, `~/demo/insights` on media), each its own full
+git checkout deployed via a `docker-compose.prod.yml` + plain `.env`, never a
+bind mount. Dibs' demo follows the identical layout at `~/demo/dibs` on media,
+port `8112` (next free after homie's `8110` and insights' `8111`).
+
+Cloudflare's tunnel on media routes `dibs-demo.ac495.net` directly to
+`http://localhost:8112` on media itself -- it does not go through Traefik on
+`work` at all for real public/remote traffic. Traefik's own entry for this
+hostname (`~/www/traefik/dynamic/ac495-sites.yml` on `work`, pointing at
+`http://<media-lan-ip>:8112`) is LAN-HTTPS convenience only, matching the
+existing `homie-demo-ac495`/`insights-demo-ac495` entries there.
+
 ## Architecture
 
-Adapted from a sibling project's (`homie`) equivalent demo setup, with one
-deliberate difference explained below.
+Adapted from `homie`'s equivalent demo setup, with one deliberate difference
+explained below.
 
 - **Per-visitor database isolation**, not one shared database: `ResolveDemoDatabase`
   (`app/Http/Middleware/ResolveDemoDatabase.php`) gives each visitor a private
   SQLite copy of a template, identified by a signed cookie (`demo_instance_id`).
   Two people clicking around the demo at once never see or clobber each other's
   edits -- there is no shared mutable state to reset or protect.
-- **The template** (`storage/demo-template.sqlite`) is built once, manually, by
-  `php artisan demo:build-template` (migrates fresh + seeds `DemoSeeder`). It is
-  never touched by a running request -- only copied. Rebuild it whenever the
-  demo dataset itself should change; nothing regenerates it automatically.
+- **The template** (`storage/demo-template.sqlite`) is rebuilt automatically on
+  every container boot (`docker/entrypoint-prod.sh` calls
+  `php artisan demo:build-template` when `DIBS_DEMO_MODE=true`, migrating fresh
+  + reseeding `DemoSeeder`) -- a fresh deploy always starts from a clean
+  dataset, no manual step, no volume needed for it. It is never touched by a
+  running request, only copied.
 - **Daily cleanup**, not a scheduled reset: `demo:cleanup` (scheduled in
   `routes/console.php`, gated by `->when(fn () => config('dibs.demo_mode'))`)
   deletes per-visitor copies older than 24h from `storage/demo-dbs/`. It only
@@ -26,11 +44,18 @@ deliberate difference explained below.
   destructive "wipe everything" command running unattended anywhere in this
   design, unlike an earlier iteration of this same feature (see git history on
   this file's introducing commit if curious).
-- **Isolated deployment**: `docker-compose.demo.yml` is a separate Compose
-  project (`dibs-demo-app`/`dibs-demo-scheduler`), reading `.env.demo` via
-  `env_file` rather than the real `.env` this directory also contains, so a
-  real `GITHUB_TOKEN`/`DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO` can never leak into
-  the demo by falling through to the shared file.
+- **Deploy-baked image, not a bind mount**: `docker/Dockerfile.prod` bakes the
+  app in (composer install --no-dev, npm build, no dev dependencies, no bind
+  mount), unlike the dev-oriented `docker-compose.yml`/`docker/Dockerfile`
+  used for local development. This is what makes a Watchtower image pull
+  actually change what's running -- a bind-mounted dev image would keep
+  serving whatever happens to be checked out on disk regardless of which
+  image tag is "running."
+- **Isolated env**: the demo's `.env` (in its own `~/demo/dibs` checkout on
+  media) is a completely separate file from the real personal instance's
+  `.env` on `work` -- there is no shared-directory risk of a real
+  `GITHUB_TOKEN`/`DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO` leaking into the demo,
+  since they're different files on different machines entirely.
 
 ### Where this deviates from homie's version, and why
 
@@ -56,6 +81,11 @@ Dibs also has no Basic Auth layer -- the demo login is a normal Dibs account
 copy of the template, published openly since the whole point is to let
 visitors in.
 
+Container/project names are `dibs-demo-*`, not homie's bare `homie-app`/
+`homie-scheduler` convention -- unlike homie, Dibs also has a separate real
+personal instance, so keeping the demo's names unambiguous at a glance (e.g.
+in `docker ps` on a shared host) is worth the deviation.
+
 ### A known, already-hit test-suite gotcha
 
 `ResolveDemoDatabase` calls `DB::purge('sqlite')` to force a reconnect after
@@ -69,38 +99,57 @@ itself -- the identical fix homie's own equivalent test already needed. If you
 ever write another test that exercises this middleware, copy that workaround
 rather than rediscovering the corruption.
 
-## Deploying
+## Deploying (on media)
 
-1. `cp .env.demo.example .env.demo` and fill in `APP_KEY` (`php artisan
-   key:generate --show`, paste the value in -- don't run `key:generate`
-   pointed at this file directly, since Laravel reads whichever `.env` its
-   own working directory resolves to, not `.env.demo` by name).
-2. `docker compose -f docker-compose.demo.yml up -d --build`.
-3. `docker compose -f docker-compose.demo.yml exec app php artisan
-   demo:build-template` -- one-time (or whenever you want to refresh the
-   dataset). Confirms `storage/demo-template.sqlite` exists before any real
-   visitor traffic arrives; `ResolveDemoDatabase` aborts with a clear 500 if
-   it's missing.
-4. Confirm it locally first: `curl http://127.0.0.1:8098/login` (or whatever
-   `DEMO_APP_PORT` resolves to) should return the login page.
+```bash
+git clone git@github.com:loki495/dibs.git ~/demo/dibs   # first time only
+cd ~/demo/dibs
+cp .env.example .env
+php -r "echo 'APP_KEY=base64:'.base64_encode(random_bytes(32)).PHP_EOL;" >> .env  # or generate after first boot instead
+# Edit .env: APP_ENV=demo, APP_URL=https://dibs-demo.ac495.net, APP_PORT=8112,
+# DIBS_DEMO_MODE=true, DEMO_DB_TEMPLATE_PATH=/var/www/html/storage/demo-template.sqlite,
+# DEMO_DB_STORAGE_PATH=/var/www/html/storage/demo-dbs, DB_DATABASE pointed at a harmless
+# dedicated fallback path (not database/database.sqlite), GITHUB_TOKEN/DIBS_GITHUB_OWNER/
+# DIBS_GITHUB_REPO left blank.
+docker compose -f docker-compose.prod.yml up -d --build
+curl http://127.0.0.1:8112/login   # should return the login page
+```
+
+No manual template-build step -- `docker/entrypoint-prod.sh` runs
+`demo:build-template` automatically on the `app` container's boot.
+
+To pick up a code change later: `git pull && docker compose -f
+docker-compose.prod.yml up -d --build` (or, once CD is wired up, a Watchtower
+pull does this without a manual step at all).
 
 ## What you still have to do yourself (outside this repo)
 
-The real `dibs.ac495.net` is LAN-only (`dibs-lan` IP-allowlist middleware in
-your personal `docker-compose.override.yml`), and external access to it goes
-through Cloudflare Access. A public demo needs the opposite -- reachable
-*without* your Access login -- which means two Cloudflare-dashboard changes
-this repo has no way to make or verify on its own:
-
-1. **DNS**: a record for `dibs-demo.ac495.net` pointing at this Cloudflare
-   Tunnel, alongside your other `*.ac495.net` entries.
-2. **Access policy**: an explicit bypass/exclude policy scoped to
-   `dibs-demo.ac495.net` so it does *not* inherit whatever Access policy
-   currently gates `*.ac495.net` generally. Skipping this step means visitors
-   hit your Access login wall instead of the demo.
-
-Once both are done, `docker-compose.demo.yml`'s Traefik labels (Docker
-label auto-discovery, matching how the real `dibs.ac495.net` router is
-already labeled in your `docker-compose.override.yml`) handle the rest --
-no Traefik file-provider edit needed since this container runs on the same
-host Traefik itself does.
+1. **Cloudflare Tunnel ingress** (`/etc/cloudflared/config.yml` on media,
+   root-owned -- genuinely outside what I can read or edit over a plain SSH
+   session): add
+   ```yaml
+   - hostname: dibs-demo.ac495.net
+     service: http://localhost:8112
+   ```
+   before the existing `"*.ac495.net"` catch-all rule (order matters --
+   cloudflared matches top to bottom), then reload/restart cloudflared.
+2. **DNS**: a record for `dibs-demo.ac495.net`, alongside your other
+   `*.ac495.net` entries.
+3. **Access policy**: an explicit bypass/exclude policy scoped to
+   `dibs-demo.ac495.net` so it does not inherit whatever Access policy
+   currently gates `*.ac495.net` generally -- otherwise visitors hit your
+   Access login wall instead of the demo.
+4. **Traefik LAN-convenience entry** (`~/www/traefik/dynamic/ac495-sites.yml`
+   on `work`) -- optional, only for a nice HTTPS URL from your own LAN:
+   ```yaml
+   # in routers:
+   dibs-demo-ac495:
+     entryPoints: [websecure]
+     rule: Host(`dibs-demo.{{ env "TRAEFIK_DOMAIN" }}`)
+     service: dibs-demo-media
+   # in services:
+   dibs-demo-media:
+     loadBalancer:
+       servers:
+         - url: 'http://{{ env "TRAEFIK_MEDIA_HOST" }}:8112'
+   ```
