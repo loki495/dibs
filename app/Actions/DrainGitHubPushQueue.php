@@ -379,7 +379,7 @@ class DrainGitHubPushQueue
 
         try {
             $data = (new GitHubClient($token))->query(
-                'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { id } } }',
+                'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                 ['labelableId' => $issue->github_node_id, 'labelIds' => $labels->pluck('github_node_id')->all()],
             );
             $remote = $data['addLabelsToLabelable']['labelable'] ?? null;
@@ -718,7 +718,7 @@ class DrainGitHubPushQueue
         try {
             if ($addLabels->isNotEmpty()) {
                 $data = (new GitHubClient($token))->query(
-                    'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { id } } }',
+                    'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                     ['labelableId' => $issue->github_node_id, 'labelIds' => $addLabels->pluck('github_node_id')->all()],
                 );
                 $remote = $data['addLabelsToLabelable']['labelable'] ?? null;
@@ -728,7 +728,7 @@ class DrainGitHubPushQueue
             }
             if ($removeLabels->isNotEmpty()) {
                 $data = (new GitHubClient($token))->query(
-                    'mutation($labelableId: ID!, $labelIds: [ID!]!) { removeLabelsFromLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { id } } }',
+                    'mutation($labelableId: ID!, $labelIds: [ID!]!) { removeLabelsFromLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                     ['labelableId' => $issue->github_node_id, 'labelIds' => $removeLabels->pluck('github_node_id')->all()],
                 );
                 $remote = $data['removeLabelsFromLabelable']['labelable'] ?? null;
