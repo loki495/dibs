@@ -20,6 +20,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        TrustProxies::at(config('todo.trusted_proxies'));
+        TrustProxies::at(config('dibs.trusted_proxies'));
     }
 }

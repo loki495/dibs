@@ -31,7 +31,7 @@ class GetIssueDetails
         return [
             'issue' => $issue, 'body' => $this->renderMarkdown($issue->body ?? ''),
             'comments' => $issue->comments->map(fn ($comment): array => ['id' => $comment->id, 'author' => $comment->author_login,
-                'date' => $comment->remote_created_at?->timezone(config('todo.timezone'))->format('M j, Y'), 'body' => $this->renderMarkdown($comment->body)]),
+                'date' => $comment->remote_created_at?->timezone(config('dibs.timezone'))->format('M j, Y'), 'body' => $this->renderMarkdown($comment->body)]),
             'claim' => $this->claim->handle($issue->id),
             'parent' => $issue->parent instanceof Issue ? $this->summarize($issue->parent) : null,
             'children' => $issue->children->map(fn (Issue $child): array => $this->summarize($child))->all(),

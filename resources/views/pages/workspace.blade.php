@@ -1179,7 +1179,7 @@ new class extends Component
         <form wire:submit="saveProjectSettings" class="space-y-5">
             <div>
                 <flux:heading size="lg">{{ __('Project settings') }}</flux:heading>
-                <flux:text class="mt-1">{{ __('The name is saved in GitHub. The color is used by Todo to make this area easier to scan.') }}</flux:text>
+                <flux:text class="mt-1">{{ __('The name is saved in GitHub. The color is used by Dibs to make this area easier to scan.') }}</flux:text>
             </div>
             <flux:input wire:model="projectSettingsTitle" label="{{ __('Project name') }}" autocomplete="off" />
             <div class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">

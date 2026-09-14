@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
  * before honoring a heartbeat, release, or takeover decision.
  *
  * Container/PID-namespace note: this only works when the running process's /proc reflects the same
- * PID namespace as the process it's checking (the `todo-app` container runs with `pid: "host"` for
+ * PID namespace as the process it's checking (the `dibs-app` container runs with `pid: "host"` for
  * exactly this reason). If /proc/<pid> isn't readable at all, callers must treat that as "liveness
  * could not be verified", not as "process is dead" — see isVerifiable().
  */

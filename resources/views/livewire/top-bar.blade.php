@@ -48,7 +48,7 @@ new class extends Component
     }
 }; ?>
 
-@php($queueCounts = config('todo.push_queue_ui_enabled') && auth()->check() ? app(\App\Actions\DescribeGitHubPushQueue::class)->counts() : ['actionable' => 0, 'pending' => 0])
+@php($queueCounts = config('dibs.push_queue_ui_enabled') && auth()->check() ? app(\App\Actions\DescribeGitHubPushQueue::class)->counts() : ['actionable' => 0, 'pending' => 0])
 <div class="relative" x-data="{ settingsOpen: false, theme: window.todoTheme.get() }">
     @if ($variant === 'labeled')
         <button type="button" @click="settingsOpen = ! settingsOpen" @click.outside="settingsOpen = false" :aria-expanded="settingsOpen.toString()" aria-label="{{ __('Settings') }}" class="relative flex min-h-11 w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -73,7 +73,7 @@ new class extends Component
     <div x-show="settingsOpen" x-cloak x-transition.origin.top.right class="absolute right-0 z-20 mt-2 w-64 space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-800 dark:bg-slate-900">
         @auth
             <p class="truncate px-2 pb-2 text-xs text-slate-500 dark:text-slate-400">{{ __('Signed in as :name', ['name' => auth()->user()->name]) }}</p>
-            @if (config('todo.push_queue_ui_enabled'))
+            @if (config('dibs.push_queue_ui_enabled'))
                 <a href="{{ route('push-queue') }}" class="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
                     {{ __('Push queue') }}
                     @if ($queueCounts['actionable'] > 0)

@@ -1,7 +1,7 @@
-name: todo
+name: dibs
 services:
   app:
-    container_name: todo-app
+    container_name: dibs-app
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -12,7 +12,7 @@ services:
     ports:
       - "127.0.0.1:${APP_PORT:-8095}:80"
   scheduler:
-    container_name: todo-scheduler
+    container_name: dibs-scheduler
     build:
       context: .
       dockerfile: docker/Dockerfile
