@@ -1,0 +1,45 @@
+name: dibs-demo
+
+# Deploy-style compose for the public demo: app/scheduler images are baked at build time
+# (docker/Dockerfile.prod) -- no bind-mounted source, unlike the plain docker-compose.yml used
+# for local dev. This is what makes a Watchtower image pull actually change what's running; the
+# dev compose file's bind mount would make a new pulled image invisible, still serving whatever
+# happens to be checked out on disk. See docs/demo-hosting.md. Container/project names stay
+# dibs-demo-* (not homie's bare app/scheduler convention) since, unlike homie, Dibs also has a
+# separate real personal instance -- worth keeping unambiguous at a glance.
+services:
+  app:
+    image: ghcr.io/loki495/dibs:demo
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    container_name: dibs-demo-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8112}:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Runs demo:cleanup (routes/console.php, daily, gated on demo_mode). entrypoint: [] skips
+  # entrypoint-prod.sh entirely -- the app service's own boot already ran demo:build-template;
+  # racing that same rebuild from a second container on simultaneous startup would corrupt it.
+  scheduler:
+    image: ghcr.io/loki495/dibs:demo
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    container_name: dibs-demo-scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    entrypoint: []
+    command: php artisan schedule:work
+    depends_on:
+      app:
+        condition: service_healthy

@@ -1,0 +1,44 @@
+# ---- Stage 1: install vendor/ and compile frontend assets ----
+FROM php:8.5-apache AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git unzip curl ca-certificates libsqlite3-dev libzip-dev libicu-dev \
+    && docker-php-ext-install pdo_sqlite zip intl pcntl \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
+    && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
+    && rm composer-setup.php \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /var/www/html
+COPY . .
+RUN rm -f bootstrap/cache/*.php \
+    && composer install --no-dev --optimize-autoloader --no-interaction \
+    && php artisan package:discover --ansi \
+    && npm ci \
+    && npm run build
+
+# ---- Stage 2: lean runtime image -- no Node, no dev/test-only PHP extensions ----
+FROM php:8.5-apache
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libsqlite3-dev libzip-dev libicu-dev curl \
+    && docker-php-ext-install pdo_sqlite zip intl pcntl \
+    && a2enmod rewrite headers \
+    && sed -i 's|DocumentRoot .*|DocumentRoot /var/www/html/public|' /etc/apache2/sites-available/000-default.conf \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY docker/entrypoint-prod.sh /usr/local/bin/entrypoint-prod.sh
+RUN chmod +x /usr/local/bin/entrypoint-prod.sh
+
+WORKDIR /var/www/html
+COPY --from=build --chown=www-data:www-data /var/www/html /var/www/html
+# node_modules/resources/{js,css} aren't needed at runtime (Vite already built public/build/).
+RUN rm -rf node_modules resources/js resources/css \
+    && mkdir -p storage/demo-dbs storage/framework/{cache/data,sessions,testing,views} \
+    && chmod -R 775 storage bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache
+
+ENTRYPOINT ["entrypoint-prod.sh"]
+CMD ["apache2-foreground"]
