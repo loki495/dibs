@@ -30,6 +30,12 @@ A live claim binds to the caller's real OS process (host, pid, process start tim
 
 `main` tracks the remote. Keep commits feature-scoped; use separate commits for distinct features or fixes rather than one large commit. Run the full verification suite (below) before committing.
 
+`main` has branch protection: a required status check (`Pint, PHPStan, Rector, Pest`, the CI `quality` job) plus `enforce_admins`, but no required PR review — direct pushes are meant to stay allowed. GitHub still enforces the check on a direct push, though, by requiring the exact commit SHA to already have a passing check run, which a brand-new local commit never has yet — expect a `GH006` rejection. See the `git-workflow` skill's "Required status check blocks a direct push" section for the fix (push to a throwaway branch, open a PR, wait for the check, `gh pr merge --rebase`, then sync local `main`).
+
+## Public demo hosting
+
+A public demo instance runs at `dibs-demo.ac495.net` (per-visitor SQLite database isolation, not shared state) — see `docs/demo-hosting.md` for the full architecture, deploy steps, and CD pipeline (push to `main` → GHCR publish → Watchtower redeploy on `media`). `config('dibs.demo_mode')` defaults to `false` and every piece of this is a no-op on a normal install; `database/seeders/DemoSeeder.php` is what the public demo actually shows visitors.
+
 ## Testing and tooling
 
 Run PHP tooling inside the app container via the composer script wrappers rather than invoking Docker directly:
