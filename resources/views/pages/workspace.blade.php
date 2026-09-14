@@ -959,7 +959,11 @@ new class extends Component
     }
 }; ?>
 
-<div class="pb-8 pt-3" @keydown.escape.window="$wire.set('selected', 0)" x-effect="document.documentElement.classList.toggle('overflow-hidden', $wire.captureOpen || $wire.projectSettingsOpen || $wire.manageLabelsOpen || $wire.bulkGroupOpen || $wire.bulkParentOpen || $wire.bulkLabelsOpen || $wire.deleteConfirmOpen || $wire.selected > 0)">
+<div class="pb-8 pt-3" @keydown.escape.window="$wire.set('selected', 0)" x-effect="
+        let locked = $wire.captureOpen || $wire.projectSettingsOpen || $wire.manageLabelsOpen || $wire.bulkGroupOpen || $wire.bulkParentOpen || $wire.bulkLabelsOpen || $wire.deleteConfirmOpen || $wire.selected > 0;
+        document.documentElement.classList.toggle('overflow-hidden', locked);
+        if (! locked) { document.documentElement.style.removeProperty('overflow'); document.documentElement.style.removeProperty('padding-right'); }
+    ">
     <div class="grid items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-10">
             <div class="mb-4 flex gap-1.5 overflow-x-auto pb-0.5 md:hidden" aria-label="{{ __('Workspace area') }}">
                 <button type="button" wire:click="daily" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $view === 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $view !== 'daily']) aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}">{{ __('Daily') }} · {{ $dailyCount }}</button>
