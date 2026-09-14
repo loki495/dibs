@@ -619,7 +619,7 @@ new class extends Component
 
     public function with(): array
     {
-        $captureParents = Issue::query()->where('is_available', true)
+        $captureParents = Issue::query()->where('is_available', true)->with(['projectItems.project', 'projectItems.groupOption'])
             ->when($this->captureParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
                 $matches->where('title', 'like', '%'.$this->captureParentSearch.'%')
                     ->orWhere('github_number', $this->captureParentSearch);
@@ -627,7 +627,7 @@ new class extends Component
         $captureGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->captureArea))->orderBy('position')->get()
             ->filter(fn (ProjectFieldOption $option): bool => $this->captureGroupSearch === '' || str_contains(Str::lower($option->name), Str::lower($this->captureGroupSearch)))->values();
         $capturePriorities = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'priority')->where('project_id', $this->captureArea))->orderBy('position')->get();
-        $editParents = Issue::query()->where('is_available', true)->whereKeyNot($this->selected)
+        $editParents = Issue::query()->where('is_available', true)->whereKeyNot($this->selected)->with(['projectItems.project', 'projectItems.groupOption'])
             ->when($this->editParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
                 $matches->where('title', 'like', '%'.$this->editParentSearch.'%')->orWhere('github_number', $this->editParentSearch);
             }))->orderBy('title')->limit(100)->get(['id', 'github_number', 'title']);

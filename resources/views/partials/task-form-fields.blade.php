@@ -39,7 +39,12 @@
             'searchValue' => $parentSearchValueForForm,
             'placeholder' => __('Search task title or #number'),
             'options' => $parentsForForm,
-            'optionLabel' => fn ($option) => '#'.$option->github_number.' '.$option->title,
+            'optionLabel' => function ($option) {
+                $membership = $option->projectItems->first();
+                $context = $membership ? ' — '.$membership->project->title.($membership->groupOption ? ' / '.$membership->groupOption->name : '') : '';
+
+                return '#'.$option->github_number.' '.$option->title.$context;
+            },
             'mode' => 'single',
             'valueModel' => $parentModel,
             'selectedId' => $parentValueForForm,
