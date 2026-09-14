@@ -118,38 +118,51 @@ curl http://127.0.0.1:8112/login   # should return the login page
 No manual template-build step -- `docker/entrypoint-prod.sh` runs
 `demo:build-template` automatically on the `app` container's boot.
 
-To pick up a code change later: `git pull && docker compose -f
-docker-compose.prod.yml up -d --build` (or, once CD is wired up, a Watchtower
-pull does this without a manual step at all).
+To pick up a code change later: nothing manual needed. A push to `main` runs
+CI, publishes `ghcr.io/loki495/dibs:demo`, and pings Watchtower on the demo host (see
+"Continuous deployment" below) -- `docker compose -f docker-compose.prod.yml
+up -d --build` on the demo host is only needed for a first-time setup or a manual
+rebuild.
 
-## What you still have to do yourself (outside this repo)
+## Continuous deployment
 
-1. **Tunnel ingress** (the tunnel's config on the demo host,
-   root-owned -- genuinely outside what I can read or edit over a plain SSH
-   session): add
-   ```yaml
-   - hostname: dibs-demo.ac495.net
-     service: http://localhost:8112
-   ```
-   before the existing `"*.example.com"` catch-all rule (order matters --
-   the tunnel matches top to bottom), then reload/restart the tunnel.
-2. **DNS**: a record for `dibs-demo.ac495.net`, alongside your other
-   `*.example.com` entries.
-3. **access policy**: an explicit bypass/exclude policy scoped to
-   `dibs-demo.ac495.net` so it does not inherit whatever access policy
-   currently gates `*.example.com` generally -- otherwise visitors hit your
-   access login wall instead of the demo.
-4. **Traefik LAN-convenience entry** (`<traefik-config>/dynamic/sites.yml`
-   on the main host) -- optional, only for a nice HTTPS URL from your own LAN:
-   ```yaml
-   # in routers:
-   dibs-demo-ac495:
-     entryPoints: [websecure]
-     rule: Host(`dibs-demo.{{ env "TRAEFIK_DOMAIN" }}`)
-     service: dibs-demo-remote
-   # in services:
-   dibs-demo-remote:
-     loadBalancer:
-       servers:
-         - url: 'http://{{ env "TRAEFIK_MEDIA_HOST" }}:8112'
-   ```
+Same pipeline as `homie`/`insights`, reusing the already-deployed shared
+pieces (`the redeploy webhook service`, Watchtower on the demo host -- neither is
+Dibs-specific, nothing to set up per-project there):
+
+1. On push to `main`, after `quality` passes, `.github/workflows/ci.yml`'s
+   `publish-ghcr` job builds `docker/Dockerfile.prod` and pushes
+   `ghcr.io/loki495/dibs:demo` (+ a `:sha-<short>` tag for traceability) to
+   GHCR.
+2. It then calls `<redeploy-webhook>` (the `CD_TRIGGER_URL` repo secret --
+   already set), which relays a validated, fire-and-forget request to
+   Watchtower's own HTTP API on the demo host (`continue-on-error: true`: a missed
+   trigger just means Watchtower catches the new image on its next 24h poll
+   instead, never worth failing an otherwise-successful publish over).
+3. Watchtower (already watching every container on the demo host, no
+   per-project label/registration needed) pulls the new `:demo` tag,
+   recreates `dibs-demo-app`/`dibs-demo-scheduler`, and
+   `docker/entrypoint-prod.sh` rebuilds the demo template fresh on that
+   boot.
+
+**One manual one-time step**: a brand-new GHCR package defaults to
+*private* on its first push, regardless of the repo's own visibility.
+After the first successful `publish-ghcr` run, flip `dibs`'s new container
+package to Public in GitHub's package settings (matching `homie`/
+`insights`) -- Watchtower on the demo host has no stored registry credentials, so a
+private package pulls nothing.
+
+## What was needed outside this repo (done)
+
+- **Tunnel ingress** (the tunnel's config on the demo host,
+  root-owned): `dibs-demo.ac495.net -> http://localhost:8112`, added before
+  the `"*.example.com"` catch-all.
+- **DNS**: not needed -- the existing local DNS and the tunnel already
+  cover `*.example.com`.
+- **Traefik LAN-convenience entry**
+  (`<traefik-config>/dynamic/sites.yml` on the main host, a symlink into
+  `<traefik-config>/`): added and verified live.
+- **access policy**: an explicit bypass/exclude policy scoped to
+  `dibs-demo.ac495.net`, matching whatever `homie-demo`/`insights-demo`
+  already use, so it doesn't inherit the access policy that gates
+  `*.example.com` generally.
