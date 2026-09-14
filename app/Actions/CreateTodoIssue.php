@@ -63,6 +63,8 @@ class CreateTodoIssue
                 throw new TodoValidationException('The repository is not configured or not available locally. Refresh and try again.');
             }
 
+            // attempts: 3 — same transient "database is locked" race against the scheduler's
+            // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
             return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames): Issue {
                 if ($newGroupName !== null && trim($newGroupName) !== '') {
                     $groupField = $project->fields()->where('semantic_key', 'group')->where('is_available', true)->first();
@@ -145,7 +147,7 @@ class CreateTodoIssue
                 }
 
                 return $issue;
-            });
+            }, 3);
         };
 
         if ($idempotencyKey === null || $idempotencyKey === '') {

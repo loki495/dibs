@@ -33,12 +33,14 @@ class ReviseTodoComment
                 throw new TodoStaleRevisionException($comment->id, "Comment (local id {$id}) has changed since expectedRevision was read. Reread it and reconcile before retrying.");
             }
 
+            // attempts: 3 — same transient "database is locked" race against the scheduler's
+            // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
             return DB::transaction(function () use ($comment, $body): Comment {
                 $comment->update(['body' => trim($body), 'revision' => $comment->revision + 1]);
                 app(EnqueueGitHubPush::class)->handle('update_comment', 'comment', $comment->id, [], 'comment:update:'.$comment->id.':'.now()->timestamp);
 
                 return $comment->fresh();
-            });
+            }, 3);
         };
 
         if ($idempotencyKey === null || $idempotencyKey === '') {

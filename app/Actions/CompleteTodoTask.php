@@ -23,6 +23,11 @@ class CompleteTodoTask
 
     public function handle(int $issueId, int $pid, string $capabilityToken, ?string $summary = null): Issue
     {
+        // attempts: 3 — observed twice in production logs (2026-09-13/14) as a transient
+        // "database is locked" on the issues update, racing the scheduler's push-queue drain
+        // against this same SQLite file. Laravel's transaction() retries automatically on
+        // exactly this error string (see ConcurrencyErrorDetector); a bare attempts:1 let it
+        // surface to the calling agent as an opaque "internal server error".
         return DB::transaction(function () use ($issueId, $pid, $capabilityToken, $summary): Issue {
             $claim = $this->authorize->handle($issueId, $pid, $capabilityToken);
             $issue = $claim->issue;
@@ -38,6 +43,6 @@ class CompleteTodoTask
             $claim->update(['released_at' => now()]);
 
             return $issue->fresh();
-        });
+        }, 3);
     }
 }

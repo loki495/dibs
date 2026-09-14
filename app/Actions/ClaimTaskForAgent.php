@@ -32,6 +32,8 @@ class ClaimTaskForAgent
             throw new DomainException('A current task, agent name, a real process ID, and a claim length from 1 to 480 minutes are required.');
         }
 
+        // attempts: 3 — same transient "database is locked" race against the scheduler's
+        // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
         return DB::transaction(function () use ($issue, $agentName, $pid, $minutes): array {
             $this->releaseIfStaleOrDead($issue);
 
@@ -62,7 +64,7 @@ class ClaimTaskForAgent
             ]);
 
             return ['claim' => $claim, 'capability_token' => $token, 'is_verified_live' => $isVerifiedLive];
-        });
+        }, 3);
     }
 
     /**
