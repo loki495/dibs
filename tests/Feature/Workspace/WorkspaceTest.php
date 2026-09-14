@@ -236,6 +236,19 @@ it('renders the workspace page together with the shared top bar', function (): v
         ->assertSeeHtml('aria-label="Settings"');
 });
 
+it('force-clears the scroll lock as a safety net against Flux\'s own inline-style lock getting stuck open', function (): void {
+    // Flux's <flux:modal> sets document.documentElement.style.overflow (and paddingRight) via its own
+    // JS lock/unlock reference counter, independent of our overflow-hidden class toggle -- if that
+    // counter desyncs (e.g. Livewire's morph removes a modal before Flux's own cleanup runs), the
+    // inline style is stuck even though our tracked *Open state correctly says nothing is open.
+    $issue = Issue::factory()->create();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertSeeHtml("removeProperty('overflow')")
+        ->assertSeeHtml("removeProperty('padding-right')")
+        ->assertDontSeeHtml('x-trap.inert.noscroll');
+});
+
 it('reports a refresh failure from the shared top bar without crashing', function (): void {
     config(['github.token' => 'test-token']);
     $sync = Mockery::mock(SyncGitHub::class);

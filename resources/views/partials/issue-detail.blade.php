@@ -1,4 +1,4 @@
-<div wire:key="detail-{{ $detail['issue']->id }}" x-data x-init="$nextTick(() => $refs.close.focus())" x-trap.inert.noscroll="true" role="dialog" aria-modal="true" aria-labelledby="issue-detail-title" class="fixed inset-0 z-50">
+<div wire:key="detail-{{ $detail['issue']->id }}" x-data x-init="$nextTick(() => $refs.close.focus())" x-trap.inert="true" role="dialog" aria-modal="true" aria-labelledby="issue-detail-title" class="fixed inset-0 z-50">
     <div class="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" @click="$wire.set('selected', 0)" aria-hidden="true"></div>
     <section class="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col bg-white shadow-2xl dark:bg-slate-900">
         <header class="shrink-0 border-b border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-900">
