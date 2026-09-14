@@ -4,16 +4,16 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=web"
-      - "traefik.http.services.todo.loadbalancer.server.port=80"
-      - "traefik.http.routers.todo.rule=Host(`dibs.example.com`)"
-      - "traefik.http.routers.todo.entrypoints=websecure"
-      - "traefik.http.routers.todo.tls=true"
-      - "traefik.http.routers.todo.middlewares=todo-lan"
-      - "traefik.http.middlewares.todo-lan.ipallowlist.sourcerange=192.168.1.0/24,127.0.0.1/32,172.18.0.1/32"
-      - "traefik.http.routers.todo-http.rule=Host(`dibs.example.com`)"
-      - "traefik.http.routers.todo-http.entrypoints=web"
-      - "traefik.http.routers.todo-http.middlewares=todo-lan,todo-https"
-      - "traefik.http.middlewares.todo-https.redirectscheme.scheme=https"
+      - "traefik.http.services.dibs.loadbalancer.server.port=80"
+      - "traefik.http.routers.dibs.rule=Host(`dibs.example.com`)"
+      - "traefik.http.routers.dibs.entrypoints=websecure"
+      - "traefik.http.routers.dibs.tls=true"
+      - "traefik.http.routers.dibs.middlewares=dibs-lan"
+      - "traefik.http.middlewares.dibs-lan.ipallowlist.sourcerange=192.168.1.0/24,127.0.0.1/32,172.18.0.1/32"
+      - "traefik.http.routers.dibs-http.rule=Host(`dibs.example.com`)"
+      - "traefik.http.routers.dibs-http.entrypoints=web"
+      - "traefik.http.routers.dibs-http.middlewares=dibs-lan,dibs-https"
+      - "traefik.http.middlewares.dibs-https.redirectscheme.scheme=https"
 networks:
   web:
     external: true
