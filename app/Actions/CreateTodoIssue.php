@@ -12,6 +12,7 @@ use App\Models\Label;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class CreateTodoIssue
 {
@@ -81,17 +82,18 @@ class CreateTodoIssue
                     }
                 }
                 foreach ($newLabelNames as $newLabelName) {
-                    if (trim($newLabelName) === '') {
+                    $newLabelName = Str::lower(trim($newLabelName));
+                    if ($newLabelName === '') {
                         continue;
                     }
-                    $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [trim($newLabelName)])->first();
+                    $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [$newLabelName])->first();
                     if ($existingLabel instanceof Label) {
                         $labels->push($existingLabel);
                     } else {
                         $newLabel = Label::create([
                             'repository_id' => $repository->id,
                             'github_node_id' => null,
-                            'name' => trim($newLabelName),
+                            'name' => $newLabelName,
                             'color' => '6B7280',
                             'is_available' => true,
                         ]);

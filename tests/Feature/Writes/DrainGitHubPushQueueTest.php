@@ -183,6 +183,51 @@ it('creates a label on GitHub and stamps it with the created identity', function
     expect($item->refresh())->status->toBe('pushed')->pushed_at->not->toBeNull();
 });
 
+it('renames a label on GitHub by its node id', function (): void {
+    $label = Label::factory()->create(['github_node_id' => 'L_1', 'name' => 'new name']);
+    $item = GitHubPushQueueItem::factory()->create(['operation' => 'rename_label', 'target_type' => 'label', 'target_id' => $label->id, 'payload' => ['name' => 'new name']]);
+    Http::fake(fn (Request $request) => Http::response(['data' => ['updateLabel' => ['label' => ['id' => 'L_1', 'name' => 'new name', 'color' => '008672', 'description' => null]]]], 200));
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
+    expect($item->refresh()->status)->toBe('pushed');
+});
+
+it('waits to rename a label that has not been created on GitHub yet', function (): void {
+    $label = Label::factory()->create(['github_node_id' => null]);
+    GitHubPushQueueItem::factory()->create(['operation' => 'rename_label', 'target_type' => 'label', 'target_id' => $label->id, 'payload' => ['name' => 'new name']]);
+    Http::fake();
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 1]);
+    Http::assertNothingSent();
+});
+
+it('deletes a label on GitHub by its node id', function (): void {
+    $label = Label::factory()->create(['github_node_id' => 'L_1']);
+    $item = GitHubPushQueueItem::factory()->create(['operation' => 'delete_label', 'target_type' => 'label', 'target_id' => $label->id]);
+    Http::fake(fn (Request $request) => Http::response(['data' => ['deleteLabel' => ['clientMutationId' => null]]], 200));
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
+    expect($item->refresh()->status)->toBe('pushed');
+});
+
+it('gives up deleting a label remotely when it was never pushed to GitHub in the first place', function (): void {
+    $label = Label::factory()->create(['github_node_id' => null]);
+    $item = GitHubPushQueueItem::factory()->create(['operation' => 'delete_label', 'target_type' => 'label', 'target_id' => $label->id]);
+    Http::fake();
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 1, 'waiting' => 0]);
+    expect($item->refresh()->status)->toBe('needs_attention');
+    Http::assertNothingSent();
+});
+
 it('defers creating a label when GitHub cannot be reached', function (): void {
     $repository = GitHubRepository::factory()->create(['github_node_id' => 'R_test']);
     $label = Label::factory()->create(['repository_id' => $repository->id, 'github_node_id' => null, 'name' => 'next']);
