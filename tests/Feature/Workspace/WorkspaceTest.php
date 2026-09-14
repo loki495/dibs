@@ -585,7 +585,7 @@ it('shows the children choice only when the selected task has sub-tasks', functi
     expect($child->exists)->toBeTrue();
 });
 
-it('deletes a task locally, closes its detail panel, and offers an undo notice', function (): void {
+it('deletes a task locally, closes its detail panel, and hides it from the normal task list', function (): void {
     $issue = Issue::factory()->create(['title' => 'Delete me']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
@@ -593,21 +593,21 @@ it('deletes a task locally, closes its detail panel, and offers an undo notice',
         ->call('confirmDelete', false)
         ->assertSet('selected', 0)
         ->assertSet('deleteConfirmOpen', false)
-        ->assertSee('Delete me')
-        ->assertSee('Undo');
+        ->assertDontSee('Delete me');
 
     expect($issue->refresh()->is_available)->toBeFalse()
         ->and(GitHubPushQueueItem::query()->where('operation', 'delete_issue')->where('target_id', $issue->id)->exists())->toBeTrue();
 });
 
-it('undoes a delete and restores the task', function (): void {
-    $issue = Issue::factory()->create();
+it('finds a deleted task via the Deleted view and restores it at any time', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Bring this back']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('selected', $issue->id)->call('openDeleteConfirm')->call('confirmDelete', false)
-        ->call('undoDelete')
-        ->assertSet('recentlyDeleted', null)
-        ->assertSee('Restored');
+        ->set('view', 'deleted')
+        ->assertSee('Bring this back')
+        ->call('restoreIssue', $issue->id)
+        ->assertSee('Restored "Bring this back".');
 
     expect($issue->refresh()->is_available)->toBeTrue()
         ->and(GitHubPushQueueItem::query()->where('operation', 'delete_issue')->where('target_id', $issue->id)->exists())->toBeFalse();
