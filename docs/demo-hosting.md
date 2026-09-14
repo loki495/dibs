@@ -111,6 +111,19 @@ php -r "echo 'APP_KEY=base64:'.base64_encode(random_bytes(32)).PHP_EOL;" >> .env
 # DEMO_DB_STORAGE_PATH=/var/www/html/storage/demo-dbs, DB_DATABASE pointed at a harmless
 # dedicated fallback path (not database/database.sqlite), GITHUB_TOKEN/DIBS_GITHUB_OWNER/
 # DIBS_GITHUB_REPO left blank.
+#
+# TRUSTED_PROXIES is NOT copy-pasteable from .env.example -- its default (172.18.0.0/16)
+# is work's Docker network, meaningless on media. Get media's actual value with:
+#   docker network inspect dibs-demo_default --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
+# (only exists after the first `up`, so set a placeholder now and fix it after -- see the
+# incident below) plus work's own LAN IP (`ip -4 addr show` on work) for the Traefik
+# LAN-convenience path. Get both wrong or skip this and asset URLs silently render as
+# http:// on an https:// page -- the browser blocks them as mixed content, so the page
+# loads but every stylesheet and script 404s from the browser's perspective (a real
+# incident on this exact deploy, 2026-09-14: fixed by setting
+# TRUSTED_PROXIES=172.26.0.0/16,192.168.1.12/32 and recreating the containers -- env_file
+# values are baked in at container creation, so editing .env alone does nothing until
+# `docker compose up -d` recreates the container).
 docker compose -f docker-compose.prod.yml up -d --build
 curl http://127.0.0.1:8112/login   # should return the login page
 ```
