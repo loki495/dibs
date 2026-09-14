@@ -358,8 +358,39 @@ it('opens task capture with the current Project and Group preselected', function
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->call('chooseArea', $project->id)->set('group', $group->id)->call('openCapture')
         ->assertSet('captureOpen', true)->assertSet('captureArea', $project->id)->assertSet('captureGroup', $group->id)
-        ->assertDontSee('New Group')->assertSee('Find parent')->assertSee('New label')
-        ->set('captureGroup', -1)->assertSee('New Group');
+        ->assertDontSee('New:')->assertSee('Search task title or #number')->assertSee('Search or create a label')
+        ->call('selectNewCaptureGroup', 'Freelance')->assertSee('New: Freelance');
+});
+
+it('filters the capture Group and Labels pickers by their own search term', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Career']);
+    ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Home']);
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $urgent = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
+    $documentation = Label::factory()->for($repository, 'repository')->create(['name' => 'documentation']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('chooseArea', $project->id)->call('openCapture')
+        ->assertSee('Career')->assertSee('Home')
+        ->assertSeeHtml("toggleCaptureLabel({$urgent->id})")->assertSeeHtml("toggleCaptureLabel({$documentation->id})")
+        ->set('captureGroupSearch', 'car')->assertSee('Career')->assertDontSee('Home')
+        ->set('captureLabelSearch', 'doc')
+        ->assertSeeHtml("toggleCaptureLabel({$documentation->id})")->assertDontSeeHtml("toggleCaptureLabel({$urgent->id})");
+});
+
+it('selects a newly-created capture Group by name, then lets picking an existing option override it', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $existing = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Career']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('chooseArea', $project->id)->call('openCapture')
+        ->call('selectNewCaptureGroup', 'Freelance')
+        ->assertSet('captureGroup', -1)->assertSet('captureNewGroup', 'Freelance')
+        ->set('captureGroup', $existing->id)
+        ->assertSet('captureGroup', $existing->id);
 });
 
 it('captures a task with a description without calling GitHub', function (): void {
@@ -659,6 +690,6 @@ it('loads the same contextual fields in task editing as task creation', function
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
         ->call('beginEdit')->assertSet('editingIssue', true)->assertSet('editArea', $project->id)
         ->assertSet('editGroup', $group->id)->assertSet('editParent', $parent->id)->assertSet('editLabels', [$label->id])
-        ->assertDontSee('New Group')->assertSee('New label')
-        ->set('editGroup', -1)->assertSee('New Group');
+        ->assertDontSee('New:')->assertSee('Search or create a label')
+        ->call('selectNewEditGroup', 'Freelance')->assertSee('New: Freelance');
 });

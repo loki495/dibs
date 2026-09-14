@@ -23,6 +23,7 @@ use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubSyncException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -78,7 +79,11 @@ new class extends Component
 
     public string $editNewGroup = '';
 
+    public string $editGroupSearch = '';
+
     public string $editNewLabel = '';
+
+    public string $editLabelSearch = '';
 
     public int $editParent = 0;
 
@@ -106,7 +111,11 @@ new class extends Component
 
     public string $captureNewGroup = '';
 
+    public string $captureGroupSearch = '';
+
     public string $captureNewLabel = '';
+
+    public string $captureLabelSearch = '';
 
     public string $captureParentSearch = '';
 
@@ -145,7 +154,7 @@ new class extends Component
     public function updatedSelected(): void
     {
         $this->captureParent = $this->selectedParentId();
-        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editNewLabel', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision', 'claimError');
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabel', 'editLabelSearch', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision', 'claimError');
     }
 
     public function chooseArea(int $id): void
@@ -182,7 +191,7 @@ new class extends Component
 
     public function openCapture(): void
     {
-        $this->reset('captureError', 'newTitle', 'newBody', 'captureNewGroup', 'captureNewLabel', 'captureParentSearch', 'captureLabels');
+        $this->reset('captureError', 'newTitle', 'newBody', 'captureNewGroup', 'captureGroupSearch', 'captureNewLabel', 'captureLabelSearch', 'captureParentSearch', 'captureLabels');
         $this->captureArea = $this->area;
         $this->captureGroup = $this->group;
         $this->capturePriority = 0;
@@ -253,6 +262,18 @@ new class extends Component
         }
     }
 
+    public function selectNewCaptureGroup(string $name): void
+    {
+        $this->captureGroup = -1;
+        $this->captureNewGroup = $name;
+    }
+
+    public function selectNewEditGroup(string $name): void
+    {
+        $this->editGroup = -1;
+        $this->editNewGroup = $name;
+    }
+
     public function toggleCaptureLabel(int $id): void
     {
         $this->captureLabels = in_array($id, $this->captureLabels, true)
@@ -315,7 +336,7 @@ new class extends Component
 
     public function cancelEdit(): void
     {
-        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editNewLabel', 'editParent', 'editParentSearch');
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabel', 'editLabelSearch', 'editParent', 'editParentSearch');
     }
 
     public function saveIssue(): void
@@ -603,15 +624,19 @@ new class extends Component
                 $matches->where('title', 'like', '%'.$this->captureParentSearch.'%')
                     ->orWhere('github_number', $this->captureParentSearch);
             }))->orderBy('title')->limit(100)->get(['id', 'github_number', 'title']);
-        $captureGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->captureArea))->orderBy('position')->get();
+        $captureGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->captureArea))->orderBy('position')->get()
+            ->filter(fn (ProjectFieldOption $option): bool => $this->captureGroupSearch === '' || str_contains(Str::lower($option->name), Str::lower($this->captureGroupSearch)))->values();
         $capturePriorities = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'priority')->where('project_id', $this->captureArea))->orderBy('position')->get();
         $editParents = Issue::query()->where('is_available', true)->whereKeyNot($this->selected)
             ->when($this->editParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
                 $matches->where('title', 'like', '%'.$this->editParentSearch.'%')->orWhere('github_number', $this->editParentSearch);
             }))->orderBy('title')->limit(100)->get(['id', 'github_number', 'title']);
-        $editGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->editArea))->orderBy('position')->get();
+        $editGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->editArea))->orderBy('position')->get()
+            ->filter(fn (ProjectFieldOption $option): bool => $this->editGroupSearch === '' || str_contains(Str::lower($option->name), Str::lower($this->editGroupSearch)))->values();
         $editPriorities = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'priority')->where('project_id', $this->editArea))->orderBy('position')->get();
         $labelOptions = Label::query()->where('is_available', true)->orderBy('name')->get(['id', 'name']);
+        $captureLabelOptions = $labelOptions->filter(fn (Label $label): bool => $this->captureLabelSearch === '' || str_contains(Str::lower($label->name), Str::lower($this->captureLabelSearch)))->values();
+        $editLabelOptions = $labelOptions->filter(fn (Label $label): bool => $this->editLabelSearch === '' || str_contains(Str::lower($label->name), Str::lower($this->editLabelSearch)))->values();
         $deletedRows = $this->view === 'deleted'
             ? Issue::query()->where('is_available', false)
                 ->when($this->search !== '', fn ($query) => $query->where(function ($matches): void {
@@ -622,8 +647,8 @@ new class extends Component
         return [...app(BuildIssueTree::class)->handle($this->area, $this->view, $this->search, $this->state, $this->group, $this->labels, $this->priority, $this->sortBy),
             'detail' => $this->selected > 0 ? app(GetIssueDetails::class)->handle($this->selected) : null,
             'deletedRows' => $deletedRows,
-            'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $labelOptions,
-            'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $labelOptions];
+            'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $captureLabelOptions,
+            'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions];
     }
 }; ?>
 
@@ -812,7 +837,7 @@ new class extends Component
                 <flux:heading size="lg">{{ __('Add task') }}</flux:heading>
                 <flux:text class="mt-1">{{ __('Choose only the context this task needs.') }}</flux:text>
             </div>
-            @include('partials.task-form-fields', ['autofocus' => true, 'titleModel' => 'newTitle', 'bodyModel' => 'newBody', 'areaModel' => 'captureArea', 'groupModel' => 'captureGroup', 'newGroupModel' => 'captureNewGroup', 'parentSearchModel' => 'captureParentSearch', 'parentModel' => 'captureParent', 'toggleLabelMethod' => 'toggleCaptureLabel', 'selectedLabelsForForm' => $captureLabels, 'labelOptionsForForm' => $captureLabelOptions, 'groupsForForm' => $captureGroups, 'priorityModel' => 'capturePriority', 'prioritiesForForm' => $capturePriorities, 'parentsForForm' => $captureParents, 'newLabelModel' => 'captureNewLabel', 'groupValueForForm' => $captureGroup])
+            @include('partials.task-form-fields', ['autofocus' => true, 'titleModel' => 'newTitle', 'bodyModel' => 'newBody', 'areaModel' => 'captureArea', 'groupModel' => 'captureGroup', 'groupSearchModel' => 'captureGroupSearch', 'groupSearchValueForForm' => $captureGroupSearch, 'newGroupMethod' => 'selectNewCaptureGroup', 'newGroupValueForForm' => $captureNewGroup, 'parentSearchModel' => 'captureParentSearch', 'parentSearchValueForForm' => $captureParentSearch, 'parentModel' => 'captureParent', 'parentValueForForm' => $captureParent, 'toggleLabelMethod' => 'toggleCaptureLabel', 'selectedLabelsForForm' => $captureLabels, 'labelOptionsForForm' => $captureLabelOptions, 'labelSearchModel' => 'captureLabelSearch', 'labelSearchValueForForm' => $captureLabelSearch, 'groupsForForm' => $captureGroups, 'priorityModel' => 'capturePriority', 'prioritiesForForm' => $capturePriorities, 'parentsForForm' => $captureParents, 'newLabelModel' => 'captureNewLabel', 'groupValueForForm' => $captureGroup])
             @error('newTitle')<flux:text class="text-amber-700 dark:text-amber-400">{{ $message }}</flux:text>@enderror
             @if ($captureError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $captureError }}</p>@endif
             <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit" wire:loading.attr="disabled" wire:target="capture"><span wire:loading.remove wire:target="capture">{{ __('Create task') }}</span><span wire:loading wire:target="capture">{{ __('Saving…') }}</span></flux:button></div>
