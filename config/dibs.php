@@ -14,4 +14,12 @@ return [
     'agent_report_area_id' => $optionalId(env('DIBS_AGENT_REPORT_AREA_ID')),
     'agent_report_group_id' => $optionalId(env('DIBS_AGENT_REPORT_GROUP_ID')),
     'agent_report_parent_id' => $optionalId(env('DIBS_AGENT_REPORT_PARENT_ID')),
+
+    // Public demo instance only -- see docs/demo-hosting.md. When true, ResolveDemoDatabase
+    // gives every visitor their own private copy of demo_db_template_path (identified by a
+    // cookie) instead of one database shared by every concurrent visitor, and demo:cleanup
+    // is scheduled to delete stale per-visitor copies. Never set this outside that deployment.
+    'demo_mode' => (bool) env('DIBS_DEMO_MODE', false),
+    'demo_db_template_path' => env('DEMO_DB_TEMPLATE_PATH', storage_path('demo-template.sqlite')),
+    'demo_db_storage_path' => env('DEMO_DB_STORAGE_PATH', storage_path('demo-dbs')),
 ];

@@ -1,0 +1,45 @@
+name: dibs-demo
+
+# Public demo instance. Isolated from the main docker-compose.yml stack: separate compose
+# project, separate container names, and every demo-specific value comes from .env.demo via
+# env_file so it can never fall back to a real credential from the shared .env this directory
+# also contains. Each visitor gets their own private SQLite copy at runtime (ResolveDemoDatabase
+# middleware, gated by DIBS_DEMO_MODE) -- DB_DATABASE here is only the harmless pre-visitor
+# fallback. See docs/demo-hosting.md.
+services:
+  app:
+    container_name: dibs-demo-app
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file: .env.demo
+    networks: [default, web]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.services.dibs-demo.loadbalancer.server.port=80"
+      - "traefik.http.routers.dibs-demo.rule=Host(`dibs-demo.ac495.net`)"
+      - "traefik.http.routers.dibs-demo.entrypoints=websecure"
+      - "traefik.http.routers.dibs-demo.tls=true"
+      - "traefik.http.routers.dibs-demo-http.rule=Host(`dibs-demo.ac495.net`)"
+      - "traefik.http.routers.dibs-demo-http.entrypoints=web"
+      - "traefik.http.routers.dibs-demo-http.middlewares=dibs-demo-https"
+      - "traefik.http.middlewares.dibs-demo-https.redirectscheme.scheme=https"
+    volumes:
+      - ./:/var/www/html
+    ports:
+      - "127.0.0.1:${DEMO_APP_PORT:-8098}:80"
+  scheduler:
+    container_name: dibs-demo-scheduler
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file: .env.demo
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - ./:/var/www/html
+networks:
+  web:
+    external: true

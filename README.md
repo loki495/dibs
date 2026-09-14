@@ -75,6 +75,7 @@ recovery.
 
 - [`docs/architecture.md`](docs/architecture.md) — data model and sync design
 - [`docs/agent-interface.md`](docs/agent-interface.md) — MCP/CLI contract for agents
+- [`docs/demo-hosting.md`](docs/demo-hosting.md) — how the public demo instance is built and deployed
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
 - [`CLAUDE.md`](CLAUDE.md) — conventions for AI coding assistants working in this repo
 
