@@ -14,7 +14,7 @@ Status: the host-local stdio MCP server, its full read/write/claim tool surface,
 
 ## Boundary
 
-Agents run on the host and connect to a stdio MCP server. The server exposes Todo tools and delegates to the same application Actions as the workspace. Those Actions write SQLite directly as the confirmed result and enqueue a GitHub push rather than calling the GitHub API inline. `php artisan todo:agent:*` is retained as a local recovery and smoke-test fallback. There is no unauthenticated HTTP API and no GitHub credential in an agent prompt, browser bundle, or command argument. The MCP server and CLI read the server-side `GITHUB_TOKEN` only when the push-queue worker needs it to reach GitHub.
+Agents run on the host and connect to a stdio MCP server. The server exposes Dibs tools and delegates to the same application Actions as the workspace. Those Actions write SQLite directly as the confirmed result and enqueue a GitHub push rather than calling the GitHub API inline. `php artisan todo:agent:*` is retained as a local recovery and smoke-test fallback. There is no unauthenticated HTTP API and no GitHub credential in an agent prompt, browser bundle, or command argument. The MCP server and CLI read the server-side `GITHUB_TOKEN` only when the push-queue worker needs it to reach GitHub.
 
 Implemented commands: `list`, `show`, `claim`, `heartbeat`, `release`, `create`, `update`, `comment`, and `complete` — all follow the same contract.
 
