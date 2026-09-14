@@ -5,6 +5,11 @@
             <div class="flex items-center justify-between gap-3">
                 <span class="text-xs text-slate-500">{{ $detail['issue']->repository->full_name }} · #{{ $detail['issue']->github_number }}</span>
                 <div class="flex items-center gap-1">
+                    @if (! $editingIssue)
+                        @if ($detail['issue']->state === 'OPEN')<button type="button" wire:click="closeIssue" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Mark done') }}"><flux:icon.check class="size-4" /></button>@endif
+                        <button type="button" wire:click="beginEdit" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Edit') }}"><flux:icon.pencil-square class="size-4" /></button>
+                        <button type="button" wire:click="openDeleteConfirm" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Delete') }}"><flux:icon.trash class="size-4" /></button>
+                    @endif
                     @if ($detail['issue']->url)<a href="{{ $detail['issue']->url }}" target="_blank" rel="noopener noreferrer" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Open in GitHub') }}"><flux:icon.arrow-up-right class="size-4" /></a>@endif
                     <button x-ref="close" wire:click="$set('selected', 0)" class="flex size-9 items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="{{ __('Close issue details') }}"><flux:icon.x-mark class="size-5" /></button>
                 </div>
@@ -14,12 +19,13 @@
                     <h2 id="issue-detail-title" class="w-full break-words text-2xl font-semibold leading-snug tracking-tight">{{ $detail['issue']->title }}</h2>
                     <div class="mt-1.5 flex flex-wrap items-center gap-2">
                         <span @class(['text-xs font-medium uppercase tracking-wider', 'text-teal-700 dark:text-teal-400' => $detail['issue']->state === 'OPEN', 'text-slate-500' => $detail['issue']->state !== 'OPEN'])>{{ $detail['issue']->state === 'OPEN' ? __('Open') : __('Closed') }}</span>
+                        @foreach ($detail['issue']->projectItems as $membership)
+                            @php($membershipColor = app(\App\Support\ProjectColor::class)->for($membership->project))
+                            <span class="rounded-full border px-2 py-0.5 text-xs font-medium" style="border-color: {{ $membershipColor }}; background-color: color-mix(in srgb, {{ $membershipColor }} 14%, transparent); color: {{ $membershipColor }}">{{ $membership->project->title }}</span>
+                            @if ($membership->groupOption)<span class="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">{{ $membership->groupOption->name }}</span>@endif
+                            @if ($membership->statusOption)<span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">{{ $membership->statusOption->name }}</span>@endif
+                        @endforeach
                         @if ($detail['pushQueuePending'])<a href="{{ route('push-queue') }}" class="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-0.5 text-xs text-amber-900 hover:underline dark:bg-amber-950 dark:text-amber-100"><flux:icon.arrow-path class="size-3" />{{ __('Pending GitHub sync') }}</a>@endif
-                    </div>
-                    <div class="mt-3 flex flex-wrap gap-2">
-                        @if ($detail['issue']->state === 'OPEN')<flux:button type="button" wire:click="closeIssue" variant="primary" size="sm" icon="check">{{ __('Mark done') }}</flux:button>@endif
-                        <flux:button type="button" wire:click="beginEdit" variant="ghost" size="sm" icon="pencil-square">{{ __('Edit') }}</flux:button>
-                        <flux:button type="button" wire:click="openDeleteConfirm" variant="ghost" color="red" size="sm" icon="trash">{{ __('Delete') }}</flux:button>
                     </div>
                 </div>
             @else
@@ -91,13 +97,14 @@
                     @endif
                 </nav>
             @endif
-            @if ($detail['issue']->projectItems->isNotEmpty())
+            @if ($detail['issue']->projectItems->contains(fn ($membership) => $membership->priorityOption || $membership->planned_on || $membership->due_on || $membership->repeat_rule))
                 <div class="space-y-3">
                     @foreach ($detail['issue']->projectItems as $membership)
+                        @continue(! $membership->priorityOption && ! $membership->planned_on && ! $membership->due_on && ! $membership->repeat_rule)
                         <div class="rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-950/60">
                             <p class="font-medium">{{ $membership->project->title }}</p>
                             <dl class="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-2 text-xs">
-                                @foreach ([__('Group') => $membership->groupOption?->name, __('Priority') => $membership->priorityOption?->name, __('Status') => $membership->statusOption?->name, __('Planned') => $membership->planned_on?->toDateString(), __('Due') => $membership->due_on?->toDateString(), __('Repeat') => $membership->repeat_rule] as $key => $value)
+                                @foreach ([__('Priority') => $membership->priorityOption?->name, __('Planned') => $membership->planned_on?->toDateString(), __('Due') => $membership->due_on?->toDateString(), __('Repeat') => $membership->repeat_rule] as $key => $value)
                                     @if ($value)<dt class="text-slate-500">{{ $key }}</dt><dd class="break-words">{{ $value }}</dd>@endif
                                 @endforeach
                             </dl>
