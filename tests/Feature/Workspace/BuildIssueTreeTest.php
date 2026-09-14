@@ -130,16 +130,19 @@ it('keeps every root task of the same Group contiguous even when their sibling o
         ->and(collect($rows)->firstWhere('id', $third->id)['ancestors'])->toBe(['group-'.$sessioneer->id]);
 });
 
-it('requires every selected label while leaving all issues visible without selected labels', function (): void {
+it('matches an issue carrying any one of several selected labels, not just all of them', function (): void {
     $first = Label::factory()->create(['name' => 'next']);
     $second = Label::factory()->for($first->repository, 'repository')->create(['name' => 'waiting']);
-    $matching = Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Both']);
-    $matching->labels()->attach([$first->id, $second->id]);
+    $third = Label::factory()->for($first->repository, 'repository')->create(['name' => 'someday']);
+    $both = Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Both']);
+    $both->labels()->attach([$first->id, $second->id]);
     $one = Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Only next']);
     $one->labels()->attach($first);
+    $neither = Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Someday only']);
+    $neither->labels()->attach($third);
 
-    expect(array_column(app(BuildIssueTree::class)->handle(labels: ['next', 'waiting'])['rows'], 'id'))->toBe([$matching->id])
-        ->and(array_column(app(BuildIssueTree::class)->handle()['rows'], 'id'))->toContain($matching->id, $one->id);
+    expect(array_column(app(BuildIssueTree::class)->handle(labels: ['next', 'waiting'])['rows'], 'id'))->toContain($both->id, $one->id)->not->toContain($neither->id)
+        ->and(array_column(app(BuildIssueTree::class)->handle()['rows'], 'id'))->toContain($both->id, $one->id, $neither->id);
 });
 
 it('offers every available repository label and the virtual parent filter even before a task uses them', function (): void {
