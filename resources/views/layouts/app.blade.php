@@ -32,7 +32,7 @@
             <span class="flex size-10 items-center justify-center rounded-xl bg-teal-800 text-white"><flux:icon.check class="size-6" /></span>
             {{ config('app.name') }}
         </a>
-        <div @class(['md:hidden' => request()->routeIs('workspace')])>
+        <div @class(['lg:hidden' => request()->routeIs('workspace')])>
             <livewire:top-bar />
         </div>
     </div>
