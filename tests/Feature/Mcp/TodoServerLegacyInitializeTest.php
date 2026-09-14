@@ -58,7 +58,7 @@ it('answers a pre-2026-07-28 initialize handshake instead of rejecting it', func
 
     expect($response)->not->toHaveKey('error')
         ->and($response['result']['protocolVersion'])->toBe('2025-11-25')
-        ->and($response['result']['serverInfo']['name'])->toBe('Todo');
+        ->and($response['result']['serverInfo']['name'])->toBe('Dibs');
 });
 
 it('falls back to a supported legacy version when the client requests an unrecognized one', function (): void {

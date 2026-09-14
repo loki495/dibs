@@ -28,7 +28,7 @@ new class extends Component
 
     public function mount(): void
     {
-        if (! config('todo.push_queue_ui_enabled')) {
+        if (! config('dibs.push_queue_ui_enabled')) {
             abort(404);
         }
         $this->refresh();

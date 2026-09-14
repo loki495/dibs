@@ -15,7 +15,7 @@ bash docker/setup.sh
 docker compose exec -u www-data app php artisan todo:user
 ```
 
-The final command asks for a name, email and hidden password (12+ characters). No default account or public registration exists. Open your configured hostname on the LAN. App container: todo-app; loopback port: 8095. Use HTTPS for login because session cookies are secure.
+The final command asks for a name, email and hidden password (12+ characters). No default account or public registration exists. Open your configured hostname on the LAN. App container: dibs-app; loopback port: 8095. Use HTTPS for login because session cookies are secure.
 
 The Traefik override is machine-specific and ignored. Review its hostname, source ranges and .env TRUSTED_PROXIES when moving hosts; the example assumes the existing web Docker network and 192.168.1.0/24 LAN. No shared Traefik files were changed. A clean host also needs DNS and TLS routing configured. Without Traefik, explicitly configure local HTTP/session settings for your environment.
 

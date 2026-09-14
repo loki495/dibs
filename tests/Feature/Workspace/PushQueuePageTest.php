@@ -118,7 +118,7 @@ it('is unreachable to a guest', function (): void {
 });
 
 it('is hidden entirely when the feature flag is off', function (): void {
-    config(['todo.push_queue_ui_enabled' => false]);
+    config(['dibs.push_queue_ui_enabled' => false]);
     $user = User::factory()->create();
 
     $this->actingAs($user)->get('/push-queue')->assertNotFound();

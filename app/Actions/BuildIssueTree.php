@@ -29,7 +29,7 @@ class BuildIssueTree
         $containerIds = $issues->pluck('parent_issue_id')->filter()->flip()->all();
         $requiresParent = in_array('parent', $labels, true);
         $requestedLabels = array_values(array_filter($labels, fn (string $label): bool => $label !== 'parent'));
-        $today = now(config('todo.timezone'))->toDateString();
+        $today = now(config('dibs.timezone'))->toDateString();
         $nodes = [];
         $groups = [];
         $areaCounts = [];
