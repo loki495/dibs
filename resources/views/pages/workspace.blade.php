@@ -81,7 +81,7 @@ new class extends Component
 
     public string $editGroupSearch = '';
 
-    public string $editNewLabel = '';
+    public array $editNewLabels = [];
 
     public string $editLabelSearch = '';
 
@@ -113,7 +113,7 @@ new class extends Component
 
     public string $captureGroupSearch = '';
 
-    public string $captureNewLabel = '';
+    public array $captureNewLabels = [];
 
     public string $captureLabelSearch = '';
 
@@ -154,7 +154,7 @@ new class extends Component
     public function updatedSelected(): void
     {
         $this->captureParent = $this->selectedParentId();
-        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabel', 'editLabelSearch', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision', 'claimError');
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabels', 'editLabelSearch', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision', 'claimError');
     }
 
     public function chooseArea(int $id): void
@@ -191,7 +191,7 @@ new class extends Component
 
     public function openCapture(): void
     {
-        $this->reset('captureError', 'newTitle', 'newBody', 'captureNewGroup', 'captureGroupSearch', 'captureNewLabel', 'captureLabelSearch', 'captureParentSearch', 'captureLabels');
+        $this->reset('captureError', 'newTitle', 'newBody', 'captureNewGroup', 'captureGroupSearch', 'captureNewLabels', 'captureLabelSearch', 'captureParentSearch', 'captureLabels');
         $this->captureArea = $this->area;
         $this->captureGroup = $this->group;
         $this->capturePriority = 0;
@@ -281,10 +281,25 @@ new class extends Component
             : [...$this->captureLabels, $id];
     }
 
+    public function addCaptureNewLabel(string $name): void
+    {
+        $name = trim($name);
+        if ($name === '' || collect($this->captureNewLabels)->contains(fn (string $existing): bool => Str::lower($existing) === Str::lower($name))) {
+            return;
+        }
+        $this->captureNewLabels = [...$this->captureNewLabels, $name];
+        $this->captureLabelSearch = '';
+    }
+
+    public function removeCaptureNewLabel(int $index): void
+    {
+        $this->captureNewLabels = array_values(array_diff_key($this->captureNewLabels, [$index => true]));
+    }
+
     public function capture(): void
     {
         $this->reset('captureError');
-        $this->validate(['newTitle' => ['required', 'string', 'max:255'], 'newBody' => ['nullable', 'string', 'max:65535'], 'captureNewGroup' => ['nullable', 'string', 'max:50'], 'captureNewLabel' => ['nullable', 'string', 'max:50'], 'captureLabels' => ['array'], 'captureLabels.*' => ['integer']]);
+        $this->validate(['newTitle' => ['required', 'string', 'max:255'], 'newBody' => ['nullable', 'string', 'max:65535'], 'captureNewGroup' => ['nullable', 'string', 'max:50'], 'captureNewLabels' => ['array'], 'captureNewLabels.*' => ['string', 'max:50'], 'captureLabels' => ['array'], 'captureLabels.*' => ['integer']]);
         try {
             $issue = app(CreateTodoIssue::class)->handle(
                 title: $this->newTitle,
@@ -295,7 +310,7 @@ new class extends Component
                 priorityId: $this->capturePriority > 0 ? $this->capturePriority : null,
                 labelIds: $this->captureLabels,
                 newGroupName: $this->captureNewGroup,
-                newLabelName: $this->captureNewLabel,
+                newLabelNames: $this->captureNewLabels,
             );
         } catch (TodoValidationException $exception) {
             $this->captureError = $exception->getMessage();
@@ -303,7 +318,7 @@ new class extends Component
             return;
         }
         $this->selected = $issue->id;
-        $this->reset('newTitle', 'newBody', 'captureGroup', 'capturePriority', 'captureLabels', 'captureNewGroup', 'captureNewLabel', 'captureParentSearch');
+        $this->reset('newTitle', 'newBody', 'captureGroup', 'capturePriority', 'captureLabels', 'captureNewGroup', 'captureNewLabels', 'captureParentSearch');
         $this->captureOpen = false;
     }
 
@@ -323,7 +338,7 @@ new class extends Component
         $this->editPriority = $membership?->priority_option_id ?? 0;
         $this->editLabels = $issue->labels->where('is_available', true)->pluck('id')->all();
         $this->editParent = $issue->parent_issue_id ?? 0;
-        $this->reset('editNewGroup', 'editNewLabel', 'editParentSearch', 'editError');
+        $this->reset('editNewGroup', 'editNewLabels', 'editParentSearch', 'editError');
         $this->editingIssue = true;
     }
 
@@ -334,15 +349,30 @@ new class extends Component
             : [...$this->editLabels, $id];
     }
 
+    public function addEditNewLabel(string $name): void
+    {
+        $name = trim($name);
+        if ($name === '' || collect($this->editNewLabels)->contains(fn (string $existing): bool => Str::lower($existing) === Str::lower($name))) {
+            return;
+        }
+        $this->editNewLabels = [...$this->editNewLabels, $name];
+        $this->editLabelSearch = '';
+    }
+
+    public function removeEditNewLabel(int $index): void
+    {
+        $this->editNewLabels = array_values(array_diff_key($this->editNewLabels, [$index => true]));
+    }
+
     public function cancelEdit(): void
     {
-        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabel', 'editLabelSearch', 'editParent', 'editParentSearch');
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabels', 'editLabelSearch', 'editParent', 'editParentSearch');
     }
 
     public function saveIssue(): void
     {
         $this->reset('editError');
-        $this->validate(['editTitle' => ['required', 'string', 'max:255'], 'editBody' => ['nullable', 'string', 'max:65535'], 'editNewGroup' => ['nullable', 'string', 'max:50'], 'editNewLabel' => ['nullable', 'string', 'max:50'], 'editLabels' => ['array'], 'editLabels.*' => ['integer']]);
+        $this->validate(['editTitle' => ['required', 'string', 'max:255'], 'editBody' => ['nullable', 'string', 'max:65535'], 'editNewGroup' => ['nullable', 'string', 'max:50'], 'editNewLabels' => ['array'], 'editNewLabels.*' => ['string', 'max:50'], 'editLabels' => ['array'], 'editLabels.*' => ['integer']]);
         $issue = Issue::query()->where('is_available', true)->with(['projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')])->find($this->selected);
         if (! $issue instanceof Issue) {
             $this->cancelEdit();
@@ -400,15 +430,18 @@ new class extends Component
                     $group = $newOption;
                 }
             }
-            if (trim($this->editNewLabel) !== '') {
-                $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [trim($this->editNewLabel)])->first();
+            foreach ($this->editNewLabels as $newLabelName) {
+                if (trim($newLabelName) === '') {
+                    continue;
+                }
+                $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [trim($newLabelName)])->first();
                 if ($existingLabel instanceof Label) {
                     $labels->push($existingLabel);
                 } else {
                     $newLabel = Label::create([
                         'repository_id' => $repository->id,
                         'github_node_id' => null,
-                        'name' => trim($this->editNewLabel),
+                        'name' => trim($newLabelName),
                         'color' => '6B7280',
                         'is_available' => true,
                     ]);
@@ -416,6 +449,7 @@ new class extends Component
                     $labels->push($newLabel);
                 }
             }
+            $labels = $labels->unique('id')->values();
             $issue->update(['title' => $this->editTitle, 'body' => $this->editBody === '' ? null : $this->editBody]);
             app(EnqueueGitHubPush::class)->handle('update_issue_body', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:update:'.$issue->id.':'.now()->timestamp);
 
@@ -840,7 +874,7 @@ new class extends Component
                 <flux:heading size="lg">{{ __('Add task') }}</flux:heading>
                 <flux:text class="mt-1">{{ __('Choose only the context this task needs.') }}</flux:text>
             </div>
-            @include('partials.task-form-fields', ['autofocus' => true, 'titleModel' => 'newTitle', 'bodyModel' => 'newBody', 'areaModel' => 'captureArea', 'groupModel' => 'captureGroup', 'groupSearchModel' => 'captureGroupSearch', 'groupSearchValueForForm' => $captureGroupSearch, 'newGroupMethod' => 'selectNewCaptureGroup', 'newGroupValueForForm' => $captureNewGroup, 'parentSearchModel' => 'captureParentSearch', 'parentSearchValueForForm' => $captureParentSearch, 'parentModel' => 'captureParent', 'parentValueForForm' => $captureParent, 'toggleLabelMethod' => 'toggleCaptureLabel', 'selectedLabelsForForm' => $captureLabels, 'labelOptionsForForm' => $captureLabelOptions, 'labelSearchModel' => 'captureLabelSearch', 'labelSearchValueForForm' => $captureLabelSearch, 'groupsForForm' => $captureGroups, 'priorityModel' => 'capturePriority', 'prioritiesForForm' => $capturePriorities, 'parentsForForm' => $captureParents, 'newLabelModel' => 'captureNewLabel', 'groupValueForForm' => $captureGroup])
+            @include('partials.task-form-fields', ['autofocus' => true, 'titleModel' => 'newTitle', 'bodyModel' => 'newBody', 'areaModel' => 'captureArea', 'groupModel' => 'captureGroup', 'groupSearchModel' => 'captureGroupSearch', 'groupSearchValueForForm' => $captureGroupSearch, 'newGroupMethod' => 'selectNewCaptureGroup', 'newGroupValueForForm' => $captureNewGroup, 'parentSearchModel' => 'captureParentSearch', 'parentSearchValueForForm' => $captureParentSearch, 'parentModel' => 'captureParent', 'parentValueForForm' => $captureParent, 'toggleLabelMethod' => 'toggleCaptureLabel', 'selectedLabelsForForm' => $captureLabels, 'labelOptionsForForm' => $captureLabelOptions, 'labelSearchModel' => 'captureLabelSearch', 'labelSearchValueForForm' => $captureLabelSearch, 'groupsForForm' => $captureGroups, 'priorityModel' => 'capturePriority', 'prioritiesForForm' => $capturePriorities, 'parentsForForm' => $captureParents, 'newLabelMethod' => 'addCaptureNewLabel', 'newLabelsForForm' => $captureNewLabels, 'removeNewLabelMethod' => 'removeCaptureNewLabel', 'groupValueForForm' => $captureGroup])
             @error('newTitle')<flux:text class="text-amber-700 dark:text-amber-400">{{ $message }}</flux:text>@enderror
             @if ($captureError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $captureError }}</p>@endif
             <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit" wire:loading.attr="disabled" wire:target="capture"><span wire:loading.remove wire:target="capture">{{ __('Create task') }}</span><span wire:loading wire:target="capture">{{ __('Saving…') }}</span></flux:button></div>

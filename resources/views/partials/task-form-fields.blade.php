@@ -4,7 +4,7 @@
         <flux:textarea wire:model="{{ $bodyModel }}" label="{{ __('Description') }}" rows="5" placeholder="{{ __('Notes, links, context, or checklist') }}" />
     </div>
 
-    <div class="grid gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800 sm:grid-cols-2">
+    <div class="grid gap-4 sm:grid-cols-2">
         <flux:select wire:model.live="{{ $areaModel }}" label="{{ __('Area') }}">
             <option value="0">{{ __('No area') }}</option>
             @foreach ($projects as $project)<option value="{{ $project->id }}">{{ $project->title }}</option>@endforeach
@@ -15,22 +15,20 @@
         </flux:select>
     </div>
 
-    <div class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-        @include('partials.searchable-picker', [
-            'label' => __('Group'),
-            'searchModel' => $groupSearchModel,
-            'searchValue' => $groupSearchValueForForm,
-            'placeholder' => __('Search or create a group'),
-            'options' => $groupsForForm,
-            'optionLabel' => fn ($option) => $option->name,
-            'mode' => 'single',
-            'valueModel' => $groupModel,
-            'selectedId' => $groupValueForForm,
-            'createMethod' => $newGroupMethod,
-            'creatingLabel' => $newGroupValueForForm,
-            'emptyText' => __('No groups match.'),
-        ])
-    </div>
+    @include('partials.searchable-picker', [
+        'label' => __('Group'),
+        'searchModel' => $groupSearchModel,
+        'searchValue' => $groupSearchValueForForm,
+        'placeholder' => __('Search or create a group'),
+        'options' => $groupsForForm,
+        'optionLabel' => fn ($option) => $option->name,
+        'mode' => 'single',
+        'valueModel' => $groupModel,
+        'selectedId' => $groupValueForForm,
+        'createMethod' => $newGroupMethod,
+        'creatingLabel' => $newGroupValueForForm,
+        'emptyText' => __('No groups match.'),
+    ])
 
     <div class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
         @include('partials.searchable-picker', [
@@ -64,7 +62,9 @@
             'mode' => 'multi',
             'toggleMethod' => $toggleLabelMethod,
             'selectedIds' => $selectedLabelsForForm,
-            'createModel' => $newLabelModel,
+            'createMethod' => $newLabelMethod,
+            'creatingLabels' => $newLabelsForForm,
+            'removeCreatingMethod' => $removeNewLabelMethod,
             'emptyText' => __('No labels match.'),
         ])
     </div>

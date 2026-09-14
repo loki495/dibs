@@ -28,7 +28,7 @@ class ReportTodoBug
         return $this->create->handle(
             title: trim($summary),
             body: $this->composeBody(trim($details), $toolOrCommand, $arguments),
-            newLabelName: self::LABEL,
+            newLabelNames: [self::LABEL],
             idempotencyKey: $idempotencyKey,
         );
     }

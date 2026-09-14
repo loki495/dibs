@@ -1,9 +1,11 @@
 @php
     $isMulti = ($mode ?? 'single') === 'multi';
     $creatingSentinel = $creatingSentinel ?? -1;
+    $creatingLabels = $creatingLabels ?? [];
     $trimmedSearch = trim($searchValue);
     $hasExactMatch = $trimmedSearch !== '' && $options->contains(fn ($option) => \Illuminate\Support\Str::lower(trim($optionLabel($option))) === \Illuminate\Support\Str::lower($trimmedSearch));
-    $canCreate = $trimmedSearch !== '' && ! $hasExactMatch && (($isMulti && isset($createModel)) || (! $isMulti && isset($createMethod)));
+    $alreadyPending = $isMulti && collect($creatingLabels)->contains(fn ($name) => \Illuminate\Support\Str::lower(trim($name)) === \Illuminate\Support\Str::lower($trimmedSearch));
+    $canCreate = $trimmedSearch !== '' && ! $hasExactMatch && ! $alreadyPending && isset($createMethod);
     $isCreating = ! $isMulti && ($selectedId ?? null) === $creatingSentinel;
     $creatingLabelMatchesSearch = $isCreating && \Illuminate\Support\Str::lower(trim($creatingLabel ?? '')) === \Illuminate\Support\Str::lower($trimmedSearch);
 @endphp
@@ -28,9 +30,19 @@
         @if ($isCreating && ! $creatingLabelMatchesSearch && trim($creatingLabel ?? '') !== '')
             <span class="rounded-full border border-teal-600 bg-teal-100 px-2.5 py-1.5 text-xs text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100">{{ __('New: :name', ['name' => $creatingLabel]) }}</span>
         @endif
+        @if ($isMulti)
+            @foreach ($creatingLabels as $index => $name)
+                <span class="inline-flex items-center gap-1 rounded-full border border-teal-600 bg-teal-100 py-1.5 pl-2.5 pr-1.5 text-xs text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100">
+                    {{ __('New: :name', ['name' => $name]) }}
+                    @if (isset($removeCreatingMethod))
+                        <button type="button" wire:click="{{ $removeCreatingMethod }}({{ $index }})" class="flex size-4 items-center justify-center rounded-full hover:bg-teal-200 dark:hover:bg-teal-900" aria-label="{{ __('Remove :name', ['name' => $name]) }}"><flux:icon.x-mark class="size-3" /></button>
+                    @endif
+                </span>
+            @endforeach
+        @endif
         @if ($canCreate)
             <button type="button"
-                wire:click="{{ $isMulti ? "\$set('{$createModel}', ".\Illuminate\Support\Js::from($trimmedSearch).')' : $createMethod.'('.\Illuminate\Support\Js::from($trimmedSearch).')' }}"
+                wire:click="{{ $createMethod }}({{ \Illuminate\Support\Js::from($trimmedSearch) }})"
                 @class(['rounded-full border border-dashed px-2.5 py-1.5 text-xs transition',
                     'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $isCreating,
                     'border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800' => ! $isCreating])
