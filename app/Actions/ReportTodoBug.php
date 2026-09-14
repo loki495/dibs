@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions;
 
+use App\Exceptions\TodoValidationException;
 use App\Models\Issue;
 
 /**
@@ -25,12 +26,28 @@ class ReportTodoBug
         ?string $arguments = null,
         ?string $idempotencyKey = null,
     ): Issue {
-        return $this->create->handle(
-            title: trim($summary),
-            body: $this->composeBody(trim($details), $toolOrCommand, $arguments),
-            newLabelNames: [self::LABEL],
-            idempotencyKey: $idempotencyKey,
-        );
+        $title = trim($summary);
+        $body = $this->composeBody(trim($details), $toolOrCommand, $arguments);
+
+        try {
+            return $this->create->handle(
+                title: $title,
+                body: $body,
+                area: config('dibs.agent_report_area_id'),
+                parentId: config('dibs.agent_report_parent_id'),
+                groupId: config('dibs.agent_report_group_id'),
+                newLabelNames: [self::LABEL],
+                idempotencyKey: $idempotencyKey,
+            );
+        } catch (TodoValidationException $exception) {
+            // A misconfigured DIBS_AGENT_REPORT_*_ID must not break the one tool whose whole
+            // purpose is reporting that something is broken -- file it unparented instead.
+            if (config('dibs.agent_report_area_id') === null && config('dibs.agent_report_parent_id') === null && config('dibs.agent_report_group_id') === null) {
+                throw $exception;
+            }
+
+            return $this->create->handle(title: $title, body: $body, newLabelNames: [self::LABEL], idempotencyKey: $idempotencyKey);
+        }
     }
 
     private function composeBody(string $details, ?string $toolOrCommand, ?string $arguments): string

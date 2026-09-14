@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Actions\ReportTodoBug;
 use App\Exceptions\TodoValidationException;
+use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
 use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
+use App\Models\ProjectField;
+use App\Models\ProjectFieldOption;
 
 beforeEach(function (): void {
     GitHubRepository::factory()->create(['owner' => config('github.owner'), 'name' => config('github.repository'), 'full_name' => config('github.owner').'/'.config('github.repository')]);
@@ -57,4 +60,32 @@ it('is idempotent: retrying the same key does not duplicate the report', functio
 
     expect($second->id)->toBe($first->id)
         ->and(Issue::query()->count())->toBe(1);
+});
+
+it('nests the report under the configured area, group, and parent when set', function (): void {
+    $project = GitHubProject::factory()->create();
+    $groupField = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($groupField, 'field')->create();
+    $parent = Issue::factory()->create();
+
+    config([
+        'dibs.agent_report_area_id' => $project->id,
+        'dibs.agent_report_group_id' => $group->id,
+        'dibs.agent_report_parent_id' => $parent->id,
+    ]);
+
+    $issue = app(ReportTodoBug::class)->handle(summary: 'Nested report', details: 'x');
+
+    expect($issue->parent_issue_id)->toBe($parent->id)
+        ->and($issue->projectItems->sole()->group_option_id)->toBe($group->id);
+});
+
+it('falls back to an unparented report when the configured container is invalid', function (): void {
+    config(['dibs.agent_report_area_id' => 999999, 'dibs.agent_report_parent_id' => 999999]);
+
+    $issue = app(ReportTodoBug::class)->handle(summary: 'Still gets filed', details: 'x');
+
+    expect($issue->exists)->toBeTrue()
+        ->and($issue->parent_issue_id)->toBeNull()
+        ->and($issue->labels->pluck('name')->all())->toBe(['agent-report']);
 });
