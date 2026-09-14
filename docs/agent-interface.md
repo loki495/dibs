@@ -44,8 +44,8 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_show` | Full detail for one issue, optionally with paginated comments. |
 | `todo_queue_status` | Pending/failed/needs-attention push-queue counts and per-item detail. |
 | `todo_create` | Create a task, plan, or knowledge record; enqueues the GitHub push. Idempotency-key supported. |
-| `todo_scaffold_plan` | Create a parent plan issue plus its child tasks atomically, in one transaction. |
-| `todo_revise` | Revise an issue's title/body/note with optimistic-concurrency (`revision`) protection; a stale write returns a non-error `{conflict: true, current: ...}` rather than erroring. |
+| `todo_scaffold_plan` | Create a parent plan issue plus its child tasks atomically, in one transaction. `groupId`/`priorityId` set the plan issue's own Group/Priority, independently of each child's own. |
+| `todo_revise` | Revise an issue's title/body/note/Group with optimistic-concurrency (`revision`) protection; a stale write returns a non-error `{conflict: true, current: ...}` rather than erroring. `groupId` moves the issue to a different Group within its existing area (the issue must already belong to one) — it does not yet support clearing the Group back to none. |
 | `todo_comment` | Add a comment, or edit one (`commentId` + `expectedRevision`) with the same stale-conflict shape as `todo_revise`. |
 | `todo_claim` | Claim a task for the calling process. Returns a `capabilityToken` once, in plaintext. |
 | `todo_heartbeat` | Renew the calling process's own live claim lease. Creates no GitHub comment or push-queue entry. |

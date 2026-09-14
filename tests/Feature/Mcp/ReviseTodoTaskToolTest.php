@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 use App\Mcp\Servers\TodoServer;
 use App\Mcp\Tools\ReviseTodoTask;
+use App\Models\GitHubProject;
 use App\Models\Issue;
+use App\Models\ProjectField;
+use App\Models\ProjectFieldOption;
+use App\Models\ProjectItem;
 
 it('exposes the tool under the todo_revise name', function (): void {
     expect(app(ReviseTodoTask::class)->name())->toBe('todo_revise');
@@ -42,4 +46,29 @@ it('returns a structured error for a nonexistent issue', function (): void {
 
 it('rejects a call missing required arguments', function (): void {
     TodoServer::tool(ReviseTodoTask::class, [])->assertHasErrors();
+});
+
+it('moves an issue into a different Group through the tool', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Homelab']);
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'groupId' => $group->id])
+        ->assertOk()
+        ->assertHasNoErrors()
+        ->assertSee('"conflict":false');
+
+    expect($item->fresh()->group_option_id)->toBe($group->id);
+});
+
+it('returns a structured error when setting a Group on an issue with no area assigned yet', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'groupId' => $group->id])
+        ->assertHasErrors();
 });
