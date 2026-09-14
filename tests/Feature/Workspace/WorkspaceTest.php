@@ -48,6 +48,21 @@ it('applies the project filter when clicking a task row\'s project pill', functi
         ->assertSet('area', $project->id);
 });
 
+it('always shows a task row\'s Group pill and applies both area and group filters when clicking it', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $groupOption = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Career']);
+    $issue = Issue::factory()->create(['title' => 'Pick me']);
+    ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create(['group_option_id' => $groupOption->id]);
+
+    // Filtering by the group already keeps the root unwrapped (no virtual Group header competes for
+    // its own group badge), unlike the default view where a grouped root sits under one.
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('group', $groupOption->id)
+        ->assertSeeHtml('wire:click.stop="chooseGroup('.$project->id.', '.$groupOption->id.')"')
+        ->call('chooseGroup', $project->id, $groupOption->id)
+        ->assertSet('area', $project->id)->assertSet('group', $groupOption->id);
+});
+
 it('applies the label filter when clicking a task row\'s label pill', function (): void {
     $issue = Issue::factory()->create(['title' => 'Pick me']);
     $label = Label::factory()->for($issue->repository, 'repository')->create(['name' => 'next']);

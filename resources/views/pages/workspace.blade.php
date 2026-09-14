@@ -170,6 +170,12 @@ new class extends Component
         $this->dispatch('area-changed', area: $this->area);
     }
 
+    public function chooseGroup(int $areaId, int $groupId): void
+    {
+        $this->chooseArea($areaId);
+        $this->group = $groupId;
+    }
+
     public function daily(): void
     {
         $this->reset('area', 'group', 'priority', 'sortBy', 'labels', 'search', 'selected', 'state', 'captureArea', 'captureParent');
@@ -842,7 +848,8 @@ new class extends Component
                                             @if ($row['outsideArea'])<span>{{ __('Parent from another area') }}</span>@elseif ($row['context'])<span>{{ __('Parent context') }}</span>@endif
                                             @if ($row['unresolvedParent'])<span>{{ __('Parent not imported') }}</span>@endif
                                             @foreach ($row['memberships'] as $membership)
-                                                @if ($area === 0 && $row['depth'] === 0 && $membership['groupId'] === null)<button type="button" wire:click.stop="chooseArea({{ $membership['area'] }})" class="rounded-full border px-1.5 py-0.5 font-medium hover:brightness-95" style="border-color: {{ $membership['color'] }}; background-color: color-mix(in srgb, {{ $membership['color'] }} 14%, transparent); color: {{ $membership['color'] }}">{{ $membership['title'] }}</button>@elseif ($area === 0)<span>{{ $membership['title'] }}</span>@endif
+                                                @if ($area === 0 && $row['depth'] === 0)<button type="button" wire:click.stop="chooseArea({{ $membership['area'] }})" class="rounded-full border px-1.5 py-0.5 font-medium hover:brightness-95" style="border-color: {{ $membership['color'] }}; background-color: color-mix(in srgb, {{ $membership['color'] }} 14%, transparent); color: {{ $membership['color'] }}">{{ $membership['title'] }}</button>@endif
+                                                @if ($membership['groupId'] !== null)<button type="button" wire:click.stop="chooseGroup({{ $membership['area'] }}, {{ $membership['groupId'] }})" class="rounded-full border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-medium text-slate-700 hover:brightness-95 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ $membership['group'] }}</button>@endif
                                                 @if ($membership['priority'])<span class="rounded-full border border-violet-300 bg-violet-50 px-1.5 py-0.5 font-medium text-violet-800 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-200">{{ __('P:priority', ['priority' => $membership['priority']]) }}</span>@endif
                                                 @if ($membership['due'])<span @class(['text-amber-700 dark:text-amber-400' => $membership['due'] <= $today])>{{ __('Due :date', ['date' => $membership['due']]) }}</span>@endif
                                                 @if ($membership['planned'])<span>{{ __('Planned :date', ['date' => $membership['planned']]) }}</span>@endif
