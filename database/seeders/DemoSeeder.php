@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Models\AgentSession;
 use App\Models\Comment;
 use App\Models\GitHubProject;
+use App\Models\GitHubPushQueueItem;
 use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
+use App\Models\TaskClaim;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 /**
  * Populates a fresh database with realistic-looking, entirely fake sample data -- no real
@@ -39,7 +43,7 @@ class DemoSeeder extends Seeder
             'owner' => 'demo-user', 'name' => 'dibs-demo', 'full_name' => 'demo-user/dibs-demo', 'is_private' => true,
         ]);
 
-        foreach (['bug', 'feature', 'documentation', 'research', 'decision', 'lesson', 'guide', 'today', 'next', 'waiting', 'someday', 'needs research', 'parent'] as $name) {
+        foreach (['bug', 'feature', 'documentation', 'research', 'decision', 'lesson', 'guide', 'plan', 'today', 'next', 'waiting', 'someday', 'needs research', 'parent'] as $name) {
             $this->labels[$name] = Label::factory()->for($this->repository, 'repository')->create(['name' => $name]);
         }
 
@@ -72,6 +76,17 @@ class DemoSeeder extends Seeder
         $this->comment($child, 'Moved it next to the sort dropdown instead — screenshots look right on a 390px viewport now.');
         $this->issue('Add a quick "back to all projects" link when a single area is sorted by group', $project, $groups['Dibs'], $priorities[2], parent: $parent);
 
+        // A plan-shaped hierarchy with one claimed and two unclaimed children -- what makes Dibs
+        // different from a plain todo list isn't visible from the task list alone, so the demo
+        // needs at least one task showing live agent coordination, not just task/knowledge content.
+        $plan = $this->issue('Plan: Add notification digests', $project, $groups['Dibs'], $priorities[2], labels: ['plan']);
+        $this->issue('Design the notification data model', $project, $groups['Dibs'], $priorities[2], parent: $plan, labels: ['next']);
+        $claimed = $this->issue('Build the in-app notification bell', $project, $groups['Dibs'], $priorities[1], parent: $plan, labels: ['feature']);
+        $this->issue('Add an email digest opt-in setting', $project, $groups['Dibs'], $priorities[3], parent: $plan);
+        $this->claim($claimed, 'claude-code');
+
+        $this->pushQueueShowcase($project, $groups['Dibs'], $priorities[2]);
+
         $this->issue('Move the reverse proxy to the new host', $project, $groups['Homelab'], $priorities[3]);
         $this->issue('Automate the nightly backup verification', $project, $groups['Homelab'], $priorities[2], labels: ['someday']);
         $this->issue('Write up the home network segmentation decision', $project, $groups['Homelab'], $priorities[3], labels: ['decision']);
@@ -95,6 +110,14 @@ class DemoSeeder extends Seeder
             ."- Checkpointing can stall behind a long-lived read transaction; watch for readers that never commit.\n"
             ."- `PRAGMA wal_checkpoint(TRUNCATE)` before a backup guarantees the main file has everything.\n\n"
             .'Verified against a real two-connection scenario, not just documentation.',
+        );
+        $this->decisionNote(
+            'Decision: keep the reading list in Dibs instead of a separate app',
+            $project,
+            "Considered a dedicated read-it-later app; decided against it.\n\n"
+            .'Splitting "things to read" from "things to do" just recreates the two-list problem Dibs '
+            .'itself exists to avoid. A `someday`-labeled task under a topic Group does the same job '
+            .'without a second tool to check.',
         );
     }
 
@@ -169,5 +192,67 @@ class DemoSeeder extends Seeder
         $issue = Issue::factory()->for($this->repository, 'repository')->create(['title' => $title, 'body' => $body]);
         ProjectItem::factory()->for($project, 'project')->create(['issue_id' => $issue->id]);
         $issue->labels()->attach($this->labels['research']->id);
+    }
+
+    private function decisionNote(string $title, GitHubProject $project, string $body): void
+    {
+        $issue = Issue::factory()->for($this->repository, 'repository')->create(['title' => $title, 'body' => $body]);
+        ProjectItem::factory()->for($project, 'project')->create(['issue_id' => $issue->id]);
+        $issue->labels()->attach($this->labels['decision']->id);
+    }
+
+    /**
+     * Binds a claim to a fabricated, deliberately unverifiable process (is_verified_live: false)
+     * rather than a real PID -- a real one would only look alive by accident (matching this
+     * container's own init process) and would go stale on the very next deploy. Unverified
+     * liveness is itself a real, documented state the app handles (see AuthorizeAgentClaim's own
+     * docs), not a demo shortcut: it renders as "claimed" with "(liveness unverifiable)", not as
+     * a dead/abandoned claim.
+     */
+    private function claim(Issue $issue, string $agentName): void
+    {
+        $session = AgentSession::create([
+            'agent_name' => $agentName,
+            'session_key' => (string) Str::uuid(),
+            'host_identifier' => 'demo-host',
+            'pid' => null,
+            'process_started_at' => null,
+            'capability_token_hash' => hash('sha256', Str::random(40)),
+            'is_verified_live' => false,
+            'last_seen_at' => now()->subMinutes(2),
+            'expires_at' => now()->addMinutes(30),
+        ]);
+
+        TaskClaim::create([
+            'issue_id' => $issue->id,
+            'agent_session_id' => $session->id,
+            'expires_at' => now()->addMinutes(30),
+        ]);
+    }
+
+    /**
+     * The push queue page is otherwise always empty in the demo (GITHUB_TOKEN is deliberately
+     * blank, see docs/demo-hosting.md), which would make Dibs' local-first sync model invisible
+     * to a visitor. Seed a couple of rows directly rather than through EnqueueGitHubPush so they
+     * land in specific, illustrative states instead of whatever the real write path happens to
+     * produce.
+     */
+    private function pushQueueShowcase(GitHubProject $project, ProjectFieldOption $group, ProjectFieldOption $priority): Issue
+    {
+        $pushed = $this->issue('Rename the settings page to Preferences', $project, $group, $priority);
+        GitHubPushQueueItem::create([
+            'operation' => 'update_issue_body', 'target_type' => 'issue', 'target_id' => $pushed->id,
+            'payload' => ['title' => $pushed->title], 'status' => 'pushed', 'attempts' => 1,
+            'idempotency_key' => 'demo-pushed-'.$pushed->id, 'pushed_at' => now()->subMinutes(3),
+        ]);
+
+        $pending = $this->issue('Add a "someday" filter shortcut', $project, $group, $priority, labels: ['someday']);
+        GitHubPushQueueItem::create([
+            'operation' => 'create_issue', 'target_type' => 'issue', 'target_id' => $pending->id,
+            'payload' => ['title' => $pending->title], 'status' => 'pending', 'attempts' => 0,
+            'idempotency_key' => 'demo-pending-'.$pending->id,
+        ]);
+
+        return $pending;
     }
 }

@@ -1017,6 +1017,7 @@ new class extends Component
         </aside>
 
         <section class="min-w-0">
+            <x-demo-info-panel />
             @if ($restoreMessage)
                 <div role="status" class="mb-4 flex items-center justify-between gap-3 rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:bg-teal-950 dark:text-teal-100">
                     <span>{{ $restoreMessage }}</span>
