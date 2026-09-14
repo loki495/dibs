@@ -66,7 +66,7 @@ class BuildIssueTree
             };
             $stateMatches = $view === 'daily' || $state === 'ALL' || $issue->state === $state;
             $searchMatches = $search === '' || Str::contains(Str::lower($issue->title.' '.$issue->body.' #'.$issue->github_number), Str::lower(trim($search)));
-            $labelMatches = ($requiresParent === false || $container) && ($requestedLabels === [] || count(array_diff($requestedLabels, $names)) === 0);
+            $labelMatches = ($requiresParent === false || $container) && ($requestedLabels === [] || count(array_intersect($requestedLabels, $names)) > 0);
             $priorityMatches = $priority === 0 || collect($memberships)->contains(fn (array $item): bool => $item['priority'] === (string) $priority && ($area === 0 || $item['area'] === $area));
             $matches[$issue->id] = $inArea && $inGroup && $modeMatches && $stateMatches && $searchMatches && $labelMatches && $priorityMatches;
             $nodes[$issue->id] = ['id' => $issue->id, 'number' => $issue->github_number, 'title' => $issue->title, 'state' => $issue->state,
