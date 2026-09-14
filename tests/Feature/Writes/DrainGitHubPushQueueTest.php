@@ -101,6 +101,75 @@ it('creates a Group option on GitHub, merges the returned option list, and stamp
     expect($item->refresh()->status)->toBe('pushed');
 });
 
+it('renames a Group option on GitHub by id, leaving other options untouched', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group', 'data_type' => 'SINGLE_SELECT', 'github_node_id' => 'F_group']);
+    $other = ProjectFieldOption::factory()->for($field, 'field')->create(['github_option_id' => 'O_other', 'name' => 'Other', 'position' => 0]);
+    $renamed = ProjectFieldOption::factory()->for($field, 'field')->create(['github_option_id' => 'O_renamed', 'name' => 'Renamed', 'position' => 1]);
+    $item = GitHubPushQueueItem::factory()->create(['operation' => 'rename_group_option', 'target_type' => 'project_field_option', 'target_id' => $renamed->id, 'payload' => ['name' => 'Renamed']]);
+    Http::fake([
+        '*' => Http::sequence()
+            ->push(['data' => ['node' => ['id' => 'F_group', 'options' => [
+                ['id' => 'O_other', 'name' => 'Other', 'color' => 'BLUE', 'description' => ''],
+                ['id' => 'O_renamed', 'name' => 'Old name', 'color' => 'GRAY', 'description' => ''],
+            ]]]])
+            ->push(['data' => ['updateProjectV2Field' => ['projectV2Field' => ['id' => 'F_group', 'options' => [
+                ['id' => 'O_other', 'name' => 'Other', 'color' => 'BLUE', 'description' => ''],
+                ['id' => 'O_renamed', 'name' => 'Renamed', 'color' => 'GRAY', 'description' => ''],
+            ]]]]]),
+    ]);
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
+    expect($renamed->refresh()->name)->toBe('Renamed');
+    expect($other->refresh()->name)->toBe('Other');
+    expect($item->refresh()->status)->toBe('pushed');
+});
+
+it('waits to rename a Group option that has not been created on GitHub yet', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $pending = ProjectFieldOption::factory()->for($field, 'field')->create(['github_option_id' => null]);
+    GitHubPushQueueItem::factory()->create(['operation' => 'rename_group_option', 'target_type' => 'project_field_option', 'target_id' => $pending->id, 'payload' => ['name' => 'New name']]);
+    Http::fake();
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 1]);
+    Http::assertNothingSent();
+});
+
+it('deletes a Group option from GitHub using the identifiers captured in the payload, since the local row is already gone', function (): void {
+    $item = GitHubPushQueueItem::factory()->create(['operation' => 'delete_group_option', 'target_type' => 'project_field_option', 'target_id' => 999, 'payload' => ['github_option_id' => 'O_gone', 'field_github_node_id' => 'F_group']]);
+    Http::fake([
+        '*' => Http::sequence()
+            ->push(['data' => ['node' => ['id' => 'F_group', 'options' => [
+                ['id' => 'O_gone', 'name' => 'Gone', 'color' => 'GRAY', 'description' => ''],
+                ['id' => 'O_keep', 'name' => 'Keep', 'color' => 'BLUE', 'description' => ''],
+            ]]]])
+            ->push(['data' => ['updateProjectV2Field' => ['projectV2Field' => ['id' => 'F_group', 'options' => [
+                ['id' => 'O_keep', 'name' => 'Keep', 'color' => 'BLUE', 'description' => ''],
+            ]]]]]),
+    ]);
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
+    expect($item->refresh()->status)->toBe('pushed');
+});
+
+it('gives up deleting a Group option remotely when its GitHub identifiers are missing from the payload', function (): void {
+    $item = GitHubPushQueueItem::factory()->create(['operation' => 'delete_group_option', 'target_type' => 'project_field_option', 'target_id' => 999, 'payload' => []]);
+    Http::fake();
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 1, 'waiting' => 0]);
+    expect($item->refresh()->status)->toBe('needs_attention');
+    Http::assertNothingSent();
+});
+
 it('creates a label on GitHub and stamps it with the created identity', function (): void {
     $repository = GitHubRepository::factory()->create(['github_node_id' => 'R_test']);
     $label = Label::factory()->create(['repository_id' => $repository->id, 'github_node_id' => null, 'name' => 'next', 'color' => '0f766e']);

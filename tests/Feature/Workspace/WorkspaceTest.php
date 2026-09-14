@@ -657,6 +657,64 @@ it('keeps project settings open when GitHub rejects a renamed project', function
         ->assertSet('projectSettingsOpen', true)->assertSet('projectSettingsError', 'GitHub is temporarily unavailable.');
 });
 
+it('renames a Group from Project settings', function (): void {
+    Http::fake();
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Career']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('chooseArea', $project->id)->call('openProjectSettings')
+        ->assertSee('Career')
+        ->call('beginRenameGroup', $group->id)->assertSet('managingGroupId', $group->id)->assertSet('managingGroupName', 'Career')
+        ->set('managingGroupName', 'Freelance')->call('saveGroupRename')
+        ->assertSet('managingGroupId', 0)->assertSee('Freelance');
+
+    expect($group->refresh()->name)->toBe('Freelance');
+});
+
+it('cancels an in-progress Group rename without saving it', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Career']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('chooseArea', $project->id)->call('openProjectSettings')
+        ->call('beginRenameGroup', $group->id)->set('managingGroupName', 'Something else')
+        ->call('cancelRenameGroup')->assertSet('managingGroupId', 0);
+
+    expect($group->refresh()->name)->toBe('Career');
+});
+
+it('shows a validation error inline instead of closing Project settings when a Group rename collides', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Career']);
+    $home = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Home']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('chooseArea', $project->id)->call('openProjectSettings')
+        ->call('beginRenameGroup', $home->id)->set('managingGroupName', 'career')->call('saveGroupRename')
+        ->assertSet('projectSettingsOpen', true)->assertSee('Another Group in this area already has this name.');
+
+    expect($home->refresh()->name)->toBe('Home');
+});
+
+it('deletes a Group from Project settings, clearing the active filter and any pending selection if it matched', function (): void {
+    Http::fake();
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Career']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('chooseArea', $project->id)->set('group', $group->id)->call('openProjectSettings')
+        ->assertSee('Career')
+        ->call('deleteGroupOption', $group->id)
+        ->assertSet('group', 0)->assertDontSee('Career');
+
+    expect(ProjectFieldOption::query()->find($group->id))->toBeNull();
+});
+
 it('switches between Daily and an area via the navigation actions the mobile pill row uses', function (): void {
     $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
 

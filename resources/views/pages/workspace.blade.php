@@ -3,10 +3,12 @@
 use App\Actions\BuildIssueTree;
 use App\Actions\CreateTodoComment;
 use App\Actions\CreateTodoIssue;
+use App\Actions\DeleteGroupOption;
 use App\Actions\DeleteTodoIssue;
 use App\Actions\EnqueueGitHubPush;
 use App\Actions\GetIssueDetails;
 use App\Actions\ReleaseAbandonedTaskClaim;
+use App\Actions\RenameGroupOption;
 use App\Actions\RestoreTodoIssue;
 use App\Actions\ReviseTodoComment;
 use App\Actions\UpdateGitHubProject;
@@ -131,6 +133,10 @@ new class extends Component
 
     public ?string $projectSettingsError = null;
 
+    public int $managingGroupId = 0;
+
+    public string $managingGroupName = '';
+
     public ?string $captureError = null;
 
     public ?string $claimError = null;
@@ -213,7 +219,7 @@ new class extends Component
             return;
         }
 
-        $this->reset('projectSettingsError');
+        $this->reset('projectSettingsError', 'managingGroupId', 'managingGroupName');
         $this->projectSettingsProject = $project->id;
         $this->projectSettingsTitle = $project->title;
         $this->projectSettingsColor = strtolower($project->color);
@@ -252,6 +258,57 @@ new class extends Component
         }
 
         $this->projectSettingsOpen = false;
+    }
+
+    public function beginRenameGroup(int $id): void
+    {
+        $option = ProjectFieldOption::query()->find($id);
+        if (! $option instanceof ProjectFieldOption) {
+            return;
+        }
+        $this->reset('projectSettingsError');
+        $this->managingGroupId = $id;
+        $this->managingGroupName = $option->name;
+    }
+
+    public function cancelRenameGroup(): void
+    {
+        $this->reset('managingGroupId', 'managingGroupName');
+    }
+
+    public function saveGroupRename(): void
+    {
+        $option = ProjectFieldOption::query()->find($this->managingGroupId);
+        if (! $option instanceof ProjectFieldOption) {
+            $this->reset('managingGroupId', 'managingGroupName');
+
+            return;
+        }
+        try {
+            app(RenameGroupOption::class)->handle($option, $this->managingGroupName);
+        } catch (TodoValidationException $exception) {
+            $this->projectSettingsError = $exception->getMessage();
+
+            return;
+        }
+        $this->reset('managingGroupId', 'managingGroupName', 'projectSettingsError');
+    }
+
+    public function deleteGroupOption(int $id): void
+    {
+        $option = ProjectFieldOption::query()->find($id);
+        if ($option instanceof ProjectFieldOption) {
+            app(DeleteGroupOption::class)->handle($option);
+        }
+        if ($this->group === $id) {
+            $this->group = 0;
+        }
+        if ($this->captureGroup === $id) {
+            $this->captureGroup = 0;
+        }
+        if ($this->editGroup === $id) {
+            $this->editGroup = 0;
+        }
     }
 
     public function updatedCaptureGroup(int $value): void
@@ -659,6 +716,9 @@ new class extends Component
 
     public function with(): array
     {
+        $projectSettingsGroups = $this->projectSettingsProject > 0
+            ? ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->projectSettingsProject))->orderBy('position')->get()
+            : collect();
         $captureParents = Issue::query()->where('is_available', true)->with(['projectItems.project', 'projectItems.groupOption'])
             ->when($this->captureParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
                 $matches->where('title', 'like', '%'.$this->captureParentSearch.'%')
@@ -688,7 +748,8 @@ new class extends Component
             'detail' => $this->selected > 0 ? app(GetIssueDetails::class)->handle($this->selected) : null,
             'deletedRows' => $deletedRows,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $captureLabelOptions,
-            'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions];
+            'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions,
+            'projectSettingsGroups' => $projectSettingsGroups];
     }
 }; ?>
 
@@ -900,6 +961,26 @@ new class extends Component
                         <input type="color" class="absolute inset-0 size-full cursor-pointer opacity-0" :value="'#' + (color || '0f766e')" @input="color = $event.target.value.replace('#', '')" aria-label="{{ __('Pick a color') }}">
                     </label>
                     <div class="min-w-0 flex-1"><flux:input wire:model="projectSettingsColor" label="{{ __('Color') }}" prefix="#" maxlength="6" autocomplete="off" /><flux:text class="mt-1">{{ __('Six hexadecimal characters, such as 0f766e.') }}</flux:text></div>
+                </div>
+            </div>
+            <div class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+                <div class="flex items-center justify-between gap-3"><flux:label>{{ __('Groups') }}</flux:label><span class="text-xs text-slate-500">{{ __('Rename or delete') }}</span></div>
+                <div class="mt-3 space-y-2">
+                    @forelse ($projectSettingsGroups as $groupOption)
+                        <div class="flex items-center gap-2" wire:key="manage-group-{{ $groupOption->id }}">
+                            @if ($managingGroupId === $groupOption->id)
+                                <flux:input wire:model="managingGroupName" class="flex-1" autofocus wire:keydown.enter.prevent="saveGroupRename" />
+                                <button type="button" wire:click="saveGroupRename" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950" aria-label="{{ __('Save') }}"><flux:icon.check class="size-4" /></button>
+                                <button type="button" wire:click="cancelRenameGroup" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="{{ __('Cancel') }}"><flux:icon.x-mark class="size-4" /></button>
+                            @else
+                                <span class="min-w-0 flex-1 truncate text-sm">{{ $groupOption->name }}</span>
+                                <button type="button" wire:click="beginRenameGroup({{ $groupOption->id }})" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="{{ __('Rename :name', ['name' => $groupOption->name]) }}"><flux:icon.pencil-square class="size-4" /></button>
+                                <button type="button" wire:click="deleteGroupOption({{ $groupOption->id }})" wire:confirm="{{ __('Delete the \":name\" Group? Tasks in it become ungrouped, not deleted.', ['name' => $groupOption->name]) }}" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40" aria-label="{{ __('Delete :name', ['name' => $groupOption->name]) }}"><flux:icon.trash class="size-4" /></button>
+                            @endif
+                        </div>
+                    @empty
+                        <p class="text-xs text-slate-500">{{ __('No groups yet in this area.') }}</p>
+                    @endforelse
                 </div>
             </div>
             @error('projectSettingsTitle')<flux:text class="text-amber-700 dark:text-amber-400">{{ $message }}</flux:text>@enderror
