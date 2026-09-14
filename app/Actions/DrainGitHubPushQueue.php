@@ -34,11 +34,11 @@ class DrainGitHubPushQueue
 
     /** @var list<string> */
     private const array OPERATION_ORDER = [
-        'create_issue', 'create_label', 'create_group_option',
+        'create_issue', 'create_label', 'create_group_option', 'rename_group_option',
         'add_project_membership', 'set_project_item_group', 'set_project_item_priority',
         'add_issue_labels', 'set_issue_parent',
         'update_issue_body', 'close_issue', 'delete_issue',
-        'delete_project_item', 'clear_project_item_group', 'clear_project_item_priority',
+        'delete_project_item', 'clear_project_item_group', 'clear_project_item_priority', 'delete_group_option',
         'set_issue_labels', 'remove_issue_parent',
         'create_comment', 'update_comment',
     ];
@@ -55,6 +55,7 @@ class DrainGitHubPushQueue
                     'create_issue' => $this->pushCreateIssue($token, $item),
                     'create_label' => $this->pushCreateLabel($token, $item),
                     'create_group_option' => $this->pushCreateGroupOption($token, $item),
+                    'rename_group_option' => $this->pushRenameGroupOption($token, $item),
                     'add_project_membership' => $this->pushAddProjectMembership($token, $item),
                     'set_project_item_group' => $this->pushSetProjectItemGroup($token, $item),
                     'set_project_item_priority' => $this->pushSetProjectItemPriority($token, $item),
@@ -66,6 +67,7 @@ class DrainGitHubPushQueue
                     'delete_project_item' => $this->pushDeleteProjectItem($token, $item),
                     'clear_project_item_group' => $this->pushClearProjectItemGroup($token, $item),
                     'clear_project_item_priority' => $this->pushClearProjectItemPriority($token, $item),
+                    'delete_group_option' => $this->pushDeleteGroupOption($token, $item),
                     'set_issue_labels' => $this->pushSetIssueLabels($token, $item),
                     'remove_issue_parent' => $this->pushRemoveIssueParent($token, $item),
                     'create_comment' => $this->pushCreateComment($token, $item),
@@ -207,6 +209,114 @@ class DrainGitHubPushQueue
         });
 
         return $matched ? 'pushed' : $this->deferOrFail($item, new GitHubSyncException('GitHub did not return the new Group option.'));
+    }
+
+    private function pushRenameGroupOption(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
+    {
+        $option = ProjectFieldOption::query()->with('field')->find($item->target_id);
+        if (! $option instanceof ProjectFieldOption) {
+            return $this->giveUp($item, 'Target Group option no longer exists locally.');
+        }
+        if ($option->github_option_id === null) {
+            return 'waiting';
+        }
+        $field = $option->field;
+        if (! $field instanceof ProjectField) {
+            return $this->giveUp($item, 'The owning Project field is not available.');
+        }
+        $name = (string) ($item->payload['name'] ?? $option->name);
+
+        try {
+            $client = new GitHubClient($token);
+            $remote = $client->query(
+                'query($id: ID!) { node(id: $id) { ... on ProjectV2SingleSelectField { id options { id name color description } } } }',
+                ['id' => $field->github_node_id],
+            )['node'] ?? null;
+            if (! is_array($remote) || ! is_array($remote['options'] ?? null)) {
+                throw new GitHubSyncException('GitHub did not return the current Group options.');
+            }
+            $options = [];
+            $found = false;
+            foreach ($remote['options'] as $existing) {
+                if (! is_array($existing) || ! is_string($existing['id'] ?? null) || ! is_string($existing['name'] ?? null) || ! is_string($existing['color'] ?? null)) {
+                    throw new GitHubSyncException('GitHub returned an invalid Group option.');
+                }
+                $isTarget = $existing['id'] === $option->github_option_id;
+                $found = $found || $isTarget;
+                $options[] = ['id' => $existing['id'], 'name' => $isTarget ? $name : $existing['name'], 'color' => $existing['color'], 'description' => $existing['description'] ?? ''];
+            }
+            if (! $found) {
+                throw new GitHubSyncException('The Group option no longer exists on GitHub.');
+            }
+            $data = $client->query(
+                'mutation($fieldId: ID!, $options: [ProjectV2SingleSelectFieldOptionInput!]!) { updateProjectV2Field(input: {fieldId: $fieldId, singleSelectOptions: $options}) { projectV2Field { ... on ProjectV2SingleSelectField { id options { id name color description } } } } }',
+                ['fieldId' => $field->github_node_id, 'options' => $options],
+            );
+            $updated = $data['updateProjectV2Field']['projectV2Field']['options'] ?? null;
+            if (! is_array($updated)) {
+                throw new GitHubSyncException('GitHub did not confirm the Group rename.');
+            }
+        } catch (GitHubSyncException $exception) {
+            return $this->deferOrFail($item, $exception);
+        }
+
+        DB::transaction(function () use ($field, $updated, $item): void {
+            foreach ($updated as $position => $remoteOption) {
+                if (! is_array($remoteOption) || ! is_string($remoteOption['id'] ?? null) || ! is_string($remoteOption['name'] ?? null)) {
+                    continue;
+                }
+                ProjectFieldOption::query()->updateOrCreate(
+                    ['project_field_id' => $field->id, 'github_option_id' => $remoteOption['id']],
+                    ['name' => $remoteOption['name'], 'color' => $remoteOption['color'] ?? null, 'position' => $position],
+                );
+            }
+            $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
+        });
+
+        return 'pushed';
+    }
+
+    private function pushDeleteGroupOption(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
+    {
+        $githubOptionId = (string) ($item->payload['github_option_id'] ?? '');
+        $fieldGithubNodeId = (string) ($item->payload['field_github_node_id'] ?? '');
+        if ($githubOptionId === '' || $fieldGithubNodeId === '') {
+            return $this->giveUp($item, 'Missing GitHub identifiers for this Group deletion.');
+        }
+
+        try {
+            $client = new GitHubClient($token);
+            $remote = $client->query(
+                'query($id: ID!) { node(id: $id) { ... on ProjectV2SingleSelectField { id options { id name color description } } } }',
+                ['id' => $fieldGithubNodeId],
+            )['node'] ?? null;
+            if (! is_array($remote) || ! is_array($remote['options'] ?? null)) {
+                throw new GitHubSyncException('GitHub did not return the current Group options.');
+            }
+            $options = [];
+            foreach ($remote['options'] as $existing) {
+                if (! is_array($existing) || ! is_string($existing['id'] ?? null) || ! is_string($existing['name'] ?? null) || ! is_string($existing['color'] ?? null)) {
+                    throw new GitHubSyncException('GitHub returned an invalid Group option.');
+                }
+                if ($existing['id'] === $githubOptionId) {
+                    continue;
+                }
+                $options[] = ['id' => $existing['id'], 'name' => $existing['name'], 'color' => $existing['color'], 'description' => $existing['description'] ?? ''];
+            }
+            $data = $client->query(
+                'mutation($fieldId: ID!, $options: [ProjectV2SingleSelectFieldOptionInput!]!) { updateProjectV2Field(input: {fieldId: $fieldId, singleSelectOptions: $options}) { projectV2Field { ... on ProjectV2SingleSelectField { id options { id name color description } } } } }',
+                ['fieldId' => $fieldGithubNodeId, 'options' => $options],
+            );
+            if (! is_array($data['updateProjectV2Field']['projectV2Field']['options'] ?? null)) {
+                throw new GitHubSyncException('GitHub did not confirm the Group deletion.');
+            }
+        } catch (GitHubSyncException $exception) {
+            return $this->deferOrFail($item, $exception);
+        }
+
+        $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
+
+        return 'pushed';
     }
 
     private function pushCreateLabel(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
