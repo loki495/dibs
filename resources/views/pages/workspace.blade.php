@@ -1025,9 +1025,6 @@ new class extends Component
                                 <flux:button type="button" wire:click="openProjectSettings" variant="ghost" size="sm" icon="cog-6-tooth">{{ __('Project settings') }}</flux:button>
                             </div>
                         @endif
-                        @if ($view === 'tasks')
-                            <flux:button type="button" wire:click="toggleBulkMode" variant="{{ $bulkMode ? 'primary' : 'ghost' }}" size="sm" icon="check-circle">{{ $bulkMode ? __('Done selecting') : __('Select') }}</flux:button>
-                        @endif
                         <flux:button type="button" wire:click="openCapture" icon="plus" size="sm" class="bg-teal-700! text-white! hover:bg-teal-600! dark:bg-teal-600! dark:hover:bg-teal-500!">{{ __('Add task') }}</flux:button>
                     </div>
                 </div>
@@ -1052,6 +1049,9 @@ new class extends Component
                         <option value="newest_last">{{ __('Sort: Newest last') }}</option>
                         <option value="priority">{{ __('Sort: Priority') }}</option>
                     </flux:select>
+                    @if ($view === 'tasks')
+                        <flux:button type="button" wire:click="toggleBulkMode" variant="{{ $bulkMode ? 'primary' : 'ghost' }}" size="sm" icon="check-circle">{{ $bulkMode ? __('Done selecting') : __('Select') }}</flux:button>
+                    @endif
                     @if ($filtersActive)
                         <flux:button type="button" wire:click="clearFilters" variant="ghost" size="sm">{{ __('Clear filters') }}</flux:button>
                     @endif
