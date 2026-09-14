@@ -504,16 +504,16 @@ it('replaces task labels locally and enqueues the add/remove diff, not a full re
     expect($enqueued->payload)->toBe(['add_label_ids' => [$added->id], 'remove_label_ids' => [$removed->id]]);
 });
 
-it('saves an edit creating several new labels at once, deduplicating case-insensitively', function (): void {
+it('saves an edit creating several new labels at once, lowercased and deduplicated case-insensitively', function (): void {
     $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
     $issue = Issue::factory()->for($repository, 'repository')->create();
     $existing = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
         ->call('beginEdit')
-        ->call('addEditNewLabel', 'Urgent')->assertSet('editNewLabels', ['Urgent'])
-        ->call('addEditNewLabel', 'urgent')->assertSet('editNewLabels', ['Urgent'])
-        ->call('addEditNewLabel', 'blocked')->assertSee('New: blocked')
+        ->call('addEditNewLabel', 'Urgent')->assertSet('editNewLabels', ['urgent'])
+        ->call('addEditNewLabel', 'URGENT')->assertSet('editNewLabels', ['urgent'])
+        ->call('addEditNewLabel', 'Blocked')->assertSet('editNewLabels', ['urgent', 'blocked'])->assertSee('New: blocked')
         ->call('removeEditNewLabel', 0)->assertSet('editNewLabels', ['blocked'])
         ->call('saveIssue')->assertSet('editingIssue', false);
 
@@ -713,6 +713,48 @@ it('deletes a Group from Project settings, clearing the active filter and any pe
         ->assertSet('group', 0)->assertDontSee('Career');
 
     expect(ProjectFieldOption::query()->find($group->id))->toBeNull();
+});
+
+it('opens Manage labels via the cross-component event the gear menu dispatches, and renames a label', function (): void {
+    Http::fake();
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $label = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->dispatch('open-manage-labels')
+        ->assertSet('manageLabelsOpen', true)->assertSee('urgent')
+        ->call('beginRenameLabel', $label->id)->assertSet('managingLabelName', 'urgent')
+        ->set('managingLabelName', 'Blocked')->call('saveLabelRename')
+        ->assertSet('managingLabelId', 0)->assertSee('blocked');
+
+    expect($label->refresh()->name)->toBe('blocked');
+});
+
+it('shows a validation error inline instead of closing Manage labels when a label rename collides', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
+    $blocked = Label::factory()->for($repository, 'repository')->create(['name' => 'blocked']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('openManageLabels')
+        ->call('beginRenameLabel', $blocked->id)->set('managingLabelName', 'Urgent')->call('saveLabelRename')
+        ->assertSet('manageLabelsOpen', true)->assertSee('Another label already has this name.');
+
+    expect($blocked->refresh()->name)->toBe('blocked');
+});
+
+it('deletes a label from Manage labels, clearing it from the active filter and any pending selections', function (): void {
+    Http::fake();
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $label = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('toggleLabel', 'urgent')->assertSet('labels', ['urgent'])
+        ->call('openManageLabels')->assertSee('urgent')
+        ->call('deleteLabelOption', $label->id)
+        ->assertSet('labels', [])->assertDontSee('urgent');
+
+    expect($label->refresh()->is_available)->toBeFalse();
 });
 
 it('switches between Daily and an area via the navigation actions the mobile pill row uses', function (): void {

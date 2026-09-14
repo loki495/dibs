@@ -34,10 +34,10 @@ class DrainGitHubPushQueue
 
     /** @var list<string> */
     private const array OPERATION_ORDER = [
-        'create_issue', 'create_label', 'create_group_option', 'rename_group_option',
+        'create_issue', 'create_label', 'rename_label', 'create_group_option', 'rename_group_option',
         'add_project_membership', 'set_project_item_group', 'set_project_item_priority',
         'add_issue_labels', 'set_issue_parent',
-        'update_issue_body', 'close_issue', 'delete_issue',
+        'update_issue_body', 'close_issue', 'delete_issue', 'delete_label',
         'delete_project_item', 'clear_project_item_group', 'clear_project_item_priority', 'delete_group_option',
         'set_issue_labels', 'remove_issue_parent',
         'create_comment', 'update_comment',
@@ -54,6 +54,7 @@ class DrainGitHubPushQueue
                 $state = match ($operation) {
                     'create_issue' => $this->pushCreateIssue($token, $item),
                     'create_label' => $this->pushCreateLabel($token, $item),
+                    'rename_label' => $this->pushRenameLabel($token, $item),
                     'create_group_option' => $this->pushCreateGroupOption($token, $item),
                     'rename_group_option' => $this->pushRenameGroupOption($token, $item),
                     'add_project_membership' => $this->pushAddProjectMembership($token, $item),
@@ -64,6 +65,7 @@ class DrainGitHubPushQueue
                     'update_issue_body' => $this->pushUpdateIssueBody($token, $item),
                     'close_issue' => $this->pushCloseIssue($token, $item),
                     'delete_issue' => $this->pushDeleteIssue($token, $item),
+                    'delete_label' => $this->pushDeleteLabel($token, $item),
                     'delete_project_item' => $this->pushDeleteProjectItem($token, $item),
                     'clear_project_item_group' => $this->pushClearProjectItemGroup($token, $item),
                     'clear_project_item_priority' => $this->pushClearProjectItemPriority($token, $item),
@@ -356,6 +358,59 @@ class DrainGitHubPushQueue
             ]);
             $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
         });
+
+        return 'pushed';
+    }
+
+    private function pushRenameLabel(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
+    {
+        $label = Label::query()->find($item->target_id);
+        if (! $label instanceof Label) {
+            return $this->giveUp($item, 'Target label no longer exists locally.');
+        }
+        if ($label->github_node_id === null) {
+            return 'waiting';
+        }
+        $name = (string) ($item->payload['name'] ?? $label->name);
+
+        try {
+            $data = (new GitHubClient($token))->query(
+                'mutation($id: ID!, $name: String!) { updateLabel(input: {id: $id, name: $name}) { label { id name color description } } }',
+                ['id' => $label->github_node_id, 'name' => $name],
+            );
+            $remote = $data['updateLabel']['label'] ?? null;
+            if (! is_array($remote) || ($remote['id'] ?? null) !== $label->github_node_id) {
+                throw new GitHubSyncException('GitHub did not confirm the label rename.');
+            }
+        } catch (GitHubSyncException $exception) {
+            return $this->deferOrFail($item, $exception);
+        }
+
+        $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
+
+        return 'pushed';
+    }
+
+    private function pushDeleteLabel(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
+    {
+        $label = Label::query()->find($item->target_id);
+        if (! $label instanceof Label) {
+            return $this->giveUp($item, 'Target label no longer exists locally.');
+        }
+        if ($label->github_node_id === null) {
+            return $this->giveUp($item, 'Target label has no remote identity.');
+        }
+
+        try {
+            (new GitHubClient($token))->query(
+                'mutation($id: ID!) { deleteLabel(input: {id: $id}) { clientMutationId } }',
+                ['id' => $label->github_node_id],
+            );
+        } catch (GitHubSyncException $exception) {
+            return $this->deferOrFail($item, $exception);
+        }
+
+        $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
 
         return 'pushed';
     }
