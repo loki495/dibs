@@ -9,6 +9,8 @@ use App\Models\GitHubPushQueueItem;
 use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
+use App\Models\ProjectField;
+use App\Models\ProjectFieldOption;
 
 beforeEach(function (): void {
     GitHubRepository::factory()->create(['owner' => config('github.owner'), 'name' => config('github.repository'), 'full_name' => config('github.owner').'/'.config('github.repository')]);
@@ -78,4 +80,37 @@ it('is idempotent: retrying the same key returns the original plan without dupli
 
     expect($second->id)->toBe($first->id)
         ->and(Issue::query()->count())->toBe(2);
+});
+
+it('sets the plan issue\'s own Group and Priority, independently of each child\'s own Group', function (): void {
+    $project = GitHubProject::factory()->create();
+    $groupField = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $priorityField = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'priority']);
+    $planGroup = ProjectFieldOption::factory()->for($groupField, 'field')->create();
+    $childGroup = ProjectFieldOption::factory()->for($groupField, 'field')->create();
+    $priority = ProjectFieldOption::factory()->for($priorityField, 'field')->create();
+
+    $plan = app(ScaffoldTodoPlan::class)->handle(
+        title: 'Plan',
+        area: $project->id,
+        groupId: $planGroup->id,
+        priorityId: $priority->id,
+        children: [['title' => 'Child task', 'groupId' => $childGroup->id]],
+    );
+
+    expect($plan->projectItems->sole()->group_option_id)->toBe($planGroup->id)
+        ->and($plan->projectItems->sole()->priority_option_id)->toBe($priority->id)
+        ->and($plan->children->sole()->projectItems->sole()->group_option_id)->toBe($childGroup->id);
+});
+
+it('rejects a plan-level groupId that belongs to a different area', function (): void {
+    $project = GitHubProject::factory()->create();
+    $otherProject = GitHubProject::factory()->create();
+    $groupField = ProjectField::factory()->for($otherProject, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($groupField, 'field')->create();
+
+    expect(fn () => app(ScaffoldTodoPlan::class)->handle(title: 'Plan', area: $project->id, groupId: $group->id))
+        ->toThrow(TodoValidationException::class, 'Group is no longer available');
+
+    expect(Issue::query()->count())->toBe(0);
 });

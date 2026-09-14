@@ -27,6 +27,8 @@ class ScaffoldTodoPlan
         string $title,
         ?string $body = null,
         ?int $area = null,
+        ?int $groupId = null,
+        ?int $priorityId = null,
         array $labelIds = [],
         ?string $newLabelName = null,
         array $children = [],
@@ -38,8 +40,8 @@ class ScaffoldTodoPlan
             }
         }
 
-        $scaffold = fn (): Issue => DB::transaction(function () use ($title, $body, $area, $labelIds, $newLabelName, $children): Issue {
-            $plan = $this->create->handle(title: $title, body: $body, area: $area, labelIds: $labelIds, newLabelNames: $newLabelName !== null ? [$newLabelName] : []);
+        $scaffold = fn (): Issue => DB::transaction(function () use ($title, $body, $area, $groupId, $priorityId, $labelIds, $newLabelName, $children): Issue {
+            $plan = $this->create->handle(title: $title, body: $body, area: $area, groupId: $groupId, priorityId: $priorityId, labelIds: $labelIds, newLabelNames: $newLabelName !== null ? [$newLabelName] : []);
             foreach ($children as $child) {
                 $this->create->handle(
                     title: $child['title'],
