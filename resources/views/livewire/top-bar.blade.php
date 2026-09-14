@@ -49,9 +49,9 @@ new class extends Component
 }; ?>
 
 @php($queueCounts = config('dibs.push_queue_ui_enabled') && auth()->check() ? app(\App\Actions\DescribeGitHubPushQueue::class)->counts() : ['actionable' => 0, 'pending' => 0])
-<div class="relative" x-data="{ settingsOpen: false, theme: window.todoTheme.get() }">
+<div class="relative" x-data="{ settingsOpen: false, theme: window.todoTheme.get() }" @click.outside="settingsOpen = false">
     @if ($variant === 'labeled')
-        <button type="button" @click="settingsOpen = ! settingsOpen" @click.outside="settingsOpen = false" :aria-expanded="settingsOpen.toString()" aria-label="{{ __('Settings') }}" class="relative flex min-h-11 w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+        <button type="button" @click="settingsOpen = ! settingsOpen" :aria-expanded="settingsOpen.toString()" aria-label="{{ __('Settings') }}" class="relative flex min-h-11 w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
             <flux:icon.cog-6-tooth class="size-4 shrink-0 text-slate-500" />
             <span class="min-w-0 flex-1 truncate">{{ auth()->user()?->name ?? __('Settings') }}</span>
             @if ($queueCounts['actionable'] > 0)
@@ -61,7 +61,7 @@ new class extends Component
             @endif
         </button>
     @else
-        <button type="button" @click="settingsOpen = ! settingsOpen" @click.outside="settingsOpen = false" :aria-expanded="settingsOpen.toString()" aria-label="{{ __('Settings') }}" class="relative flex size-10 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
+        <button type="button" @click="settingsOpen = ! settingsOpen" :aria-expanded="settingsOpen.toString()" aria-label="{{ __('Settings') }}" class="relative flex size-10 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
             <flux:icon.cog-6-tooth class="size-5" />
             @if ($queueCounts['actionable'] > 0)
                 <span class="absolute right-1.5 top-1.5 size-2 rounded-full bg-red-500" aria-hidden="true"></span>
