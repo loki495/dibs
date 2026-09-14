@@ -59,3 +59,50 @@ jobs:
 
       - name: Pest
         run: vendor/bin/pest
+
+  publish-ghcr:
+    name: Publish image to GHCR
+    runs-on: ubuntu-latest
+    needs: [quality]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set short SHA
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker-compose.yml's `app` service is dev-oriented (bind-mounted source) -- a real
+      # deployable image comes from docker/Dockerfile.prod + docker-compose.prod.yml instead,
+      # which bakes the app in and drops the bind mount. See docs/demo-hosting.md.
+      - name: Build and push production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.prod
+          push: true
+          tags: |
+            ghcr.io/loki495/dibs:demo
+            ghcr.io/loki495/dibs:sha-${{ steps.vars.outputs.short_sha }}
+
+      # Fires Watchtower's own update check on media instead of waiting on its 24h poll
+      # interval -- see dotfiles/cd-trigger for the endpoint itself (token-gated,
+      # fire-and-forget). continue-on-error: a missed trigger just means Watchtower catches
+      # this image on its next scheduled poll -- never worth failing an otherwise-successful
+      # publish over.
+      - name: Trigger Watchtower on media
+        continue-on-error: true
+        run: curl -sS -m 15 "${{ secrets.CD_TRIGGER_URL }}"

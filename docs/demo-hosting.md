@@ -118,38 +118,51 @@ curl http://127.0.0.1:8112/login   # should return the login page
 No manual template-build step -- `docker/entrypoint-prod.sh` runs
 `demo:build-template` automatically on the `app` container's boot.
 
-To pick up a code change later: `git pull && docker compose -f
-docker-compose.prod.yml up -d --build` (or, once CD is wired up, a Watchtower
-pull does this without a manual step at all).
+To pick up a code change later: nothing manual needed. A push to `main` runs
+CI, publishes `ghcr.io/loki495/dibs:demo`, and pings Watchtower on media (see
+"Continuous deployment" below) -- `docker compose -f docker-compose.prod.yml
+up -d --build` on media is only needed for a first-time setup or a manual
+rebuild.
 
-## What you still have to do yourself (outside this repo)
+## Continuous deployment
 
-1. **Cloudflare Tunnel ingress** (`/etc/cloudflared/config.yml` on media,
-   root-owned -- genuinely outside what I can read or edit over a plain SSH
-   session): add
-   ```yaml
-   - hostname: dibs-demo.ac495.net
-     service: http://localhost:8112
-   ```
-   before the existing `"*.ac495.net"` catch-all rule (order matters --
-   cloudflared matches top to bottom), then reload/restart cloudflared.
-2. **DNS**: a record for `dibs-demo.ac495.net`, alongside your other
-   `*.ac495.net` entries.
-3. **Access policy**: an explicit bypass/exclude policy scoped to
-   `dibs-demo.ac495.net` so it does not inherit whatever Access policy
-   currently gates `*.ac495.net` generally -- otherwise visitors hit your
-   Access login wall instead of the demo.
-4. **Traefik LAN-convenience entry** (`~/www/traefik/dynamic/ac495-sites.yml`
-   on `work`) -- optional, only for a nice HTTPS URL from your own LAN:
-   ```yaml
-   # in routers:
-   dibs-demo-ac495:
-     entryPoints: [websecure]
-     rule: Host(`dibs-demo.{{ env "TRAEFIK_DOMAIN" }}`)
-     service: dibs-demo-media
-   # in services:
-   dibs-demo-media:
-     loadBalancer:
-       servers:
-         - url: 'http://{{ env "TRAEFIK_MEDIA_HOST" }}:8112'
-   ```
+Same pipeline as `homie`/`insights`, reusing the already-deployed shared
+pieces (`~/dotfiles/cd-trigger`, Watchtower on media -- neither is
+Dibs-specific, nothing to set up per-project there):
+
+1. On push to `main`, after `quality` passes, `.github/workflows/ci.yml`'s
+   `publish-ghcr` job builds `docker/Dockerfile.prod` and pushes
+   `ghcr.io/loki495/dibs:demo` (+ a `:sha-<short>` tag for traceability) to
+   GHCR.
+2. It then calls `cd.ac495.net` (the `CD_TRIGGER_URL` repo secret --
+   already set), which relays a validated, fire-and-forget request to
+   Watchtower's own HTTP API on media (`continue-on-error: true`: a missed
+   trigger just means Watchtower catches the new image on its next 24h poll
+   instead, never worth failing an otherwise-successful publish over).
+3. Watchtower (already watching every container on media, no
+   per-project label/registration needed) pulls the new `:demo` tag,
+   recreates `dibs-demo-app`/`dibs-demo-scheduler`, and
+   `docker/entrypoint-prod.sh` rebuilds the demo template fresh on that
+   boot.
+
+**One manual one-time step**: a brand-new GHCR package defaults to
+*private* on its first push, regardless of the repo's own visibility.
+After the first successful `publish-ghcr` run, flip `dibs`'s new container
+package to Public in GitHub's package settings (matching `homie`/
+`insights`) -- Watchtower on media has no stored registry credentials, so a
+private package pulls nothing.
+
+## What was needed outside this repo (done)
+
+- **Cloudflare Tunnel ingress** (`/etc/cloudflared/config.yml` on media,
+  root-owned): `dibs-demo.ac495.net -> http://localhost:8112`, added before
+  the `"*.ac495.net"` catch-all.
+- **DNS**: not needed -- Pi-hole on media and the Cloudflare Tunnel already
+  cover `*.ac495.net`.
+- **Traefik LAN-convenience entry**
+  (`~/www/traefik/dynamic/ac495-sites.yml` on `work`, a symlink into
+  `~/dotfiles/traefik/`): added and verified live.
+- **Access policy**: an explicit bypass/exclude policy scoped to
+  `dibs-demo.ac495.net`, matching whatever `homie-demo`/`insights-demo`
+  already use, so it doesn't inherit the Access policy that gates
+  `*.ac495.net` generally.
