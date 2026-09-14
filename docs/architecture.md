@@ -1,121 +1,154 @@
-# Initial architecture proposal
+# Architecture
 
-Status: foundation and manual import implemented. Laravel 13, Livewire 4 SFC, PHP 8.5, SQLite and private LAN access are settled. This file's later sections are historical design proposal, partially superseded by the sync-authority pivot described below.
+This describes Dibs as it actually exists today, not a proposal. For the product pitch and
+quick start, see [`README.md`](../README.md); for the full MCP/CLI agent contract, see
+[`agent-interface.md`](agent-interface.md).
 
-## Stack recommendation
+## Stack
 
-- Laravel 13, subject to Composer compatibility checks at installation.
-- Livewire 4 class-based single-file components; Volt is not separately required for this style.
-- Alpine for client-only expansion, collapse, and remembered UI state.
-- Tailwind and appropriate free Flux components for forms and common controls.
-- SQLite on local disk, with foreign keys, WAL, a busy timeout, short write transactions, and a single sync writer initially.
-- Pest for tests, Pint, Larastan/PHPStan at the project convention level, and Rector in dry-run mode.
-- Docker for PHP/application tools. PHP 8.5 and docker/setup.sh are implemented.
-- Current hosting is private LAN through Traefik with login; public webhook ingress remains pending. Do not expose private GitHub data through an unauthenticated network service.
+Laravel 13, Livewire 4 class-based single-file components, PHP 8.5, SQLite, Tailwind 4, Flux
+UI. Docker Compose for local development (`docker/setup.sh`). Livewire components and Artisan
+commands delegate business logic to typed Actions in `app/Actions/`, shared by the web UI and
+the MCP/CLI agent surface — no business logic lives in a Blade component, console command, or
+queue handler.
 
-Livewire components/controllers and Artisan commands delegate business logic to typed Actions. Actions use a GitHub service for external calls. Queue jobs orchestrate the same actions. No business logic hidden in a Blade component or queue handler.
+## Sync authority
 
-## Authority and local data (superseded 2026-09-11)
+**Local SQLite is authoritative. GitHub Issues/Projects are an asynchronous, mostly-read-only
+mirror**, decided 2026-09-11 after starting from the opposite (GitHub-authoritative,
+webhook/polling-driven) design. A write commits to SQLite immediately as the confirmed result
+and enqueues a GitHub push rather than calling the GitHub API inline; the browser and every MCP
+tool read SQLite only and never call GitHub directly.
 
-Local SQLite is now authoritative for issues, comments, labels, parent links, Project memberships, Project fields, plans, tasks, and knowledge records. GitHub is an asynchronous, mostly-read-only mirror reached through a durable outbound push queue rather than a live sync source — there are no inbound webhooks and no scheduled freshness polling. The browser reads SQLite; it never reads GitHub directly, and SQLite is no longer "rebuildable from GitHub alone," since it can hold local writes GitHub hasn't received yet.
+There are no inbound webhooks and no scheduled freshness polling — both existed in the earlier
+design and were removed. The only path for GitHub → local data is a manual pull
+(`scripts/github-pull`, `php artisan todo:sync`), used for initial import, disaster recovery,
+and bringing a second instance in sync. It never overwrites unpushed local changes.
 
-Manual pull (the existing importer) remains for initial setup, disaster recovery, and bringing a second instance in sync — a read path only, and it must not overwrite unpushed local changes.
+Identity: local integer primary keys plus a unique GitHub node ID on every mirrored entity.
+Issue numbers are only unique within a repository; titles and field names are mutable and are
+never used as identity.
 
-Local-only preferences, pending push-queue operations, session claims, and repository/checkout configuration are NOT disposable cache — this was already true and matters more now that SQLite holds writes not yet confirmed in GitHub. Keep them distinguishable from mirrored data and back them up.
+## Schema
 
-Use local integer primary keys and unique GitHub node IDs on mirrored entities. Issue numbers are only unique within a repository. Display titles and field names are mutable; never use them as identity.
+Grouped by purpose; see `database/migrations/` for exact columns and constraints, which change
+more often than this document should try to track.
 
-## Proposed schema
+**GitHub mirror** (`repositories`, `projects`, `issues`, `project_fields`,
+`project_field_options`, `project_items`, `labels`, `issue_label`, `comments`) — the read model
+described above. `github_node_id` is nullable on `issues`, `labels`, `project_items`, and
+`comments` specifically to allow local-first creation before a row has been pushed to GitHub
+and gotten a real node ID back. An issue can belong to multiple GitHub Projects even though the
+normal convention is one primary Project; unexpected multiple memberships are preserved, not
+collapsed. Status/Group/Priority/Planned/Due/Repeat live on `project_items`, not `issues`,
+because those fields are Project-specific. `project_fields.semantic_key` maps a Project's own
+field IDs to the meanings the app understands (status/group/priority/planned/due/repeat) so a
+renamed GitHub field doesn't silently break the mapping.
 
-Start with these tables, implementing only the fields needed for the first read-only slice. Each mirrored entity has GitHub identifiers, remote_updated_at where available, last_synced_at, and remote availability/last_seen metadata appropriate to its endpoint. Local created_at/updated_at are not GitHub timestamps.
+**`sync_states`** — one row per mirrored resource, tracking last successful/attempted sync and
+the last error, read by the manual-pull path only (no longer drives any scheduled behavior).
 
-| Table | Important columns and constraints |
-|---|---|
-| repositories | id; github_node_id unique; owner; name; full_name; url; is_private; visibility/availability |
-| projects | id; github_node_id unique; owner; github_number; title; url; is_closed; is_public; unique owner + github_number |
-| issues | id; repository_id; github_node_id unique; github_number; title; body; state; state_reason; url; nullable parent_issue_id; github_parent_node_id for unresolved parents; sibling_position; unique repository_id + github_number |
-| project_items | id; project_id; github_node_id unique; nullable issue_id; content_type; archived_at; status_option_id; group_option_id; priority_option_id; planned_on; due_on; repeat_rule; raw_fields_json; unique project_id + issue_id for issue-backed items |
-| project_fields | id; project_id; github_node_id unique; name; data_type; nullable semantic_key (status/group/priority/planned/due/repeat); configuration_json |
-| project_field_options | id; project_field_id; github_option_id; name; color; position; unique project_field_id + github_option_id |
-| labels | id; repository_id; github_node_id unique; name; color; description; unique repository_id + name |
-| issue_label | issue_id; label_id; unique pair; indexes on both foreign keys |
-| comments | id; issue_id; github_node_id unique; body; author_login; remote_created_at; remote_updated_at; url; fetched on demand initially |
-| sync_states | unique resource key; last_success_at; last_attempt_at; cursor/watermark; ETag if supported; last_error; retry_after; completed reconciliation generation |
+**`github_push_queue`** — the durable outbound queue described below: `operation`, `target_type`
++ `target_id`, a JSON `payload`, `status` (pending/failed/needs_attention/pushed), `attempts`,
+`last_error`, and a unique `idempotency_key`.
 
-An issue can appear in multiple GitHub Projects even though the user's normal convention is one primary Project. Preserve unexpected multiple memberships instead of losing remote data. Status, Group, Planned, Due, and Repeat belong to project_items, not issues, because fields are Project-specific.
+**`agent_sessions` / `task_claims`** — local worker identity and expiring task claims. A claim
+binds to the caller's real OS process (host, pid, process start time verified via
+`/proc/<pid>/stat`) rather than a self-reported session string, plus a server-issued capability
+token (`capability_token_hash`, SHA-256; the plaintext is returned once, at claim time, and
+never stored). `is_verified_live` is false when the PID/start-time couldn't be independently
+confirmed (cross-namespace caller, unreadable `/proc`) — the claim still succeeds but is flagged
+as weaker assurance rather than silently trusted. Full contract in `agent-interface.md`.
 
-For the initial app, frequently queried fields have typed columns on project_items so a daily list is a normal indexed query. raw_fields_json preserves other remote field values without requiring a generic field-value editor yet. project_fields maps stable IDs to the app's supported meanings. Confirm/select field mappings rather than permanently inferring them from names. Referenced options must belong to the correct Project and semantic field.
+**`mcp_write_receipts`** — backs the idempotency-key mechanism every MCP write tool can use
+(`ResolveIdempotentWrite`): a repeated call with the same key returns the original result
+instead of repeating the write.
 
-Draft items or PRs must not masquerade as issues. Record their content_type and available identifiers/payload; either display an explicit supported representation or report that they are not yet shown. Missing/unsupported content is not a deletion signal.
+**`todo_capture_requests` / `capture_settings`** — schema for the natural-language capture
+feature (an LLM structures free text into a draft task via the host capture bridge, see
+`capture-bridge.md`). The bridge mechanism is built and verified; the Dibs-side feature that
+uses these tables (capture UI, settings/opt-in) is not yet built.
 
-Index issues.parent_issue_id, project_items.project_id, project_items.issue_id, planned_on, due_on, and sync resource keys. Preserve native sibling order independently of the user's current table sorting. Reject local cycles and self-parenting when editing is implemented; tolerate unresolved remote parents without discarding children.
+**`github_mutations`** (`app/Models/GitHubMutation.php`, written only by
+`app/Actions/TrackGitHubMutation.php`) — predates the push queue: a synchronous-write tracking
+table from the earlier GitHub-authoritative design ("record intent, confirm, or mark for
+reconciliation on an ambiguous network outcome"). Nothing in the app currently calls
+`TrackGitHubMutation`; it's dead code kept alive only by its own test coverage. Candidate for
+removal — flagged here rather than silently deleted since removing a table/model is a
+deliberate call, not a documentation change.
 
-Do not add separate tasks/research/lessons tables: they are issues classified by labels. Organizational parents remain issues labeled parent. A task with children is not automatically an organizational container.
+Not built as separate tables: `research`/`lesson`/`decision` records, or organizational
+parents — these are ordinary issues classified by label (`research`, `lesson`, `decision`,
+`parent`), not distinct schema.
 
-Deferred tables when the corresponding behavior exists:
+## Push queue and write model
 
-- mutation_operations: durable outgoing command, target, payload, base remote state, status, attempts, error, request identity. Required before robust asynchronous editing, not for read-only sync.
-- preferences: expanded nodes, selected views, and filters if browser storage is insufficient.
-- agent_sessions / task_claims: local worker identity and expiring task claims; implemented with JSON CLI fallback commands and exposed as MCP tools (`todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete`/`todo_claim_status`).
-- website_bindings: explicit website parent → repository/local checkout metadata, before agents execute project work.
+Every write Action (`CreateTodoIssue`, `ReviseTodoIssue`, `ReviseTodoComment`,
+`CreateTodoComment`, `CompleteTodoTask`, `ClaimTaskForAgent`, and their UI-facing equivalents)
+follows the same shape: one short `DB::transaction()` per intent that writes SQLite as the
+confirmed result, then calls `EnqueueGitHubPush` to durably record the outbound operation. No
+Action calls the GitHub API inline.
 
-## Sync scheduling
+`DrainGitHubPushQueue` (`app/Actions/DrainGitHubPushQueue.php`) delivers queued rows to GitHub
+independently of the write that created them, one GraphQL/REST call per row, always *outside*
+any DB transaction (a network call never holds a SQLite write lock). Operations run in a fixed
+dependency order (`OPERATION_ORDER`), not insertion order — an issue must exist on GitHub
+before its Project membership can, for example — and a handler whose dependency hasn't pushed
+yet returns `waiting` and is retried on the next pass rather than failing.
 
-(Historical — describes the inbound webhook/polling design that was later replaced with an outbound push queue. Retained for design-rationale context; do not implement inbound polling/webhooks per this section.)
+`php artisan todo:push:drain` (registered `Schedule::command(...)->everyMinute()` in
+`routes/console.php`, run by the `dibs-scheduler` container's `schedule:work` daemon) loops
+internally for up to 55 seconds between passes (5s apart) rather than draining once and exiting,
+so delivery is closer to real-time than a bare once-a-minute tick would allow, while still
+leaving room before the next scheduled tick.
 
-The page can poll OUR SERVER about every 3–5 seconds while visible. That endpoint queries the local read model or lightweight sync revision, not the GitHub API. Stop/suspend hidden-page work; preserve client tree state across refreshes. Do not re-render an entire large tree merely because a timer fired.
+**Operational note:** the long-lived `schedule:work` process can silently stop matching its own
+`everyMinute()` schedule (observed 2026-09-14 — its internal due-check disagreed with a fresh
+process's for ~2.5 hours; root cause not yet identified). Symptom: the
+push-queue page shows items stuck `pending` with 0 attempts well past a minute. `docker compose
+logs scheduler` showing repeated "No scheduled commands are ready to run" while `php artisan
+schedule:list`/`schedule:run` correctly see the job as due confirms it; `docker compose restart
+scheduler` is the known recovery.
 
-A shared, locked sync process decides whether GitHub is stale. Proposed starting interval: 30–60 seconds while at least one client is active, configurable. Refresh on page load when stale and after a successful app mutation. Provide an explicit Refresh button and last successful sync/status indicator.
+A push-time conflict (GitHub edited directly, or by another instance, since the local record
+was last pushed) does not block or roll back the local write — it marks the row
+`needs_attention` for human review. The push-queue UI (`/push-queue`, gated by
+`config('dibs.push_queue_ui_enabled')`) shows pending/failed/needs-attention/pushed counts and
+per-item detail; `DescribeGitHubPushQueue::counts()['actionable']` is `failed + needs_attention`
+— the count that actually needs a human, as opposed to `pending`, which is just queue depth.
 
-Multiple tabs/users must coalesce to one sync job. Agent writes through the app can refresh their affected records immediately. Writes made directly with gh appear on the next sync; browser activity should not be the only trigger once agents/background workflows exist.
+Six MCP write Actions with a single-attempt `DB::transaction()` were found racing the
+scheduler's own writes to the same SQLite file (2026-09-14): `CompleteTodoTask`,
+`ClaimTaskForAgent`, `ReviseTodoIssue`, `ReviseTodoComment`, `CreateTodoComment`, and
+`CreateTodoIssue` now all pass `attempts: 3`, since Laravel's `DB::transaction()` already
+retries automatically on a `"database is locked"` SQLSTATE and just wasn't configured to.
 
-Use REST conditional requests/ETags where supported, pagination, backoff, and rate-limit headers. GitHub GraphQL responses and Project field changes need their own reconciliation strategy; do not assume that updating a Project field bumps the issue's updated_at timestamp. Do not assume every endpoint supports ETags or that a GraphQL request is free when unchanged.
+## Agents and claims
 
-Start with repository issue updates plus full small Project snapshots. Later optimize measured bottlenecks. Periodically reconcile full membership and labels. Poll comments only when needed or when known changed. GitHub prefers webhooks, but personal-account Project event coverage and local delivery need verification; do not promise webhooks replace all polling.
+The full MCP tool surface, the CLI fallback, and the claim/heartbeat/release/complete lifecycle
+are documented in [`agent-interface.md`](agent-interface.md) — not duplicated here to avoid the
+two documents drifting apart.
 
-Apply network results in short local transactions after network I/O. Never hold SQLite write locks across GitHub requests. Use a complete reconciliation generation before marking missing records absent. A failure on page 2, an authorization error, or a transient empty response must not erase cached tasks.
+## Testing
 
-State distinctions matter: closed issue, removed Project membership, deleted issue, and inaccessible issue are different. Preserve last-known data with an explicit unavailable/stale indication until absence is confirmed in the relevant scope. Do not automatically write cached state back to GitHub during an import.
+Pest, run through `composer pint` → `composer phpstan` → `composer rector` (dry-run) →
+`composer pest`, in that order so style/static-analysis issues don't get mixed into a
+test-failure investigation. `Http::fake()` and `Http::preventStrayRequests()` (set globally in
+`tests/Pest.php`) block real network calls. Feature tests run against an in-memory SQLite
+database wrapped in `RefreshDatabase` (`tests/Pest.php`) — which means a real SQLite
+file-locking/concurrency scenario (like the scheduler race above) cannot be exercised as a
+Feature test: `RefreshDatabase`'s own wrapping transaction makes any `DB::transaction()` call
+under test a *nested* transaction, and Laravel deliberately refuses to retry a nested
+transaction (see `ManagesTransactions::handleTransactionException`), converting it straight to
+a `DeadlockException` instead. That class of behavior is verified by reasoning about the code
+and Laravel's own upstream test coverage, not by a Dibs-level regression test.
 
-## Writes: next slice after read-only sync
+Cover sad paths explicitly: validation failures, stale-revision conflicts, claim conflicts,
+dead-process claim cleanup, and push-queue failures — not just the happy path.
 
-(Superseded by the local-authoritative push-queue model described above — a write commits to SQLite immediately as the confirmed result and enqueues the GitHub push; a GitHub-side conflict surfaces at push time as a `needs_attention` queue item, not as a pre-write blocking check. The principles below — one Action per intent, explicit pending/failed state, reconciling before retrying an ambiguous outcome — still apply, just against the push queue instead of a synchronous GitHub call.)
+## Not yet built
 
-One Action per intent (rename issue, complete issue, assign parent, change planned date), shared by UI and agent entry points. Prefer field-level changes over replacing an entire stale remote object.
-
-Show pending/saved/failed state explicitly. Keep optimistic UI state separate from the last confirmed snapshot. Retry reads safely. Creation/comment writes with an ambiguous timeout may already have succeeded remotely; local idempotency keys alone do not make GitHub mutations idempotent. Reconcile before retrying instead of creating duplicates.
-
-A pre-write remote comparison reduces lost updates but is not an atomic GitHub compare-and-swap guarantee. Define conflict behavior and preserve user edits; do not advertise impossible transactional guarantees across GitHub and SQLite. Project Status and issue state require an explicit policy before completion actions ship.
-
-## First TDD targets
-
-1. Reimporting the same fixture preserves local identities and creates no duplicates.
-2. A renamed/reparented issue and changed labels/membership update correctly.
-3. Unresolved parents arriving later link correctly; standalone tasks remain visible.
-4. Partial pagination/API errors preserve the last successful snapshot and set the expected failure state.
-5. Removed membership is not issue deletion; inaccessible data is not silently destroyed.
-6. Concurrent refresh requests queue one sync; cooldown and rate-limit backoff are honored.
-7. Planned/Due queries handle null dates, overdue dates, and midnight in the chosen timezone.
-8. Private pages and actions reject unauthorized access under the chosen hosting model.
-
-Use synthetic fixtures, Http::fake(), and prevent stray network requests. Test Actions directly for behavior and Livewire/HTTP for validation, rendering, and access contracts. SQLite in-memory tests do not prove file locking/WAL concurrency; use a temporary file integration test when implementing that behavior.
-
-## First implementation slice
-
-1. Confirm framework/runtime and initial access model.
-2. Scaffold Laravel + Livewire 4 + SQLite + Pest and local development tooling, preserving CLAUDE.md and other project notes.
-3. Add core schema with migrations and meaningful constraint tests.
-4. Implement a read-only GitHub import through TDD using fake responses; a manual command is the first entry point.
-5. Show a basic collapsible tree from SQLite with no GitHub calls during rendering.
-6. Add shared refresh scheduling, sync status, and the first daily view.
-7. Add mutations/agent entry points in a separate slice after their contract is reviewed.
-
-No remote task writes, new credentials, deployed routes, or automatic notifications are required for the initial schema/scaffold.
-
-## Sources checked
-
-- Livewire 4 single-file components / Volt migration: https://livewire.laravel.com/docs/4.x/upgrading
-- Livewire components: https://livewire.laravel.com/docs/4.x/components
-- Livewire polling: https://livewire.laravel.com/docs/4.x/wire-poll
-- GitHub polling and conditional request recommendations: https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api
-- SQLite WAL constraints: https://www.sqlite.org/wal.html
+- The natural-language capture UI itself (bridge mechanism only — see `capture-bridge.md`)
+- Scheduling fields beyond Planned/Due, recurrence, and any calendar/notification integration
+- Multiple configurable workspaces (repo + user) per Dibs instance — currently one instance
+  targets one configured `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`
