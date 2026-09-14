@@ -7,6 +7,18 @@ mirror; local SQLite is authoritative.
 
 **Stack:** Laravel 13, Livewire 4, PHP 8.5, SQLite, Tailwind 4, Flux UI.
 
+<p>
+  <img src="docs/images/screenshot-light-desktop.png" alt="Dibs workspace, light theme" width="49%">
+  <img src="docs/images/screenshot-dark-desktop.png" alt="Dibs workspace, dark theme" width="49%">
+</p>
+<p>
+  <img src="docs/images/screenshot-detail-panel.png" alt="Task detail panel with comments" width="49%">
+  <img src="docs/images/screenshot-light-mobile.png" alt="Dibs on mobile" width="23.5%">
+  <img src="docs/images/screenshot-dark-mobile.png" alt="Dibs on mobile, dark theme" width="23.5%">
+</p>
+
+*(Screenshots show seeded sample data — see `database/seeders/DemoSeeder.php`.)*
+
 ## Quick start
 
 Requires Docker and Docker Compose.
@@ -24,6 +36,11 @@ there's no public registration). Then visit `http://localhost:8095` (override th
 
 Running behind a reverse proxy? See `docker/compose.traefik.example.yml` for a working
 label-based Traefik example.
+
+Want to look around with realistic sample data instead of an empty workspace?
+`docker compose exec -u www-data app php artisan db:seed --class="Database\Seeders\DemoSeeder"`
+adds a few dozen fake tasks across areas, groups, priorities, and labels. It's meant for a
+fresh database — don't run it against one you care about.
 
 ### Connecting to GitHub (optional)
 
