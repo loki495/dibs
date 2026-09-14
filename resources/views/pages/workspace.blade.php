@@ -993,7 +993,18 @@ new class extends Component
                     @endforeach
                 </div>
             </nav>
-            <div class="mt-6 border-t border-slate-200 px-3 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800" aria-live="polite">
+            @php($sidebarQueueCounts = config('dibs.push_queue_ui_enabled') && auth()->check() ? app(\App\Actions\DescribeGitHubPushQueue::class)->counts() : ['actionable' => 0, 'pending' => 0])
+            @if (config('dibs.push_queue_ui_enabled'))
+                <a href="{{ route('push-queue') }}" class="mt-4 flex min-h-9 cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
+                    <flux:icon.arrow-path-rounded-square class="size-4 shrink-0" /><span class="flex-1">{{ __('Push queue') }}</span>
+                    @if ($sidebarQueueCounts['actionable'] > 0)
+                        <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900 dark:bg-red-900/30 dark:text-red-300">{{ $sidebarQueueCounts['actionable'] }}</span>
+                    @elseif ($sidebarQueueCounts['pending'] > 0)
+                        <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-800">{{ $sidebarQueueCounts['pending'] }}</span>
+                    @endif
+                </a>
+            @endif
+            <div class="mt-4 border-t border-slate-200 px-3 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800" aria-live="polite">
                 @if ($sync?->last_success_at)
                     <span class="mr-1 inline-block size-1.5 rounded-full bg-teal-600"></span>{{ __('Last synced :time', ['time' => $sync->last_success_at->diffForHumans()]) }}
                 @else
@@ -1063,7 +1074,7 @@ new class extends Component
                                 <button wire:click="toggleLabel(@js($name))" @class(['shrink-0 rounded-full border px-2 py-1 text-xs transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => in_array($name, $labels, true), 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! in_array($name, $labels, true)]) aria-pressed="{{ in_array($name, $labels, true) ? 'true' : 'false' }}">{{ $name }}</button>
                             @endforeach
                         </div>
-                        <button type="button" @click="open = ! open" class="flex size-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 md:hidden dark:hover:bg-slate-800" :aria-expanded="open.toString()" aria-label="{{ __('Show all labels') }}"><flux:icon.chevron-right class="size-4 transition-transform" ::class="open ? 'rotate-90' : ''" /></button>
+                        <button type="button" @click="open = ! open" class="flex size-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-900/5 md:hidden dark:hover:bg-white/10" :aria-expanded="open.toString()" aria-label="{{ __('Show all labels') }}"><flux:icon.chevron-right class="size-4 transition-transform" ::class="open ? 'rotate-90' : ''" /></button>
                     </div>
                 @endif
             </div>
@@ -1118,7 +1129,7 @@ new class extends Component
                         @if ($row['virtual'])
                             <div wire:key="group-row-{{ $row['id'] }}" data-group-root="{{ substr($row['id'], 6) }}" role="listitem" x-show="visible(@js($row['ancestors']))" x-cloak class="border-b border-slate-100 last:border-0 dark:border-slate-800/70">
                                 <div data-project-color="{{ $row['projectColor'] }}" role="button" tabindex="0" @click="toggle(@js($row['id']))" @keydown.enter.prevent="toggle(@js($row['id']))" @keydown.space.prevent="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" class="flex min-h-14 cursor-pointer items-center gap-1 py-2 pr-3" style="padding-left: calc(0.5rem + {{ min($row['depth'], 5) }} * 1rem); @if ($row['projectColor']) background-color: color-mix(in srgb, {{ $row['projectColor'] }} 10%, transparent); @else background-color: rgb(248 250 252 / .7); @endif">
-                                    <button @click.stop="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" aria-label="{{ __('Expand or collapse :title', ['title' => $row['title']]) }}" class="flex size-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><flux:icon.chevron-right class="size-4 transition-transform" ::class="isOpen('{{ $row['id'] }}') ? 'rotate-90' : ''" /></button>
+                                    <button @click.stop="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" aria-label="{{ __('Expand or collapse :title', ['title' => $row['title']]) }}" class="flex size-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-900/5 dark:hover:bg-white/10"><flux:icon.chevron-right class="size-4 transition-transform" ::class="isOpen('{{ $row['id'] }}') ? 'rotate-90' : ''" /></button>
                                     <span class="flex h-10 w-5 shrink-0 items-center text-teal-700 dark:text-teal-400"><flux:icon.folder class="size-4" /></span>
                                     <div class="min-w-0 flex-1 py-1"><span class="block break-words text-sm font-semibold leading-6">{{ $row['title'] }}</span>@if ($area === 0 && $row['projectTitle'])<button type="button" wire:click.stop="chooseArea({{ $row['projectAreaId'] }})" class="mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium hover:brightness-95" style="border-color: {{ $row['projectColor'] }}; background-color: color-mix(in srgb, {{ $row['projectColor'] }} 14%, transparent); color: {{ $row['projectColor'] }}">{{ $row['projectTitle'] }}</button>@endif</div>
                                     <span class="text-xs text-slate-500">{{ __('Group') }}</span>
@@ -1131,7 +1142,7 @@ new class extends Component
                                         <input type="checkbox" wire:click.stop="toggleBulkSelect({{ $row['id'] }})" @checked(in_array($row['id'], $bulkSelected, true)) class="mt-3.5 size-4 shrink-0 self-start rounded border-slate-300 text-teal-600 focus:ring-teal-600 dark:border-slate-600" aria-label="{{ __('Select :title', ['title' => $row['title']]) }}">
                                     @endif
                                     @if ($row['hasChildren'])
-                                        <button @click.stop="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" aria-label="{{ __('Expand or collapse :title', ['title' => $row['title']]) }}" class="flex size-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><flux:icon.chevron-right class="size-4 transition-transform" ::class="isOpen('{{ $row['id'] }}') ? 'rotate-90' : ''" /></button>
+                                        <button @click.stop="toggle(@js($row['id']))" :aria-expanded="isOpen(@js($row['id']))" aria-label="{{ __('Expand or collapse :title', ['title' => $row['title']]) }}" class="flex size-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-900/5 dark:hover:bg-white/10"><flux:icon.chevron-right class="size-4 transition-transform" ::class="isOpen('{{ $row['id'] }}') ? 'rotate-90' : ''" /></button>
                                     @else <span class="w-10 shrink-0" aria-hidden="true"></span> @endif
                                     <div class="min-w-0 flex-1 py-2 text-left">
                                         <span @class(['block break-words text-sm leading-6', 'font-medium' => $row['container'], 'text-slate-500 dark:text-slate-400' => $row['context'], 'line-through opacity-70' => $row['state'] === 'CLOSED'])>{{ $row['title'] }}</span>
