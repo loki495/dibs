@@ -30,6 +30,8 @@ class CreateTodoComment
                 throw new TodoRecordUnavailableException("Issue #{$issue->github_number} (local id {$issueId}) is no longer available; it was removed or lost GitHub access.");
             }
 
+            // attempts: 3 — same transient "database is locked" race against the scheduler's
+            // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
             return DB::transaction(function () use ($issue, $body): Comment {
                 $comment = Comment::create([
                     'issue_id' => $issue->id,
@@ -42,7 +44,7 @@ class CreateTodoComment
                 app(EnqueueGitHubPush::class)->handle('create_comment', 'comment', $comment->id, [], 'comment:create:'.$comment->id);
 
                 return $comment;
-            });
+            }, 3);
         };
 
         if ($idempotencyKey === null || $idempotencyKey === '') {

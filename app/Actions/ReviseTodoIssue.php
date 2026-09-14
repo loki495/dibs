@@ -39,6 +39,8 @@ class ReviseTodoIssue
                 throw new TodoStaleRevisionException($issue->id, "Issue #{$issue->github_number} (local id {$id}) has changed since expectedRevision was read. Reread it and reconcile before retrying.");
             }
 
+            // attempts: 3 — same transient "database is locked" race against the scheduler's
+            // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
             return DB::transaction(function () use ($issue, $title, $body, $note): Issue {
                 $changes = array_filter(['title' => $title, 'body' => $body], fn ($value): bool => $value !== null);
                 $issue->update([...$changes, 'revision' => $issue->revision + 1]);
@@ -48,7 +50,7 @@ class ReviseTodoIssue
                 }
 
                 return $issue->fresh();
-            });
+            }, 3);
         };
 
         if ($idempotencyKey === null || $idempotencyKey === '') {
