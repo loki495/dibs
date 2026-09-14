@@ -8,8 +8,12 @@ use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
 use App\Models\Comment;
+use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
+use App\Models\ProjectField;
+use App\Models\ProjectFieldOption;
+use App\Models\ProjectItem;
 
 it('revises the title and body when the expected revision matches, and increments the revision', function (): void {
     $issue = Issue::factory()->create(['title' => 'Old title', 'body' => 'Old body', 'revision' => 1]);
@@ -30,11 +34,11 @@ it('allows revising only the body, leaving the title untouched', function (): vo
     expect($revised->title)->toBe('Keep me')->and($revised->body)->toBe('New body only');
 });
 
-it('rejects a revision with neither title nor body', function (): void {
+it('rejects a revision with neither title, body, nor groupId', function (): void {
     $issue = Issue::factory()->create(['revision' => 1]);
 
     expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1))
-        ->toThrow(TodoValidationException::class, 'Provide a title, a body, or both');
+        ->toThrow(TodoValidationException::class, 'Provide a title, a body, a groupId');
 });
 
 it('rejects a stale revision without applying the change', function (): void {
@@ -77,4 +81,51 @@ it('is idempotent: retrying the same key returns the original result without rev
     expect($second->title)->toBe('Revised once')
         ->and($second->revision)->toBe(2)
         ->and(GitHubPushQueueItem::query()->where('operation', 'update_issue_body')->count())->toBe(1);
+});
+
+it('moves an issue into a different Group within its existing area', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    $revised = app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, groupId: $group->id);
+
+    expect($revised->revision)->toBe(2)
+        ->and($item->fresh()->group_option_id)->toBe($group->id)
+        ->and(GitHubPushQueueItem::query()->where('operation', 'set_project_item_group')->where('target_id', $item->id)->exists())->toBeTrue();
+});
+
+it('rejects setting a Group on an issue with no area assigned yet', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, groupId: $group->id))
+        ->toThrow(TodoValidationException::class, 'no area assigned yet');
+
+    expect(Issue::query()->find($issue->id)->revision)->toBe(1);
+});
+
+it('rejects a Group that belongs to a different area than the issue', function (): void {
+    $project = GitHubProject::factory()->create();
+    $otherProject = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($otherProject, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $issue = Issue::factory()->create(['revision' => 1]);
+    ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, groupId: $group->id))
+        ->toThrow(TodoValidationException::class, 'not available in this area');
+});
+
+it('rejects a nonexistent groupId', function (): void {
+    $project = GitHubProject::factory()->create();
+    $issue = Issue::factory()->create(['revision' => 1]);
+    ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, groupId: 999_999))
+        ->toThrow(TodoValidationException::class, 'not available in this area');
 });

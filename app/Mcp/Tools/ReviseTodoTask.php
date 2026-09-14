@@ -19,7 +19,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Revises an issue\'s canonical title and/or body — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
+#[Description('Revises an issue\'s canonical title, body, and/or Group — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its existing area (the issue must already belong to an area/Project — set one via todo_create/todo_scaffold_plan first) and does not currently support clearing the Group back to none. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
 class ReviseTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_revise';
@@ -31,6 +31,7 @@ class ReviseTodoTask extends Tool implements Errable
             'expectedRevision' => ['required', 'integer', 'min:1'],
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'body' => ['sometimes', 'nullable', 'string', 'max:65535'],
+            'groupId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'note' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
@@ -41,6 +42,7 @@ class ReviseTodoTask extends Tool implements Errable
                 expectedRevision: $arguments['expectedRevision'],
                 title: $arguments['title'] ?? null,
                 body: $arguments['body'] ?? null,
+                groupId: $arguments['groupId'] ?? null,
                 note: $arguments['note'] ?? null,
                 idempotencyKey: $arguments['idempotencyKey'] ?? null,
             );
@@ -65,6 +67,7 @@ class ReviseTodoTask extends Tool implements Errable
             'expectedRevision' => $schema->integer()->required()->description('The `revision` value last read for this issue.'),
             'title' => $schema->string()->nullable()->description('The new title, if changing it.'),
             'body' => $schema->string()->nullable()->description('The new canonical body, if changing it.'),
+            'groupId' => $schema->integer()->nullable()->description('A Group id within the issue\'s existing area, if moving it to a different Group. The issue must already belong to an area/Project.'),
             'note' => $schema->string()->nullable()->description('An optional concise note explaining the revision, added as a comment.'),
             'idempotencyKey' => $schema->string()->nullable()->description('A caller-chosen key; retrying the same key returns the original result instead of revising again.'),
         ];
