@@ -37,7 +37,7 @@ class AgentCreateTaskCommand extends Command
                 priorityId: $this->option('priority') !== null ? (int) $this->option('priority') : null,
                 labelIds: array_map(intval(...), $this->option('label')),
                 newGroupName: $this->option('new-group'),
-                newLabelName: $this->option('new-label'),
+                newLabelNames: $this->option('new-label') !== null ? [$this->option('new-label')] : [],
                 idempotencyKey: $this->option('idempotency-key'),
             );
         } catch (TodoValidationException $exception) {

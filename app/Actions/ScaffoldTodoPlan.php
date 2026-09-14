@@ -39,7 +39,7 @@ class ScaffoldTodoPlan
         }
 
         $scaffold = fn (): Issue => DB::transaction(function () use ($title, $body, $area, $labelIds, $newLabelName, $children): Issue {
-            $plan = $this->create->handle(title: $title, body: $body, area: $area, labelIds: $labelIds, newLabelName: $newLabelName);
+            $plan = $this->create->handle(title: $title, body: $body, area: $area, labelIds: $labelIds, newLabelNames: $newLabelName !== null ? [$newLabelName] : []);
             foreach ($children as $child) {
                 $this->create->handle(
                     title: $child['title'],

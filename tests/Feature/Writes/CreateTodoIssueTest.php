@@ -75,10 +75,21 @@ it('creates a new label by name and reuses an existing one case-insensitively', 
     $repository = GitHubRepository::query()->sole();
     Label::factory()->for($repository, 'repository')->create(['name' => 'Next']);
 
-    app(CreateTodoIssue::class)->handle(title: 'Task A', newLabelName: 'next');
-    app(CreateTodoIssue::class)->handle(title: 'Task B', newLabelName: 'brand-new');
+    app(CreateTodoIssue::class)->handle(title: 'Task A', newLabelNames: ['next']);
+    app(CreateTodoIssue::class)->handle(title: 'Task B', newLabelNames: ['brand-new']);
 
     expect(Label::query()->count())->toBe(2);
+});
+
+it('creates several new labels at once, deduplicating against selections and each other', function (): void {
+    $repository = GitHubRepository::query()->sole();
+    $existing = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
+
+    $issue = app(CreateTodoIssue::class)->handle(title: 'Task A', labelIds: [$existing->id], newLabelNames: ['Urgent', 'brand-new', 'brand-new', '']);
+
+    expect(Label::query()->count())->toBe(2)
+        ->and($issue->labels()->count())->toBe(2)
+        ->and($issue->labels()->pluck('name')->all())->toEqualCanonicalizing(['urgent', 'brand-new']);
 });
 
 it('rejects creating a new Group without an area', function (): void {

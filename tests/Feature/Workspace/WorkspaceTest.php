@@ -411,6 +411,28 @@ it('selects a newly-created capture Group by name, then lets picking an existing
         ->assertSet('captureGroup', $existing->id);
 });
 
+it('queues several new capture labels, deduplicating case-insensitively, and lets one be removed before submit', function (): void {
+    $component = Livewire::actingAs(User::factory()->create())->test('pages::workspace')->call('openCapture')
+        ->call('addCaptureNewLabel', 'urgent')->assertSet('captureNewLabels', ['urgent'])
+        ->call('addCaptureNewLabel', 'Urgent')->assertSet('captureNewLabels', ['urgent'])
+        ->call('addCaptureNewLabel', 'blocked')->assertSet('captureNewLabels', ['urgent', 'blocked'])
+        ->assertSee('New: urgent')->assertSee('New: blocked');
+
+    $component->call('removeCaptureNewLabel', 0)->assertSet('captureNewLabels', ['blocked'])->assertDontSee('New: urgent');
+});
+
+it('captures a task creating every queued new label at once', function (): void {
+    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('newTitle', 'Multi-label task')
+        ->call('addCaptureNewLabel', 'urgent')->call('addCaptureNewLabel', 'blocked')
+        ->call('capture')->assertSet('captureNewLabels', []);
+
+    $issue = Issue::query()->where('title', 'Multi-label task')->sole();
+    expect($issue->labels()->pluck('name')->all())->toEqualCanonicalizing(['urgent', 'blocked']);
+});
+
 it('captures a task with a description without calling GitHub', function (): void {
     GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
     Http::fake();
@@ -465,6 +487,24 @@ it('replaces task labels locally and enqueues the add/remove diff, not a full re
     expect($issue->labels()->pluck('labels.id')->sort()->values()->all())->toBe(collect([$kept->id, $added->id])->sort()->values()->all());
     $enqueued = GitHubPushQueueItem::query()->where('operation', 'set_issue_labels')->where('target_id', $issue->id)->sole();
     expect($enqueued->payload)->toBe(['add_label_ids' => [$added->id], 'remove_label_ids' => [$removed->id]]);
+});
+
+it('saves an edit creating several new labels at once, deduplicating case-insensitively', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    $issue = Issue::factory()->for($repository, 'repository')->create();
+    $existing = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('beginEdit')
+        ->call('addEditNewLabel', 'Urgent')->assertSet('editNewLabels', ['Urgent'])
+        ->call('addEditNewLabel', 'urgent')->assertSet('editNewLabels', ['Urgent'])
+        ->call('addEditNewLabel', 'blocked')->assertSee('New: blocked')
+        ->call('removeEditNewLabel', 0)->assertSet('editNewLabels', ['blocked'])
+        ->call('saveIssue')->assertSet('editingIssue', false);
+
+    expect(Label::query()->count())->toBe(2)
+        ->and($issue->labels()->pluck('name')->all())->toEqualCanonicalizing(['blocked']);
+    expect($existing->fresh())->not->toBeNull();
 });
 
 it('sets a new parent on an existing task and enqueues it', function (): void {

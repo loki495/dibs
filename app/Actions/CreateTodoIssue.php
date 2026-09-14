@@ -19,6 +19,7 @@ class CreateTodoIssue
 
     /**
      * @param  list<int>  $labelIds
+     * @param  list<string>  $newLabelNames
      */
     public function handle(
         string $title,
@@ -29,10 +30,10 @@ class CreateTodoIssue
         ?int $priorityId = null,
         array $labelIds = [],
         ?string $newGroupName = null,
-        ?string $newLabelName = null,
+        array $newLabelNames = [],
         ?string $idempotencyKey = null,
     ): Issue {
-        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelName): Issue {
+        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames): Issue {
             if ($newGroupName !== null && trim($newGroupName) !== '' && ($area === null || $area === 0)) {
                 throw new TodoValidationException('Choose an area before creating a Group.');
             }
@@ -61,7 +62,7 @@ class CreateTodoIssue
                 throw new TodoValidationException('The repository is not configured or not available locally. Refresh and try again.');
             }
 
-            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelName): Issue {
+            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames): Issue {
                 if ($newGroupName !== null && trim($newGroupName) !== '') {
                     $groupField = $project->fields()->where('semantic_key', 'group')->where('is_available', true)->first();
                     $existingGroup = $groupField?->options()->whereRaw('LOWER(name) = LOWER(?)', [trim($newGroupName)])->first();
@@ -79,7 +80,10 @@ class CreateTodoIssue
                         $group = $newOption;
                     }
                 }
-                if ($newLabelName !== null && trim($newLabelName) !== '') {
+                foreach ($newLabelNames as $newLabelName) {
+                    if (trim($newLabelName) === '') {
+                        continue;
+                    }
                     $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [trim($newLabelName)])->first();
                     if ($existingLabel instanceof Label) {
                         $labels->push($existingLabel);
@@ -95,6 +99,7 @@ class CreateTodoIssue
                         $labels->push($newLabel);
                     }
                 }
+                $labels = $labels->unique('id')->values();
                 $issue = Issue::create([
                     'repository_id' => $repository->id,
                     'github_node_id' => null,

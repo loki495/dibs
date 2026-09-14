@@ -47,7 +47,7 @@ class CreateTodoTask extends Tool implements Errable
                 priorityId: $arguments['priorityId'] ?? null,
                 labelIds: $arguments['labelIds'] ?? [],
                 newGroupName: $arguments['newGroupName'] ?? null,
-                newLabelName: $arguments['newLabelName'] ?? null,
+                newLabelNames: isset($arguments['newLabelName']) ? [$arguments['newLabelName']] : [],
                 idempotencyKey: $arguments['idempotencyKey'] ?? null,
             );
         } catch (TodoValidationException $exception) {
