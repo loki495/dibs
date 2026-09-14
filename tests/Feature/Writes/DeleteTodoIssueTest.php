@@ -16,7 +16,7 @@ it('marks a leaf issue unavailable locally and enqueues its GitHub deletion with
 
     Http::assertNothingSent();
     expect($issue->refresh()->is_available)->toBeFalse()
-        ->and($result)->toBe(['deletedIds' => [$issue->id], 'reparented' => []])
+        ->and($result)->toBe([$issue->id])
         ->and(GitHubPushQueueItem::query()->where('operation', 'delete_issue')->where('target_id', $issue->id)->where('status', 'pending')->exists())->toBeTrue();
 });
 
@@ -38,8 +38,7 @@ it('cascades deletion to every descendant, deepest first', function (): void {
     expect($grandparent->refresh()->is_available)->toBeFalse()
         ->and($parent->refresh()->is_available)->toBeFalse()
         ->and($child->refresh()->is_available)->toBeFalse()
-        ->and($result['deletedIds'])->toEqualCanonicalizing([$grandparent->id, $parent->id, $child->id])
-        ->and($result['reparented'])->toBe([])
+        ->and($result)->toEqualCanonicalizing([$grandparent->id, $parent->id, $child->id])
         ->and(GitHubPushQueueItem::query()->where('operation', 'delete_issue')->count())->toBe(3);
 });
 
@@ -54,7 +53,7 @@ it('promotes direct children to the deleted issue\'s own parent instead of casca
     expect($parent->refresh()->is_available)->toBeFalse()
         ->and($child->refresh()->parent_issue_id)->toBe($grandparent->id)
         ->and($child->github_parent_node_id)->toBe($grandparent->github_node_id)
-        ->and($result)->toBe(['deletedIds' => [$parent->id], 'reparented' => [['childId' => $child->id, 'previousParentId' => $parent->id, 'previousParentGithubNodeId' => 'I_parent']]])
+        ->and($result)->toBe([$parent->id])
         ->and(GitHubPushQueueItem::query()->where('operation', 'set_issue_parent')->where('target_id', $child->id)->where('payload', json_encode(['parent_issue_id' => $grandparent->id]))->exists())->toBeTrue();
 });
 

@@ -7,8 +7,8 @@ use App\Actions\DeleteTodoIssue;
 use App\Actions\EnqueueGitHubPush;
 use App\Actions\GetIssueDetails;
 use App\Actions\ReleaseAbandonedTaskClaim;
+use App\Actions\RestoreTodoIssue;
 use App\Actions\ReviseTodoComment;
-use App\Actions\UndoDeleteTodoIssue;
 use App\Actions\UpdateGitHubProject;
 use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
@@ -134,10 +134,7 @@ new class extends Component
 
     public ?string $deleteError = null;
 
-    /** @var array{deletedIds: list<int>, reparented: list<array<string, mixed>>, title: string}|null */
-    public ?array $recentlyDeleted = null;
-
-    public ?string $deleteUndoMessage = null;
+    public ?string $restoreMessage = null;
 
     public function mount(): void
     {
@@ -513,30 +510,22 @@ new class extends Component
             return;
         }
 
-        $this->recentlyDeleted = [...$result, 'title' => $issue->title];
-        $this->deleteUndoMessage = null;
         $this->deleteConfirmOpen = false;
         $this->deletingIssue = 0;
-        if (in_array($this->selected, $result['deletedIds'], true)) {
+        if (in_array($this->selected, $result, true)) {
             $this->selected = 0;
         }
     }
 
-    public function undoDelete(): void
+    public function restoreIssue(int $id): void
     {
-        if ($this->recentlyDeleted === null) {
+        $this->reset('restoreMessage');
+        $issue = Issue::query()->where('is_available', false)->find($id);
+        if (! $issue instanceof Issue) {
             return;
         }
-        $result = app(UndoDeleteTodoIssue::class)->handle($this->recentlyDeleted['deletedIds'], $this->recentlyDeleted['reparented']);
-        $this->deleteUndoMessage = $result['tooLate'] === []
-            ? __('Restored.')
-            : trans_choice('Restored what was still pending — :count change had already synced to GitHub and could not be undone.|Restored what was still pending — :count changes had already synced to GitHub and could not be undone.', count($result['tooLate']), ['count' => count($result['tooLate'])]);
-        $this->recentlyDeleted = null;
-    }
-
-    public function dismissDeleteNotice(): void
-    {
-        $this->reset('recentlyDeleted', 'deleteUndoMessage');
+        app(RestoreTodoIssue::class)->handle($issue);
+        $this->restoreMessage = __('Restored ":title".', ['title' => $issue->title]);
     }
 
     public function releaseClaim(): void
@@ -623,9 +612,16 @@ new class extends Component
         $editGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->editArea))->orderBy('position')->get();
         $editPriorities = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'priority')->where('project_id', $this->editArea))->orderBy('position')->get();
         $labelOptions = Label::query()->where('is_available', true)->orderBy('name')->get(['id', 'name']);
+        $deletedRows = $this->view === 'deleted'
+            ? Issue::query()->where('is_available', false)
+                ->when($this->search !== '', fn ($query) => $query->where(function ($matches): void {
+                    $matches->where('title', 'like', '%'.$this->search.'%')->orWhere('github_number', $this->search);
+                }))->orderByDesc('updated_at')->limit(100)->get(['id', 'github_number', 'title', 'updated_at'])
+            : null;
 
         return [...app(BuildIssueTree::class)->handle($this->area, $this->view, $this->search, $this->state, $this->group, $this->labels, $this->priority, $this->sortBy),
             'detail' => $this->selected > 0 ? app(GetIssueDetails::class)->handle($this->selected) : null,
+            'deletedRows' => $deletedRows,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $labelOptions,
             'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $labelOptions];
     }
@@ -674,25 +670,16 @@ new class extends Component
         </aside>
 
         <section class="min-w-0">
-            @if ($recentlyDeleted)
-                <div role="status" class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-100 px-4 py-3 text-sm dark:bg-slate-800">
-                    <span>{{ __('Deleted ":title". This can still be undone until it syncs to GitHub.', ['title' => $recentlyDeleted['title']]) }}</span>
-                    <div class="flex items-center gap-2">
-                        <flux:button type="button" wire:click="undoDelete" size="sm">{{ __('Undo') }}</flux:button>
-                        <button type="button" wire:click="dismissDeleteNotice" class="flex size-8 items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700" aria-label="{{ __('Dismiss') }}"><flux:icon.x-mark class="size-4" /></button>
-                    </div>
-                </div>
-            @endif
-            @if ($deleteUndoMessage)
+            @if ($restoreMessage)
                 <div role="status" class="mb-4 flex items-center justify-between gap-3 rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:bg-teal-950 dark:text-teal-100">
-                    <span>{{ $deleteUndoMessage }}</span>
-                    <button type="button" wire:click="dismissDeleteNotice" class="flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-teal-100 dark:hover:bg-teal-900" aria-label="{{ __('Dismiss') }}"><flux:icon.x-mark class="size-4" /></button>
+                    <span>{{ $restoreMessage }}</span>
+                    <button type="button" wire:click="$set('restoreMessage', null)" class="flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-teal-100 dark:hover:bg-teal-900" aria-label="{{ __('Dismiss') }}"><flux:icon.x-mark class="size-4" /></button>
                 </div>
             @endif
             <div class="mb-5">
                 <div class="flex items-center justify-between gap-2">
                     <div class="flex rounded-lg border border-slate-200 p-1 dark:border-slate-800" aria-label="{{ __('Content type') }}">
-                        @foreach (['tasks' => __('Tasks'), 'knowledge' => __('Knowledge')] as $mode => $title)
+                        @foreach (['tasks' => __('Tasks'), 'knowledge' => __('Knowledge'), 'deleted' => __('Deleted')] as $mode => $title)
                             <button wire:click="$set('view', '{{ $mode }}')" @class(['min-h-9 rounded-md px-3 text-sm sm:px-4', 'bg-white font-medium shadow-sm dark:bg-slate-800' => $view === $mode, 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100' => $view !== $mode]) aria-pressed="{{ $view === $mode ? 'true' : 'false' }}">{{ $title }}</button>
                         @endforeach
                     </div>
@@ -707,6 +694,7 @@ new class extends Component
                 </div>
                 <div class="mt-3"><flux:input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="Search titles, notes, or #number" aria-label="Search tasks" /></div>
             </div>
+            @if ($view !== 'deleted')
             <div class="mb-4 space-y-3">
                 <div class="flex flex-wrap items-center gap-2">
                     <flux:select wire:model.live="group" class="min-w-44" aria-label="Website or group">
@@ -736,6 +724,31 @@ new class extends Component
                     </div>
                 @endif
             </div>
+            @endif
+            @if ($view === 'deleted')
+                <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                    <div class="flex min-h-14 items-center px-4 text-xs text-slate-500 dark:border-slate-800">
+                        <span aria-live="polite">{{ trans_choice(':count deleted task|:count deleted tasks', $deletedRows->count(), ['count' => $deletedRows->count()]) }}</span>
+                    </div>
+                    <div role="list" aria-label="{{ __('Deleted tasks') }}">
+                        @forelse ($deletedRows as $row)
+                            <div wire:key="deleted-row-{{ $row->id }}" role="listitem" class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 last:border-0 dark:border-slate-800/70">
+                                <div class="min-w-0">
+                                    <span class="block truncate text-sm text-slate-500 line-through dark:text-slate-400">{{ $row->title }}</span>
+                                    <span class="text-[11px] text-slate-500">#{{ $row->github_number }} · {{ __('Deleted :time', ['time' => $row->updated_at->diffForHumans()]) }}</span>
+                                </div>
+                                <flux:button type="button" wire:click="restoreIssue({{ $row->id }})" size="sm">{{ __('Restore') }}</flux:button>
+                            </div>
+                        @empty
+                            <div class="px-6 py-14 text-center">
+                                <flux:icon.inbox class="mx-auto mb-4 size-8 text-slate-400" />
+                                <h2 class="font-medium">{{ __('Nothing deleted') }}</h2>
+                                <p class="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-500">{{ $search !== '' ? __('No deleted tasks match your search.') : __('Deleted tasks appear here and can be restored at any time.') }}</p>
+                            </div>
+                        @endforelse
+                    </div>
+                </div>
+            @else
             <div wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$sortBy.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 text-xs text-slate-500 dark:border-slate-800">
                     <span aria-live="polite">{{ trans_choice(':count result|:count results', $matchCount, ['count' => $matchCount]) }}{{ $filtered ? ' · '.__('with parent context') : '' }}</span>
@@ -787,6 +800,7 @@ new class extends Component
                     @endforelse
                 </div>
             </div>
+            @endif
         </section>
     </div>
     @if ($detail)
