@@ -29,7 +29,7 @@ class AddIssueLabels
             return $issue;
         }
         $data = (new GitHubClient($token))->query(
-            'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { id } } }',
+            'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
             ['labelableId' => $issue->github_node_id, 'labelIds' => array_map(fn (Label $label): string => $label->github_node_id, $labels)],
         );
         if (($data['addLabelsToLabelable']['labelable']['id'] ?? null) !== $issue->github_node_id) {
