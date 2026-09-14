@@ -1105,7 +1105,12 @@ new class extends Component
             @endif
             <div wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$sortBy.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 text-xs text-slate-500 dark:border-slate-800">
-                    <span aria-live="polite">{{ trans_choice(':count result|:count results', $matchCount, ['count' => $matchCount]) }}{{ $filtered ? ' · '.__('with parent context') : '' }}</span>
+                    <span class="flex items-center gap-3">
+                        <span aria-live="polite">{{ trans_choice(':count result|:count results', $matchCount, ['count' => $matchCount]) }}{{ $filtered ? ' · '.__('with parent context') : '' }}</span>
+                        @if ($area > 0 && in_array($sortBy, ['project', 'group'], true))
+                            <button type="button" wire:click="chooseArea(0)" class="flex items-center gap-1 font-medium text-teal-700 hover:underline dark:text-teal-400"><flux:icon.arrow-left class="size-3" />{{ __('All projects') }}</button>
+                        @endif
+                    </span>
                     <button @click="toggleAll(@js(array_column($rows, 'id')))" x-text="allOpen(@js(array_column($rows, 'id'))) ? @js(__('Collapse all')) : @js(__('Expand all'))" class="min-h-10 px-2 hover:text-slate-900 dark:hover:text-slate-100"></button>
                 </div>
                 <div role="list" aria-label="{{ __('Task hierarchy') }}">
