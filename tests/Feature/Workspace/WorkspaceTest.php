@@ -336,6 +336,24 @@ it('toggles compact label filters without hiding unlabelled selections by defaul
         ->assertSee('Other task');
 });
 
+it('shows an always-present Clear filters button only once a filter is actually applied', function (): void {
+    $component = Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->assertDontSee('Clear filters')
+        ->set('search', 'anything')->assertSee('Clear filters');
+
+    $component->call('clearFilters')->assertDontSee('Clear filters')->assertSet('search', '');
+});
+
+it('treats group, priority, sort, labels, and state as active filters for the Clear filters button', function (): void {
+    $component = Livewire::actingAs(User::factory()->create())->test('pages::workspace');
+
+    $component->set('group', 1)->assertSee('Clear filters')->call('clearFilters')->assertDontSee('Clear filters');
+    $component->set('priority', 3)->assertSee('Clear filters')->call('clearFilters')->assertDontSee('Clear filters');
+    $component->set('sortBy', 'priority')->assertSee('Clear filters')->call('clearFilters')->assertDontSee('Clear filters');
+    $component->call('toggleLabel', 'next')->assertSee('Clear filters')->call('clearFilters')->assertDontSee('Clear filters');
+    $component->set('state', 'CLOSED')->assertSee('Clear filters')->call('clearFilters')->assertDontSee('Clear filters');
+});
+
 it('renders an actual Title field in both the capture and edit forms, not just a bindable property', function (): void {
     // Regression test: a bare {{ }} expression inside a <flux:input> tag (used to conditionally add
     // `autofocus`) silently broke Blade's component-tag compiler, so the tag printed as literal dead

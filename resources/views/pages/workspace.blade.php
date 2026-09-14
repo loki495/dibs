@@ -721,6 +721,7 @@ new class extends Component
             </div>
             @if ($view !== 'deleted')
             <div class="mb-4 space-y-3">
+                @php($filtersActive = $search !== '' || $group !== 0 || $priority !== 0 || $sortBy !== 'project' || $labels !== [] || $state !== 'OPEN')
                 <div class="flex flex-wrap items-center gap-2">
                     <flux:select wire:model.live="group" class="min-w-44" aria-label="Website or group">
                         <option value="0">{{ __('All groups') }}</option>
@@ -737,6 +738,9 @@ new class extends Component
                         <option value="newest_last">{{ __('Sort: Newest last') }}</option>
                         <option value="priority">{{ __('Sort: Priority') }}</option>
                     </flux:select>
+                    @if ($filtersActive)
+                        <flux:button type="button" wire:click="clearFilters" variant="ghost" size="sm">{{ __('Clear filters') }}</flux:button>
+                    @endif
                 </div>
                 @if ($labelOptions)
                     <div x-data="{ open: false }" class="flex items-start gap-1.5" aria-label="{{ __('Labels') }}">
@@ -820,7 +824,6 @@ new class extends Component
                             <flux:icon.inbox class="mx-auto mb-4 size-8 text-slate-400" />
                             <h2 class="font-medium">{{ $projects->isEmpty() ? __('Your workspace is ready') : __('Nothing here just yet') }}</h2>
                             <p class="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-500">{{ $view === 'daily' ? __('No open tasks are planned, due, or picked for today.') : __('Try another area or clear your filters to find more.') }}</p>
-                            @if ($filtered || $state !== 'OPEN')<flux:button wire:click="clearFilters" variant="ghost" size="sm" class="mt-4">{{ __('Clear filters') }}</flux:button>@endif
                         </div>
                     @endforelse
                 </div>
