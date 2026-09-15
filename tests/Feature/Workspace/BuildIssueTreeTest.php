@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\BuildIssueTree;
+use App\Actions\ClaimTaskForAgent;
 use App\Models\GitHubProject;
 use App\Models\Issue;
 use App\Models\Label;
@@ -11,6 +12,26 @@ use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+
+it('includes claim state on the row so the list can show a claimed pill without opening the detail panel', function (): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+
+    $row = collect(app(BuildIssueTree::class)->handle()['rows'])->firstWhere('id', $issue->id);
+
+    expect($row['claim'])->not->toBeNull()
+        ->and($row['claim']['agentName'])->toBe('codex')
+        ->and($row['claim']['isExpired'])->toBeFalse()
+        ->and($row['claim']['isCurrentlyAlive'])->toBeTrue();
+});
+
+it('omits claim data for an unclaimed issue', function (): void {
+    $issue = Issue::factory()->create();
+
+    $row = collect(app(BuildIssueTree::class)->handle()['rows'])->firstWhere('id', $issue->id);
+
+    expect($row['claim'])->toBeNull();
+});
 
 it('preserves nested sibling order and includes standalone tasks', function (): void {
     $root = Issue::factory()->create(['title' => 'Website']);

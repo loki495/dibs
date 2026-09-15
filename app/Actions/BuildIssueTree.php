@@ -8,12 +8,16 @@ use App\Models\GitHubProject;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\SyncState;
+use App\Models\TaskClaim;
+use App\Services\Process\LinuxProcessLiveness;
 use App\Support\ProjectColor;
 use Illuminate\Support\Str;
 
 class BuildIssueTree
 {
     private const array TREE_SORTS = ['project', 'group'];
+
+    public function __construct(private readonly LinuxProcessLiveness $liveness) {}
 
     /**
      * @param  list<string>  $labels
@@ -29,6 +33,7 @@ class BuildIssueTree
         $containerIds = $issues->pluck('parent_issue_id')->filter()->flip()->all();
         $requiresParent = in_array('parent', $labels, true);
         $requestedLabels = array_values(array_filter($labels, fn (string $label): bool => $label !== 'parent'));
+        $claims = TaskClaim::query()->whereNull('released_at')->with('agentSession')->get()->keyBy('issue_id');
         $today = now(config('dibs.timezone'))->toDateString();
         $nodes = [];
         $groups = [];
@@ -69,10 +74,11 @@ class BuildIssueTree
             $labelMatches = ($requiresParent === false || $container) && ($requestedLabels === [] || count(array_intersect($requestedLabels, $names)) > 0);
             $priorityMatches = $priority === 0 || collect($memberships)->contains(fn (array $item): bool => $item['priority'] === (string) $priority && ($area === 0 || $item['area'] === $area));
             $matches[$issue->id] = $inArea && $inGroup && $modeMatches && $stateMatches && $searchMatches && $labelMatches && $priorityMatches;
+            $claim = $claims->get($issue->id);
             $nodes[$issue->id] = ['id' => $issue->id, 'number' => $issue->github_number, 'title' => $issue->title, 'state' => $issue->state,
                 'parent' => $issue->parent_issue_id, 'remoteParent' => $issue->github_parent_node_id,
                 'container' => $container, 'knowledge' => $knowledge, 'memberships' => $memberships, 'projectTitle' => $memberships[0]['title'] ?? null, 'projectColor' => $memberships[0]['color'] ?? null, 'projectAreaId' => $memberships[0]['area'] ?? null, 'labels' => $names, 'labelData' => $issue->labels->map(fn (Label $label): array => ['name' => $label->name, 'color' => ctype_xdigit((string) $label->color) && strlen((string) $label->color) === 6 ? '#'.$label->color : null])->all(),
-                'context' => ! $matches[$issue->id], 'outsideArea' => ! $inArea];
+                'context' => ! $matches[$issue->id], 'outsideArea' => ! $inArea, 'claim' => $claim instanceof TaskClaim ? $this->summarizeClaim($claim) : null];
         }
         $included = [];
         foreach ($matches as $id => $match) {
@@ -356,6 +362,21 @@ class BuildIssueTree
         return ['id' => $id, 'number' => null, 'title' => $title, 'state' => 'OPEN', 'parent' => null,
             'remoteParent' => null, 'container' => true, 'knowledge' => false, 'memberships' => [], 'projectTitle' => $projectTitle, 'projectColor' => $color, 'projectAreaId' => $projectAreaId, 'labels' => [], 'labelData' => [],
             'context' => false, 'outsideArea' => false, 'ancestors' => [], 'depth' => 0, 'hasChildren' => true,
-            'unresolvedParent' => false, 'virtual' => true, 'parentTitle' => null, 'treeRootId' => $id];
+            'unresolvedParent' => false, 'virtual' => true, 'parentTitle' => null, 'treeRootId' => $id, 'claim' => null];
+    }
+
+    /** @return array<string, mixed> */
+    private function summarizeClaim(TaskClaim $claim): array
+    {
+        $session = $claim->agentSession;
+        $isCurrentlyAlive = $session->is_verified_live && $session->pid !== null && $session->process_started_at !== null
+            ? $this->liveness->isAlive($session->pid, $session->process_started_at)
+            : null;
+
+        return [
+            'agentName' => $session->agent_name,
+            'isExpired' => $claim->expires_at->isPast(),
+            'isCurrentlyAlive' => $isCurrentlyAlive,
+        ];
     }
 }
