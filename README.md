@@ -1,9 +1,15 @@
 # Dibs
 
-A self-hosted todo list app that's MCP-native — AI agents can read, claim, and complete your
-tasks through the same interface the web UI uses, so you can work solo or hand off work to
-agents without stepping on each other. Backed by GitHub Issues and Projects as an asynchronous
-mirror; local SQLite is authoritative.
+A self-hosted task tracker built for AI agents as first-class users, not just a todo app they can
+also poke at. Any agent — a fresh session with zero context, a long-running worker, a different
+tool entirely — can connect to the same host-local MCP server and ask "what's open?", either
+across everything or scoped to one project, and pick up exactly where the last session left off.
+The same server lets agents save plans, track progress, and record project-specific research and
+decisions as they work, and a claim/heartbeat/release/complete lifecycle keeps multiple agents (or
+the same agent across sessions) from duplicating or colliding on the same task. You can also just
+use it yourself as a regular todo list — the web UI and the agent surface share the same data and
+the same Actions underneath. Backed by GitHub Issues and Projects as an asynchronous mirror; local
+SQLite is authoritative.
 
 **Stack:** Laravel 13, Livewire 4, PHP 8.5, SQLite, Tailwind 4, Flux UI.
 
@@ -65,11 +71,24 @@ composer pest        # tests
 
 ## Agent integration
 
-Dibs exposes a host-local stdio MCP server (`php artisan mcp:start todo`) so AI agents (Claude,
-Codex, etc.) can read, create, claim, and complete tasks through the same Actions the UI uses —
-without ever handling your GitHub token. See [`docs/agent-interface.md`](docs/agent-interface.md)
-for the full tool contract, and a JSON CLI fallback (`php artisan todo:agent:*`) for scripting or
-recovery.
+Dibs exposes a host-local stdio MCP server (`php artisan mcp:start todo`) that any agent (Claude,
+Codex, etc.) can connect to for three things:
+
+- **Cold-start orientation** — `todo_context` and `todo_list` answer "what's open?" with no prior
+  state needed, across every project or scoped to one, so a brand-new session (or a different
+  agent picking up someone else's work) can get oriented and start immediately.
+- **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
+  plan up front and keep it current as work progresses, so the plan itself — not a chat transcript
+  — is the durable record.
+- **Project knowledge** — research, lessons, and decisions get saved as their own records
+  (`todo_create` with a knowledge label), discoverable later instead of buried in a comment
+  history no one re-reads.
+
+Claim/heartbeat/release/complete keeps multiple agents (or the same agent across sessions) from
+duplicating or colliding on the same task, all without ever handling your GitHub token — every
+write goes through the same Actions the web UI uses. See
+[`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a JSON CLI
+fallback (`php artisan todo:agent:*`) for scripting or recovery.
 
 ## Learn more
 
