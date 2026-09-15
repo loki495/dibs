@@ -2,7 +2,7 @@
 
 ## What this is
 
-Dibs is a self-hosted personal task and knowledge tracker, backed by GitHub Issues and Projects as an asynchronous mirror. Local SQLite is authoritative once imported — GitHub is a mostly-read-only mirror reached through a durable outbound push queue, not a live sync source. It's built MCP-native: a host-local stdio MCP server exposes the same task/plan/claim operations to AI agents that the web UI uses, with a claim/heartbeat/release/complete lifecycle so multiple agents (or the same agent across sessions) can coordinate on shared work without duplicating or conflicting. Use it solo as a todo list, or let agents work alongside you.
+Dibs is a self-hosted task and knowledge tracker built for AI agents as first-class users. Backed by GitHub Issues and Projects as an asynchronous mirror. Local SQLite is authoritative once imported — GitHub is a mostly-read-only mirror reached through a durable outbound push queue, not a live sync source. It's built MCP-native: a host-local stdio MCP server exposes the same task/plan/claim operations to AI agents that the web UI uses. Three things that fall out of that: any agent — including one starting a session with zero prior context — can ask "what's open?" (globally or scoped to one project) and pick up work cold; agents can save plans and keep them current as multi-step work progresses; and agents can record project-specific research/lessons/decisions as durable knowledge instead of losing it in a chat transcript. A claim/heartbeat/release/complete lifecycle keeps multiple agents (or the same agent across sessions) from duplicating or colliding on the same task. Use it solo as a todo list, or let agents work alongside you.
 
 ## Stack
 
@@ -60,7 +60,9 @@ Prefer TDD with Pest for non-obvious behavior: write a focused failing test firs
 
 ## Labels
 
-The app ships with an example labels scheme: workflow markers (`today`, `next`, `waiting`, `someday`, `recurring`, `needs research`), structural markers (`parent`, `guide`), content markers (`bug`, `documentation`, `research`, `lesson`, `decision`), and `agent-report` for tooling problems agents self-report via `todo_report_bug`. Adjust to taste for your own use — labels are lightweight, cross-cutting metadata, not a replacement for Projects/Groups/parents, and shouldn't duplicate them.
+The app ships with an example labels scheme: workflow markers (`today`, `next`, `waiting`, `someday`, `recurring`, `needs research`), structural markers (`parent`, `guide`), content markers (`bug`, `documentation`, `research`, `lesson`, `decision`), `agent-task` for a task an AI agent can pick up and complete on its own, and `agent-report` for tooling problems agents self-report via `todo_report_bug`. Adjust to taste for your own use — labels are lightweight, cross-cutting metadata, not a replacement for Projects/Groups/parents, and shouldn't duplicate them.
+
+**`agent-task`:** marks a task as agent-suitable — self-contained technical/writing/research work an agent can execute without a human physically present (code changes, audits, drafting, investigation), as opposed to a task that requires a human body or judgment call only a human can make (errands, purchases, in-person chores, "go do X yourself"). An agent creating a task via `todo_create`/`todo_scaffold_plan` should apply it when the task it's filing fits that description, so a later cold-start agent querying `todo_list` can filter to work it's actually able to take on.
 
 ## Knowledge records
 
