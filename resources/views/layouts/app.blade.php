@@ -36,7 +36,7 @@
     @livewireStyles
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased">
-    <div class="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-6 pt-4 pb-3">
+    <div class="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-6 pb-3 pt-[calc(1rem+env(safe-area-inset-top,0px))]">
         <a href="{{ route('workspace') }}" class="flex items-center gap-3 text-xl font-semibold tracking-tight">
             <span class="flex size-10 items-center justify-center rounded-xl bg-teal-800 text-white"><flux:icon.check class="size-6" /></span>
             {{ config('app.name') }}
