@@ -56,12 +56,16 @@
    affordance app-wide instead of adding a utility class to every clickable element. */
 button:not(:disabled), [role="button"] { cursor: pointer; }
 /* viewport-fit=cover (needed for standalone/PWA mode to draw edge-to-edge on iOS) lets content
-   extend under the notch/Dynamic Island and home indicator unless padded back out explicitly. */
+   extend under the notch/Dynamic Island and home indicator unless padded back out explicitly.
+   Deliberately NOT applied to body: that left the app header still rendering behind the iOS
+   status bar in practice, so the inset is applied directly to the specific bars/panels that
+   sit at the true screen edges instead (the app header below, the task-detail overlay in
+   issue-detail.blade.php) -- the one part of the page that's provably still safe is left/right,
+   which stays here since no element has reported an issue with it. */
 body {
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
 }
 @layer components {
     .markdown-body { overflow-wrap: anywhere; line-height: 1.7; }

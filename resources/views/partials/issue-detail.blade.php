@@ -1,7 +1,7 @@
 <div wire:key="detail-{{ $detail['issue']->id }}" x-data x-init="$nextTick(() => $refs.close.focus())" x-trap.inert="true" role="dialog" aria-modal="true" aria-labelledby="issue-detail-title" class="fixed inset-0 z-50">
     <div class="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" @click="$wire.set('selected', 0)" aria-hidden="true"></div>
     <section class="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col bg-white shadow-2xl dark:bg-slate-900">
-        <header class="shrink-0 border-b border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-900">
+        <header class="shrink-0 border-b border-slate-200 bg-white px-5 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] dark:border-slate-800 dark:bg-slate-900">
             <div class="flex items-center justify-between gap-3">
                 <span class="text-xs text-slate-500">{{ $detail['issue']->repository->full_name }} · #{{ $detail['issue']->github_number }}</span>
                 <div class="flex items-center gap-1">
@@ -32,7 +32,7 @@
                 <div class="mt-2 flex items-center justify-between gap-3"><span class="text-xs font-medium uppercase tracking-wider text-teal-700 dark:text-teal-400">{{ __('Edit task') }}</span><flux:button type="button" wire:click="cancelEdit" variant="ghost" size="sm">{{ __('Cancel') }}</flux:button></div>
             @endif
         </header>
-        <div class="flex-1 space-y-5 overflow-y-auto p-5">
+        <div class="flex-1 space-y-5 overflow-y-auto p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]">
             @if ($editingIssue)
                 <form wire:submit="saveIssue" class="space-y-4">
                     @include('partials.task-form-fields', ['titleModel' => 'editTitle', 'bodyModel' => 'editBody', 'areaModel' => 'editArea', 'groupModel' => 'editGroup', 'groupSearchModel' => 'editGroupSearch', 'groupSearchValueForForm' => $editGroupSearch, 'newGroupMethod' => 'selectNewEditGroup', 'newGroupValueForForm' => $editNewGroup, 'parentSearchModel' => 'editParentSearch', 'parentSearchValueForForm' => $editParentSearch, 'parentModel' => 'editParent', 'parentValueForForm' => $editParent, 'toggleLabelMethod' => 'toggleEditLabel', 'selectedLabelsForForm' => $editLabels, 'labelOptionsForForm' => $editLabelOptions, 'labelSearchModel' => 'editLabelSearch', 'labelSearchValueForForm' => $editLabelSearch, 'groupsForForm' => $editGroups, 'priorityModel' => 'editPriority', 'prioritiesForForm' => $editPriorities, 'parentsForForm' => $editParents, 'newLabelMethod' => 'addEditNewLabel', 'newLabelsForForm' => $editNewLabels, 'removeNewLabelMethod' => 'removeEditNewLabel', 'groupValueForForm' => $editGroup])
