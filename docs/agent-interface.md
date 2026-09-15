@@ -60,6 +60,10 @@ Note on `pid`: the MCP protocol itself has no session/process identity a server 
 
 Every tool returns structured JSON with stable local IDs, GitHub URLs when pushed, and push-queue status when relevant. Stdio is local-only; no network listener, browser credential, or MCP tool argument contains a GitHub token.
 
+## Picking up work cold
+
+This is the primary way a new session (or a different agent/tool entirely) is meant to start, not a fallback path: call `todo_context` first for orientation (areas, Groups, labels, live claims, push-queue snapshot), then `todo_list` — with no filters for everything open, or `area`/`group`/`parentId` to scope to one project — to see what's actually outstanding. No prior conversation state, plan file, or hand-off note is required; the tools are the hand-off. Filter `todo_list` by `label: "agent-task"` to see only work suited to an agent picking it up unattended (code changes, audits, drafting, research, investigation) and skip tasks that need a human body or a judgment call only a human can make (errands, purchases, in-person chores). A task's absence of `agent-task` isn't a hard block — read it and use judgment — but it's a useful default filter, and an agent creating a task via `todo_create`/`todo_scaffold_plan` should apply the label when the new task fits.
+
 ## Claims and checkpoints
 
 The local-only `agent_sessions` and `task_claims` models bind a task to an explicit worker identity with an expiry and renewal time. A claim is not a GitHub lock: it prevents accidental duplicate local-agent work sharing one local database. This contract is explicitly scoped to multiple agents/processes on **one** local database — it does not arbitrate ownership across independent databases or between different users. Multi-user/multi-instance collaboration is intentionally kept open as a future direction, but no distributed conflict-resolution design exists yet. A worker must post concise checkpoint comments for a material result, decision, blocker, or verification result, never raw tool logs.
