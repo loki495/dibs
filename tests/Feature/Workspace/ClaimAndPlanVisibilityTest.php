@@ -18,6 +18,16 @@ it('shows an active claim with a release action', function (): void {
         ->assertSee('Claimed by codex')->assertSee('Release claim');
 });
 
+it('shows a claimed pill on the task list row without opening the detail panel', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Claimed row task']);
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->assertSee('Claimed row task')
+        ->assertSeeHtml('data-claim-pill="'.$issue->id.'"')
+        ->assertSee('codex');
+});
+
 it('releases an abandoned claim from the UI without a capability token', function (): void {
     $issue = Issue::factory()->create();
     app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);

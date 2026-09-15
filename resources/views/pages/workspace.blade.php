@@ -1149,6 +1149,9 @@ new class extends Component
                                         <span @class(['block break-words text-sm leading-6', 'font-medium' => $row['container'], 'text-slate-500 dark:text-slate-400' => $row['context'], 'line-through opacity-70' => $row['state'] === 'CLOSED'])>{{ $row['title'] }}</span>
                                         <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                                             <span>#{{ $row['number'] }}</span>
+                                            @if ($row['claim'])
+                                                <span data-claim-pill="{{ $row['id'] }}" title="{{ __('Claimed by :agent', ['agent' => $row['claim']['agentName']]) }}" @class(['inline-flex items-center rounded-full border px-1.5 py-0.5 font-medium', 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400' => $row['claim']['isExpired'], 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400' => ! $row['claim']['isExpired'] && $row['claim']['isCurrentlyAlive'] === false, 'border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-400' => ! $row['claim']['isExpired'] && $row['claim']['isCurrentlyAlive'] !== false])>{{ $row['claim']['agentName'] }}</span>
+                                            @endif
                                             @if ($row['parentTitle'] ?? null)<span>{{ __('↳ :title', ['title' => $row['parentTitle']]) }}</span>@endif
                                             @if ($row['outsideArea'])<span>{{ __('Parent from another area') }}</span>@elseif ($row['context'])<span>{{ __('Parent context') }}</span>@endif
                                             @if ($row['unresolvedParent'])<span>{{ __('Parent not imported') }}</span>@endif
