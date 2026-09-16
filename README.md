@@ -72,17 +72,31 @@ composer pest        # tests
 ## Agent integration
 
 Dibs exposes a host-local stdio MCP server (`php artisan mcp:start todo`) that any agent (Claude,
-Codex, etc.) can connect to for three things:
+Codex, etc.) can connect to for:
 
 - **Cold-start orientation** — `todo_context` and `todo_list` answer "what's open?" with no prior
   state needed, across every project or scoped to one, so a brand-new session (or a different
   agent picking up someone else's work) can get oriented and start immediately.
+- **Finding related material** — `todo_search` searches titles and bodies across tasks, plans,
+  and knowledge, including closed records. Ranked results include short excerpts so agents can
+  choose what to read in full without opening every match.
 - **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
   plan up front and keep it current as work progresses, so the plan itself — not a chat transcript
   — is the durable record.
 - **Project knowledge** — research, lessons, and decisions get saved as their own records
   (`todo_create` with a knowledge label), discoverable later instead of buried in a comment
   history no one re-reads.
+
+For example, call `todo_search` with:
+
+```json
+{"query": "queue retries", "perPage": 5}
+```
+
+Every term must match somewhere in the title or body. Add `area`, `group`, `label`, or `state`
+to narrow the search; use `todo_show` for full detail on selected results. Search currently
+covers keywords in titles and bodies, not comments or semantic similarity. Reconnect an
+existing MCP client after upgrading so it discovers the new tool.
 
 Claim/heartbeat/release/complete keeps multiple agents (or the same agent across sessions) from
 duplicating or colliding on the same task, all without ever handling your GitHub token — every
