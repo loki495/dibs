@@ -20,6 +20,7 @@ use App\Mcp\Tools\ReleaseTodoTask;
 use App\Mcp\Tools\ReportBugTool;
 use App\Mcp\Tools\ReviseTodoTask;
 use App\Mcp\Tools\ScaffoldTodoPlan;
+use App\Mcp\Tools\SearchTodoIssues;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -44,6 +45,7 @@ class TodoServer extends Server
         DescribeTodoServer::class,
         DescribeTodoContext::class,
         ListTodoTasks::class,
+        SearchTodoIssues::class,
         DescribeTodoIssue::class,
         DescribeTodoQueueStatus::class,
         CreateTodoTask::class,
