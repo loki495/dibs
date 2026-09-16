@@ -41,6 +41,7 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_status` | Server/repository identity and record counts — call first to confirm identity. |
 | `todo_context` | Areas (Projects), Groups, labels, live claims, and push-queue counts — orientation before acting. |
 | `todo_list` | Filtered/paginated task or knowledge listing (area/group/label/parent/state/search/view). |
+| `todo_search` | Keyword search across task, plan, and knowledge titles/bodies, including closed records; ranked summaries with excerpts. |
 | `todo_show` | Full detail for one issue, optionally with paginated comments. |
 | `todo_queue_status` | Pending/failed/needs-attention push-queue counts and per-item detail. |
 | `todo_create` | Create a task, plan, or knowledge record; enqueues the GitHub push. Idempotency-key supported. |
@@ -63,6 +64,16 @@ Every tool returns structured JSON with stable local IDs, GitHub URLs when pushe
 ## Picking up work cold
 
 This is the primary way a new session (or a different agent/tool entirely) is meant to start, not a fallback path: call `todo_context` first for orientation (areas, Groups, labels, live claims, push-queue snapshot), then `todo_list` — with no filters for everything open, or `area`/`group`/`parentId` to scope to one project — to see what's actually outstanding. No prior conversation state, plan file, or hand-off note is required; the tools are the hand-off. Filter `todo_list` by `label: "agent-task"` to see only work suited to an agent picking it up unattended (code changes, audits, drafting, research, investigation) and skip tasks that need a human body or a judgment call only a human can make (errands, purchases, in-person chores). A task's absence of `agent-task` isn't a hard block — read it and use judgment — but it's a useful default filter, and an agent creating a task via `todo_create`/`todo_scaffold_plan` should apply the label when the new task fits.
+
+## Finding related material
+
+Call `todo_search` with `{"query":"queue retries"}` to search tasks, plans, and knowledge together. Every whitespace-separated term must occur in the title or body (terms may match different fields). Matching uses literal substrings with SQLite's ASCII case-insensitivity: `%` and `_` are literal characters, and quotes/operators have no special meaning. Comments are not searched.
+
+Optional `area`, `group`, and exact `label` filters narrow the results. `state` defaults to `ALL` (including closed knowledge and completed work); use `OPEN` or `CLOSED` when needed. When area and group are both supplied, they must match the same available Project membership.
+
+Results use the `todo_list` pagination shape (`items`, `page`, `perPage`, `total`, `lastPage`), defaulting to 15 results and capped at 50. More query terms matched in the title rank first, with local ID ascending as a stable tie-breaker. Each item includes the usual issue summary (including labels, knowledge flag, and parent ID) plus an `excerpt`: up to 240 body characters around the first body match, with ellipses when truncated. Title-only matches show the beginning of the body, or an empty excerpt if there is no body. Use `todo_show` only for selected results that need full detail.
+
+Queries must contain non-whitespace text and be at most 200 characters. This first version scans local titles/bodies without a search index or external service; it provides keyword matching, not semantic similarity. `todo_list` keeps its existing task/knowledge views and title/issue-number search behavior. Search is currently exposed through MCP, with the shared `SearchTodoIssues` Action available to other application entry points.
 
 ## Claims and checkpoints
 
