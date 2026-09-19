@@ -53,7 +53,7 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_release` | Release the calling process's own live claim without completing the task. |
 | `todo_complete` | Close a claimed task, enqueue the push, optionally post a result summary comment, and release the claim. |
 | `todo_claim_status` | Read-only: whether a task has a live claim, and by whom — no capability token exposed. |
-| `todo_report_bug` | Self-report a problem with the MCP/CLI tooling itself (not a product task) — creates an `agent-report`-labeled issue; amend with `todo_comment`. |
+| `todo_report_bug` | Self-report a problem with the MCP/CLI tooling itself (not a product task) — creates an `agent report`-labeled issue; amend with `todo_comment`. |
 
 Every write tool implements `Laravel\Mcp\Server\Contracts\Errable` and validates its own arguments via `Request::validate()` — confirmed empirically that `laravel/mcp` `1.0.0-beta.1` does not enforce a tool's declared JSON Schema before calling `handle()`, so schema-shaped input alone is not a safety guarantee.
 
@@ -63,7 +63,7 @@ Every tool returns structured JSON with stable local IDs, GitHub URLs when pushe
 
 ## Picking up work cold
 
-This is the primary way a new session (or a different agent/tool entirely) is meant to start, not a fallback path: call `todo_context` first for orientation (areas, Groups, labels, live claims, push-queue snapshot), then `todo_list` — with no filters for everything open, or `area`/`group`/`parentId` to scope to one project — to see what's actually outstanding. No prior conversation state, plan file, or hand-off note is required; the tools are the hand-off. Filter `todo_list` by `label: "agent-task"` to see only work suited to an agent picking it up unattended (code changes, audits, drafting, research, investigation) and skip tasks that need a human body or a judgment call only a human can make (errands, purchases, in-person chores). A task's absence of `agent-task` isn't a hard block — read it and use judgment — but it's a useful default filter, and an agent creating a task via `todo_create`/`todo_scaffold_plan` should apply the label when the new task fits.
+This is the primary way a new session (or a different agent/tool entirely) is meant to start, not a fallback path: call `todo_context` first for orientation (areas, Groups, labels, live claims, push-queue snapshot), then `todo_list` — with no filters for everything open, or `area`/`group`/`parentId` to scope to one project — to see what's actually outstanding. No prior conversation state, plan file, or hand-off note is required; the tools are the hand-off. Filter `todo_list` by `label: "agent task"` to see only work suited to an agent picking it up unattended (code changes, audits, drafting, research, investigation) and skip tasks that need a human body or a judgment call only a human can make (errands, purchases, in-person chores). A task's absence of `agent task` isn't a hard block — read it and use judgment — but it's a useful default filter, and an agent creating a task via `todo_create`/`todo_scaffold_plan` should apply the label when the new task fits.
 
 ## Finding related material
 
