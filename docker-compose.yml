@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      target: base
     restart: unless-stopped
     pid: "host"
     volumes:
@@ -16,8 +17,24 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      target: base
     restart: unless-stopped
     command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - ./:/var/www/html
+  # Browser (Pest + Playwright) tests only — never started by a plain `docker compose
+  # up`. Adds Node.js + Chromium on top of the same `base` image `app` uses, kept out of
+  # `app` itself since that image also serves the public demo (see CLAUDE.md) and
+  # shouldn't carry a JS runtime + browser binary just for dev-time tests.
+  # Run with: composer pest:browser
+  app-test:
+    container_name: dibs-app-test
+    profiles: [test]
+    user: "1000:1000"
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: test
     volumes:
       - ./:/var/www/html
   node:

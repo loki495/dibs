@@ -27,6 +27,7 @@
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
         "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-browser": "^4.3",
         "pestphp/pest-plugin-laravel": "^4.0",
         "rector/rector": "^2.0"
     },
@@ -76,7 +77,8 @@
         "pint": "docker compose exec -T -e PAO_FORCE=true -u www-data app vendor/bin/pint --format=agent",
         "phpstan": "docker compose exec -T -e PAO_FORCE=true -u www-data app vendor/bin/phpstan analyse --memory-limit=512M",
         "rector": "docker compose exec -T -e PAO_FORCE=true -u www-data app vendor/bin/rector process --dry-run",
-        "artisan": "docker compose exec -T -e PAO_FORCE=true -u www-data app php artisan"
+        "artisan": "docker compose exec -T -e PAO_FORCE=true -u www-data app php artisan",
+        "pest:browser": "docker compose --profile test run --rm app-test vendor/bin/pest tests/Browser"
     },
     "extra": {
         "laravel": {

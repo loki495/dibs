@@ -3,7 +3,15 @@ set -euo pipefail
 apt-get update
 apt-get install -y --no-install-recommends git unzip libzip-dev libsqlite3-dev libicu-dev openssh-client
 rm -rf /var/lib/apt/lists/*
-docker-php-ext-install pdo_sqlite zip intl pcntl
+# sockets: required merely by *having* pestphp/pest-plugin-browser in composer.json,
+# even on a machine that never runs a browser test — the plugin's Plugin::boot()
+# registers a global afterEach hook (see docker/setup-test-container.sh) that eagerly
+# allocates a port via socket_create_listen() after every single Pest test, everywhere.
+# Without this extension here, the entire suite errors out with "Call to undefined
+# function ...socket_create_listen()" the moment the package is required, since
+# vendor/ (and therefore this behavior) is shared with app-test via the same
+# bind-mounted project directory.
+docker-php-ext-install pdo_sqlite zip intl pcntl sockets
 usermod -u 1000 www-data
 groupmod -g 1000 www-data
 sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|' /etc/apache2/sites-available/000-default.conf
