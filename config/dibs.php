@@ -15,6 +15,16 @@ return [
     'agent_report_group_id' => $optionalId(env('DIBS_AGENT_REPORT_GROUP_ID')),
     'agent_report_parent_id' => $optionalId(env('DIBS_AGENT_REPORT_PARENT_ID')),
 
+    // Activity log (MCP call log + change log). Retention is in days per log; 0 keeps rows forever.
+    // Stored argument/diff values longer than max_value_bytes are truncated, and any key containing
+    // one of redact_keys (case-insensitive) is replaced with a placeholder before it is stored.
+    'activity' => [
+        'mcp_retention_days' => (int) env('DIBS_ACTIVITY_MCP_RETENTION_DAYS', 30),
+        'change_retention_days' => (int) env('DIBS_ACTIVITY_CHANGE_RETENTION_DAYS', 30),
+        'max_value_bytes' => (int) env('DIBS_ACTIVITY_MAX_VALUE_BYTES', 2048),
+        'redact_keys' => ['token', 'secret', 'password', 'authorization', 'key'],
+    ],
+
     // Public demo instance only -- see docs/demo-hosting.md. When true, ResolveDemoDatabase
     // gives every visitor their own private copy of demo_db_template_path (identified by a
     // cookie) instead of one database shared by every concurrent visitor, and demo:cleanup
