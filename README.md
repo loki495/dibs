@@ -1,5 +1,8 @@
 # Dibs
 
+[![CI](https://github.com/loki495/dibs/actions/workflows/ci.yml/badge.svg)](https://github.com/loki495/dibs/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A self-hosted task tracker built for AI agents as first-class users, not just a todo app they can
 also poke at. Any agent — a fresh session with zero context, a long-running worker, a different
 tool entirely — can connect to the same host-local MCP server and ask "what's open?", either
