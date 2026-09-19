@@ -14,6 +14,7 @@ use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
+use App\Services\Activity\ActivityRecorder;
 use Illuminate\Support\Facades\DB;
 
 class UpdateTodoIssue
@@ -26,6 +27,7 @@ class UpdateTodoIssue
         private readonly MoveIssueUnderParent $moveUnderParent,
         private readonly AssignIssueToProject $assignToProject,
         private readonly ApplyProjectItemFields $applyFields,
+        private readonly ActivityRecorder $recorder,
     ) {}
 
     /**
@@ -99,6 +101,7 @@ class UpdateTodoIssue
             $labels = $this->resolveLabels->handle($repository, $labels, $newLabelNames);
 
             $issue->update(['title' => $title, 'body' => $body === '' ? null : $body, 'revision' => $issue->revision + 1]);
+            $this->recorder->changeModel('UpdateTodoIssue', $issue);
             $this->enqueue->handle('update_issue_body', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:update:'.$issue->id.':'.now()->timestamp);
 
             $this->syncLabels->handle($issue, $labels);

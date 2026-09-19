@@ -11,6 +11,7 @@ use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
+use App\Services\Activity\ActivityRecorder;
 use Illuminate\Support\Facades\DB;
 
 class CreateTodoIssue
@@ -19,6 +20,7 @@ class CreateTodoIssue
         private readonly ResolveIdempotentWrite $idempotent,
         private readonly ResolveGroupOption $resolveGroup,
         private readonly ResolveLabels $resolveLabels,
+        private readonly ActivityRecorder $recorder,
     ) {}
 
     /**
@@ -85,6 +87,7 @@ class CreateTodoIssue
                     'is_available' => true,
                     'last_seen_at' => now(),
                 ]);
+                $created = $this->recorder->diffModel($issue, ['title', 'body', 'state']);
                 app(EnqueueGitHubPush::class)->handle('create_issue', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:create:'.$issue->id);
                 if ($project instanceof GitHubProject) {
                     $item = ProjectItem::create([
@@ -114,6 +117,15 @@ class CreateTodoIssue
                     $issue->update(['parent_issue_id' => $parent->id, 'sibling_position' => $siblingPosition]);
                     app(EnqueueGitHubPush::class)->handle('set_issue_parent', 'issue', $issue->id, ['parent_issue_id' => $parent->id], 'issue:parent:'.$issue->id);
                 }
+
+                $assigned = array_filter([
+                    'area' => $project?->title,
+                    'group' => $group?->name,
+                    'priority' => $priority?->name,
+                    'labels' => $labels->isEmpty() ? null : $labels->pluck('name')->sort()->values()->all(),
+                    'parent' => $parent instanceof Issue ? $this->recorder->issueRef($parent->id) : null,
+                ], fn (mixed $value): bool => $value !== null);
+                $this->recorder->change('CreateTodoIssue', $issue, 'Created issue', $created + array_map(fn (mixed $to): array => ['from' => null, 'to' => $to], $assigned));
 
                 return $issue;
             }, 3);

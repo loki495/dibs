@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Activity;
 
 use App\Models\ChangeLog;
+use App\Models\Issue;
 use App\Models\McpCallLog;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -17,7 +18,7 @@ use Throwable;
 class ActivityRecorder
 {
     /** Bookkeeping columns that change on every save and say nothing about what the user did. */
-    private const array IGNORED_ATTRIBUTES = ['created_at', 'updated_at'];
+    private const array IGNORED_ATTRIBUTES = ['created_at', 'updated_at', 'revision', 'last_seen_at'];
 
     public function __construct(
         private readonly ActivityContext $context,
@@ -90,9 +91,58 @@ class ActivityRecorder
      * What the last save did to $model: the changed attributes of an update, every attribute of a
      * fresh insert (from null), every attribute of a deleted row (to null).
      *
+     * @param  list<string>  $only  restrict the result to these fields when given
      * @return array<string, array{from: mixed, to: mixed}>
      */
-    public function diffModel(Model $model): array
+    public function diffModel(Model $model, array $only = []): array
+    {
+        $diff = $this->modelDiff($model);
+
+        return $only === [] ? $diff : array_intersect_key($diff, array_flip($only));
+    }
+
+    /**
+     * Record what the last save did to $model, or nothing when it changed no field worth recording.
+     * The summary names the changed fields, e.g. "Updated issue: title, body".
+     */
+    public function changeModel(string $action, Model $model, string $verb = 'Updated'): ?ChangeLog
+    {
+        $diff = $this->diffModel($model);
+
+        if ($diff === []) {
+            return null;
+        }
+
+        return $this->change($action, $model, $verb.' '.Str::lower(class_basename($model)).': '.implode(', ', array_keys($diff)), $diff);
+    }
+
+    /** The title or name of a record, for showing a chosen option or project as text rather than an id. */
+    public function nameOf(string $modelClass, ?int $id): ?string
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        $model = $modelClass::query()->find($id);
+        $name = $model instanceof Model ? ($model->getAttribute('title') ?? $model->getAttribute('name')) : null;
+
+        return is_scalar($name) ? (string) $name : null;
+    }
+
+    /** An issue as text for a diff, e.g. "Fix the sink (#12)"; null when there is none. */
+    public function issueRef(?int $id): ?string
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        $title = $this->nameOf(Issue::class, $id);
+
+        return $title === null ? "#{$id}" : "{$title} (#{$id})";
+    }
+
+    /** @return array<string, array{from: mixed, to: mixed}> */
+    private function modelDiff(Model $model): array
     {
         $attributes = array_diff_key(
             $model->getAttributes(),

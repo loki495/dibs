@@ -7,10 +7,14 @@ namespace App\Actions;
 use App\Exceptions\TodoValidationException;
 use App\Models\GitHubProject;
 use App\Models\ProjectFieldOption;
+use App\Services\Activity\ActivityRecorder;
 
 class ResolveGroupOption
 {
-    public function __construct(private readonly EnqueueGitHubPush $enqueue) {}
+    public function __construct(
+        private readonly EnqueueGitHubPush $enqueue,
+        private readonly ActivityRecorder $recorder,
+    ) {}
 
     /**
      * Find a project's Group by name (case-insensitively) or create it locally and queue its creation.
@@ -37,6 +41,7 @@ class ResolveGroupOption
             'position' => (int) $field->options()->max('position') + 1,
         ]);
         $this->enqueue->handle('create_group_option', 'project_field_option', $option->id, ['name' => $option->name, 'color' => 'GRAY'], 'group_option:create:'.$option->id);
+        $this->recorder->change('ResolveGroupOption', $option, 'Created Group', $this->recorder->diffModel($option, ['name', 'color']));
 
         return $option;
     }
