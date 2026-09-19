@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Mcp\ClientIdentity;
 use App\Services\Activity\ActivityContext;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskStarting;
@@ -17,6 +18,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(ActivityContext::class);
+        $this->app->singleton(ClientIdentity::class);
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Methods;
 
+use App\Mcp\ClientIdentity;
 use Laravel\Mcp\Enums\ProtocolVersion;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\ServerContext;
@@ -18,8 +19,13 @@ use Laravel\Mcp\Transport\JsonRpcResponse;
  */
 class InitializeLegacyClient implements Method
 {
+    public function __construct(private readonly ClientIdentity $client) {}
+
     public function handle(JsonRpcRequest $request, ServerContext $context): JsonRpcResponse
     {
+        $clientInfo = $request->get('clientInfo');
+        $this->client->remember(is_array($clientInfo) && is_string($clientInfo['name'] ?? null) ? $clientInfo['name'] : null);
+
         $requested = $request->get('protocolVersion');
         $version = is_string($requested) && in_array($requested, ProtocolVersion::initializeSupported(), true)
             ? $requested
