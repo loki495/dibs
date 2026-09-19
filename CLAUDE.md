@@ -47,14 +47,17 @@ A public demo instance runs at `dibs-demo.ac495.net` (per-visitor SQLite databas
 Run PHP tooling inside the app container via the composer script wrappers rather than invoking Docker directly:
 
 ```bash
-composer pint      # Pint (auto-fix)
-composer phpstan   # PHPStan level 6 (Larastan)
-composer rector     # Rector, dry-run by default — review its diff before ever applying
-composer pest       # Pest test suite
-composer artisan    # any artisan command, e.g. `composer artisan -- migrate`
+composer pint         # Pint (auto-fix)
+composer phpstan      # PHPStan level 6 (Larastan)
+composer rector        # Rector, dry-run by default — review its diff before ever applying
+composer pest          # Feature/Unit Pest suite
+composer pest:browser  # Browser (Pest + Playwright) smoke suite — see below
+composer artisan       # any artisan command, e.g. `composer artisan -- migrate`
 ```
 
 Order matters: Pint → PHPStan → Rector (dry-run) → Pest, so style/static-analysis issues don't get mixed into a test-failure investigation.
+
+**Browser testing (Pest + Playwright).** `tests/Browser/` holds real-browser smoke tests, run via `composer pest:browser`. This does not run inside the regular `app` container — that image also serves the public demo (see "Public demo hosting" above), and browser testing needs a Node.js runtime plus a Chromium binary that have no business in a production PHP-apache image. Instead, `docker-compose.yml` defines a second service, `app-test` (`profiles: [test]`, so a plain `docker compose up` never starts it), built from a `test` stage layered on top of the same `base` stage `app`/`scheduler` use (`docker/Dockerfile`). `docker/setup-test-container.sh` installs Node.js and bakes the Chromium binary into the image at build time, pinned to the exact Playwright version in `package.json`. Merely requiring `pestphp/pest-plugin-browser` breaks the *entire* Pest suite everywhere it's installed, not just browser tests — its `Plugin::boot()` unconditionally registers a global `afterEach` hook that calls `socket_create_listen()` after every test — so `ext-sockets` is enabled on `base` too (`docker/setup-dev-container.sh`), not only in the `test` stage, and CI's `sockets` extension is likewise needed on the same job that runs `vendor/bin/pest`, not a separate one.
 
 Prefer TDD with Pest for non-obvious behavior: write a focused failing test first, confirm it fails for the intended reason, implement the smallest correct change, then refactor with tests passing. Fake GitHub requests in tests (`Http::fake()`); never let a test make a real network call. Cover sad paths explicitly — validation failures, stale writes, claim conflicts, push-queue failures, dead-process cleanup — not just the happy path. Never delete, weaken, or skip a failing test to force a passing state.
 
