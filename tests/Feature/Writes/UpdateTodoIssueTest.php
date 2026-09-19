@@ -192,3 +192,15 @@ it('removes the issue from its area when none is given', function (): void {
 
     expect($item->refresh()->is_available)->toBeFalse();
 });
+
+it('rolls the whole edit back, including new labels, when the new parent would create a cycle', function (): void {
+    $issue = updatableIssue();
+    $child = Issue::factory()->for($issue->repository, 'repository')->create(['parent_issue_id' => $issue->id]);
+
+    expect(fn () => app(UpdateTodoIssue::class)->handle(id: $issue->id, expectedRevision: 3, title: 'Should not save', parentId: $child->id, newLabelNames: ['brand new']))
+        ->toThrow(TodoValidationException::class, 'This parent would create a hierarchy cycle: it is already a sub-task of this task.');
+
+    expectUntouched($issue);
+    expect($issue->parent_issue_id)->toBeNull();
+    expect(Label::query()->count())->toBe(0);
+});
