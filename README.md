@@ -57,8 +57,24 @@ Dibs works as a local-only task tracker out of the box. To sync with GitHub Issu
 set these in `.env`:
 
 - `DIBS_GITHUB_OWNER` / `DIBS_GITHUB_REPO` — the repository to mirror issues to/from
-- `GITHUB_TOKEN` — a personal access token with repo/project scope
+- `GITHUB_TOKEN` — a personal access token (see scopes below)
 - `GITHUB_PROJECT_NUMBERS` — which GitHub Projects (v2) to show as areas
+
+**Token scopes.** Dibs reads/writes Issues (title, body, labels, parent links, comments) and
+Projects v2 item fields (Status, Group, Priority, Planned, Due) on the one repo/owner
+configured above — it never touches any other repository or org-level setting. Least-privilege
+scopes:
+
+- **Classic PAT:** `repo` (issue read/write requires full repo scope even for a public repo —
+  GitHub has no narrower classic scope for issues) + `project` (Projects v2 field mutations).
+- **Fine-grained PAT:** scope it to the one target repository, with repository permission
+  **Issues: Read and write**, plus account-level permission **Projects: Read and write** (Projects
+  v2 for a user-owned project isn't a per-repository permission, even when the project only
+  tracks that repository's issues).
+
+Either token type grants Dibs the ability to edit/close issues and Project fields on the
+configured repo — treat it with the same care as any other write-capable credential, and scope
+a fine-grained token to nothing beyond what's listed above.
 
 Local edits queue automatically and push to GitHub in the background; a manual
 **Refresh from GitHub** button pulls the latest.
