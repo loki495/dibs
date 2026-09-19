@@ -11,11 +11,15 @@ use App\Exceptions\TodoValidationException;
 use App\Models\Issue;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
+use App\Services\Activity\ActivityRecorder;
 use Illuminate\Support\Facades\DB;
 
 class ReviseTodoIssue
 {
-    public function __construct(private readonly ResolveIdempotentWrite $idempotent) {}
+    public function __construct(
+        private readonly ResolveIdempotentWrite $idempotent,
+        private readonly ActivityRecorder $recorder,
+    ) {}
 
     public function handle(
         int $id,
@@ -59,11 +63,19 @@ class ReviseTodoIssue
             return DB::transaction(function () use ($issue, $title, $body, $item, $groupId, $note): Issue {
                 $changes = array_filter(['title' => $title, 'body' => $body], fn ($value): bool => $value !== null);
                 $issue->update([...$changes, 'revision' => $issue->revision + 1]);
+                $this->recorder->changeModel('ReviseTodoIssue', $issue, 'Revised');
                 if ($changes !== []) {
                     app(EnqueueGitHubPush::class)->handle('update_issue_body', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:revise:'.$issue->id.':'.now()->timestamp);
                 }
                 if ($item instanceof ProjectItem) {
+                    $previousGroupId = $item->group_option_id;
                     $item->update(['group_option_id' => $groupId]);
+                    if ($previousGroupId !== $groupId) {
+                        $this->recorder->change('ReviseTodoIssue', $issue, 'Changed group', ['group' => [
+                            'from' => $this->recorder->nameOf(ProjectFieldOption::class, $previousGroupId),
+                            'to' => $this->recorder->nameOf(ProjectFieldOption::class, $groupId),
+                        ]]);
+                    }
                     app(EnqueueGitHubPush::class)->handle('set_project_item_group', 'project_item', $item->id, ['group_option_id' => $groupId], 'project_item:group:'.$item->id.':'.now()->timestamp);
                 }
                 if ($note !== null && trim($note) !== '') {

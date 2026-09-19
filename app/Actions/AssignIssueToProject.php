@@ -7,10 +7,14 @@ namespace App\Actions;
 use App\Models\GitHubProject;
 use App\Models\Issue;
 use App\Models\ProjectItem;
+use App\Services\Activity\ActivityRecorder;
 
 class AssignIssueToProject
 {
-    public function __construct(private readonly EnqueueGitHubPush $enqueue) {}
+    public function __construct(
+        private readonly EnqueueGitHubPush $enqueue,
+        private readonly ActivityRecorder $recorder,
+    ) {}
 
     /**
      * Make the given project the issue's only area: reuse or create its membership there and leave every
@@ -45,6 +49,21 @@ class AssignIssueToProject
             }
         }
 
+        $this->recordAreaChange($issue, $memberships->pluck('project_id')->all(), $project);
+
         return $item;
+    }
+
+    /** @param  list<int>  $previousProjectIds */
+    private function recordAreaChange(Issue $issue, array $previousProjectIds, ?GitHubProject $project): void
+    {
+        $before = $previousProjectIds === []
+            ? null
+            : implode(', ', GitHubProject::query()->whereIn('id', $previousProjectIds)->orderBy('title')->pluck('title')->all());
+        $after = $project?->title;
+
+        if ($before !== $after) {
+            $this->recorder->change('AssignIssueToProject', $issue, 'Changed area', ['area' => ['from' => $before, 'to' => $after]]);
+        }
     }
 }
