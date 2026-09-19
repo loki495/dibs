@@ -29,11 +29,13 @@ use App\Models\Label;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubSyncException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use Livewire\Livewire;
 
 new class extends Component
 {
@@ -949,8 +951,23 @@ new class extends Component
                 }))->orderByDesc('updated_at')->limit(100)->get(['id', 'github_number', 'title', 'updated_at'])
             : null;
 
+        $detail = null;
+        if ($this->selected > 0) {
+            try {
+                $detail = app(GetIssueDetails::class)->handle($this->selected);
+            } catch (ModelNotFoundException $exception) {
+                // A deep link to a missing issue on the initial page load stays a 404; only a
+                // mid-session update (the issue vanished after it was selected) recovers gracefully.
+                if (! Livewire::isLivewireRequest()) {
+                    throw $exception;
+                }
+                $this->cancelEdit();
+                $this->selected = 0;
+            }
+        }
+
         return [...app(BuildIssueTree::class)->handle($this->area, $this->view, $this->search, $this->state, $this->group, $this->labels, $this->priority, $this->sortBy),
-            'detail' => $this->selected > 0 ? app(GetIssueDetails::class)->handle($this->selected) : null,
+            'detail' => $detail,
             'deletedRows' => $deletedRows,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $captureLabelOptions,
             'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions,
