@@ -4,6 +4,7 @@ use App\Actions\BuildIssueTree;
 use App\Actions\BulkAddLabelsToIssues;
 use App\Actions\BulkMoveIssuesToGroup;
 use App\Actions\BulkSetIssuesParent;
+use App\Actions\CloseTodoIssue;
 use App\Actions\CreateTodoComment;
 use App\Actions\CreateTodoIssue;
 use App\Actions\DeleteGroupOption;
@@ -791,8 +792,7 @@ new class extends Component
 
             return;
         }
-        $issue->update(['state' => 'CLOSED']);
-        app(EnqueueGitHubPush::class)->handle('close_issue', 'issue', $issue->id, [], 'issue:close:'.$issue->id);
+        app(CloseTodoIssue::class)->handle($issue);
     }
 
     public function openDeleteConfirm(): void
