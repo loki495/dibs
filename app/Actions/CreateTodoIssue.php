@@ -12,11 +12,14 @@ use App\Models\Label;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class CreateTodoIssue
 {
-    public function __construct(private readonly ResolveIdempotentWrite $idempotent) {}
+    public function __construct(
+        private readonly ResolveIdempotentWrite $idempotent,
+        private readonly ResolveGroupOption $resolveGroup,
+        private readonly ResolveLabels $resolveLabels,
+    ) {}
 
     /**
      * @param  list<int>  $labelIds
@@ -67,43 +70,9 @@ class CreateTodoIssue
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
             return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames): Issue {
                 if ($newGroupName !== null && trim($newGroupName) !== '') {
-                    $groupField = $project->fields()->where('semantic_key', 'group')->where('is_available', true)->first();
-                    $existingGroup = $groupField?->options()->whereRaw('LOWER(name) = LOWER(?)', [trim($newGroupName)])->first();
-                    if ($existingGroup instanceof ProjectFieldOption) {
-                        $group = $existingGroup;
-                    } else {
-                        $newOption = ProjectFieldOption::create([
-                            'project_field_id' => $groupField->id,
-                            'github_option_id' => null,
-                            'name' => trim($newGroupName),
-                            'color' => 'GRAY',
-                            'position' => (int) $groupField->options()->max('position') + 1,
-                        ]);
-                        app(EnqueueGitHubPush::class)->handle('create_group_option', 'project_field_option', $newOption->id, ['name' => $newOption->name, 'color' => 'GRAY'], 'group_option:create:'.$newOption->id);
-                        $group = $newOption;
-                    }
+                    $group = $this->resolveGroup->handle($project, $newGroupName);
                 }
-                foreach ($newLabelNames as $newLabelName) {
-                    $newLabelName = Str::lower(trim($newLabelName));
-                    if ($newLabelName === '') {
-                        continue;
-                    }
-                    $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [$newLabelName])->first();
-                    if ($existingLabel instanceof Label) {
-                        $labels->push($existingLabel);
-                    } else {
-                        $newLabel = Label::create([
-                            'repository_id' => $repository->id,
-                            'github_node_id' => null,
-                            'name' => $newLabelName,
-                            'color' => '6B7280',
-                            'is_available' => true,
-                        ]);
-                        app(EnqueueGitHubPush::class)->handle('create_label', 'label', $newLabel->id, ['name' => $newLabel->name, 'color' => '6B7280', 'description' => null], 'label:create:'.$newLabel->id);
-                        $labels->push($newLabel);
-                    }
-                }
-                $labels = $labels->unique('id')->values();
+                $labels = $this->resolveLabels->handle($repository, $labels, $newLabelNames);
                 $issue = Issue::create([
                     'repository_id' => $repository->id,
                     'github_node_id' => null,
