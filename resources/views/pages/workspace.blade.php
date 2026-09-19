@@ -18,6 +18,7 @@ use App\Actions\RenameLabel;
 use App\Actions\RestoreTodoIssue;
 use App\Actions\ReviseTodoComment;
 use App\Actions\UpdateProjectSettings;
+use App\Actions\UpdateTodoIssue;
 use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
@@ -96,6 +97,8 @@ new class extends Component
     public string $editLabelSearch = '';
 
     public int $editParent = 0;
+
+    public int $editRevision = 0;
 
     public string $editParentSearch = '';
 
@@ -583,6 +586,7 @@ new class extends Component
         $this->editPriority = $membership?->priority_option_id ?? 0;
         $this->editLabels = $issue->labels->where('is_available', true)->pluck('id')->all();
         $this->editParent = $issue->parent_issue_id ?? 0;
+        $this->editRevision = $issue->revision;
         $this->reset('editNewGroup', 'editNewLabels', 'editParentSearch', 'editError');
         $this->editingIssue = true;
     }
@@ -611,160 +615,46 @@ new class extends Component
 
     public function cancelEdit(): void
     {
-        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabels', 'editLabelSearch', 'editParent', 'editParentSearch');
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabels', 'editLabelSearch', 'editParent', 'editParentSearch', 'editRevision');
     }
 
     public function saveIssue(): void
     {
         $this->reset('editError');
         $this->validate(['editTitle' => ['required', 'string', 'max:255'], 'editBody' => ['nullable', 'string', 'max:65535'], 'editNewGroup' => ['nullable', 'string', 'max:50'], 'editNewLabels' => ['array'], 'editNewLabels.*' => ['string', 'max:50'], 'editLabels' => ['array'], 'editLabels.*' => ['integer']]);
-        $issue = Issue::query()->where('is_available', true)->with(['projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')])->find($this->selected);
-        if (! $issue instanceof Issue) {
+
+        try {
+            app(UpdateTodoIssue::class)->handle(
+                id: $this->selected,
+                expectedRevision: $this->editRevision,
+                title: $this->editTitle,
+                body: $this->editBody === '' ? null : $this->editBody,
+                areaId: $this->editArea,
+                parentId: $this->editParent,
+                groupId: $this->editGroup,
+                priorityId: $this->editPriority,
+                labelIds: $this->editLabels,
+                newGroupName: $this->editNewGroup,
+                newLabelNames: $this->editNewLabels,
+            );
+        } catch (TodoRecordUnavailableException) {
             $this->cancelEdit();
             $this->selected = 0;
 
             return;
-        }
-        $repository = GitHubRepository::query()->where('full_name', config('github.owner').'/'.config('github.repository'))->first();
-        if (! $repository instanceof GitHubRepository) {
-            $this->editError = 'The repository is not configured or not available locally. Refresh and try again.';
+        } catch (TodoRecordNotFoundException) {
             $this->cancelEdit();
 
             return;
-        }
-        $project = $this->editArea > 0 ? GitHubProject::query()->where('is_available', true)->find($this->editArea) : null;
-        $parent = $this->editParent > 0 ? Issue::query()->where('is_available', true)->find($this->editParent) : null;
-        $group = $this->editGroup > 0 ? ProjectFieldOption::query()->with('field')->find($this->editGroup) : null;
-        $priority = $this->editPriority > 0 ? ProjectFieldOption::query()->with('field')->find($this->editPriority) : null;
-        $labels = Label::query()->where('is_available', true)->whereIn('id', $this->editLabels)->get();
-        if (($this->editArea > 0 && ! $project instanceof GitHubProject) || ($this->editParent > 0 && ! $parent instanceof Issue) || $labels->count() !== count($this->editLabels)) {
-            $this->editError = 'One or more selected task fields are no longer available. Refresh and try again.';
+        } catch (TodoStaleRevisionException) {
+            $this->editError = 'This task was changed elsewhere since you started editing. Cancel, reopen it to see the latest, and apply your edit again.';
+
+            return;
+        } catch (TodoValidationException $exception) {
+            $this->editError = $exception->getMessage();
 
             return;
         }
-        if ($group instanceof ProjectFieldOption && (! $project instanceof GitHubProject || $group->field?->project_id !== $project->id)) {
-            $this->editError = 'The selected Group is not available in this Area. Refresh and try again.';
-
-            return;
-        }
-        if ($priority instanceof ProjectFieldOption && (! $project instanceof GitHubProject || $priority->field?->semantic_key !== 'priority' || $priority->field?->project_id !== $project->id)) {
-            $this->editError = 'The selected Priority is not available in this Area. Refresh and try again.';
-
-            return;
-        }
-        if (trim($this->editNewGroup) !== '' && ! $project instanceof GitHubProject) {
-            $this->editError = 'Choose an area before creating a Group.';
-
-            return;
-        }
-        DB::transaction(function () use (&$group, &$labels, $project, $priority, $parent, $repository, $issue): void {
-            if (trim($this->editNewGroup) !== '') {
-                $groupField = $project->fields()->where('semantic_key', 'group')->where('is_available', true)->first();
-                $existingGroup = $groupField?->options()->whereRaw('LOWER(name) = LOWER(?)', [trim($this->editNewGroup)])->first();
-                if ($existingGroup instanceof ProjectFieldOption) {
-                    $group = $existingGroup;
-                } else {
-                    $newOption = ProjectFieldOption::create([
-                        'project_field_id' => $groupField->id,
-                        'github_option_id' => null,
-                        'name' => trim($this->editNewGroup),
-                        'color' => 'GRAY',
-                        'position' => (int) $groupField->options()->max('position') + 1,
-                    ]);
-                    app(EnqueueGitHubPush::class)->handle('create_group_option', 'project_field_option', $newOption->id, ['name' => $newOption->name, 'color' => 'GRAY'], 'group_option:create:'.$newOption->id);
-                    $group = $newOption;
-                }
-            }
-            foreach ($this->editNewLabels as $newLabelName) {
-                $newLabelName = Str::lower(trim($newLabelName));
-                if ($newLabelName === '') {
-                    continue;
-                }
-                $existingLabel = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = LOWER(?)', [$newLabelName])->first();
-                if ($existingLabel instanceof Label) {
-                    $labels->push($existingLabel);
-                } else {
-                    $newLabel = Label::create([
-                        'repository_id' => $repository->id,
-                        'github_node_id' => null,
-                        'name' => $newLabelName,
-                        'color' => '6B7280',
-                        'is_available' => true,
-                    ]);
-                    app(EnqueueGitHubPush::class)->handle('create_label', 'label', $newLabel->id, ['name' => $newLabel->name, 'color' => '6B7280', 'description' => null], 'label:create:'.$newLabel->id);
-                    $labels->push($newLabel);
-                }
-            }
-            $labels = $labels->unique('id')->values();
-            $issue->update(['title' => $this->editTitle, 'body' => $this->editBody === '' ? null : $this->editBody]);
-            app(EnqueueGitHubPush::class)->handle('update_issue_body', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:update:'.$issue->id.':'.now()->timestamp);
-
-            $current = $issue->labels()->where('is_available', true)->get();
-            $currentIds = $current->pluck('id')->all();
-            $requestedIds = $labels->pluck('id')->all();
-            $addIds = array_values(array_diff($requestedIds, $currentIds));
-            $removeIds = array_values(array_diff($currentIds, $requestedIds));
-            if ($addIds !== [] || $removeIds !== []) {
-                $issue->labels()->sync($requestedIds);
-                app(EnqueueGitHubPush::class)->handle('set_issue_labels', 'issue', $issue->id, ['add_label_ids' => $addIds, 'remove_label_ids' => $removeIds], 'issue:labels:'.$issue->id.':'.now()->timestamp);
-            }
-
-            if ($parent instanceof Issue && $issue->parent_issue_id !== $parent->id) {
-                $sibling_position = (int) Issue::query()->where('parent_issue_id', $parent->id)->max('sibling_position') + 1;
-                $issue->update(['parent_issue_id' => $parent->id, 'sibling_position' => $sibling_position]);
-                app(EnqueueGitHubPush::class)->handle('set_issue_parent', 'issue', $issue->id, ['parent_issue_id' => $parent->id], 'issue:parent:'.$issue->id.':'.now()->timestamp);
-            } elseif ($parent === null && $issue->parent_issue_id !== null) {
-                $previousParentGithubNodeId = $issue->github_parent_node_id;
-                $issue->update(['parent_issue_id' => null, 'github_parent_node_id' => null, 'sibling_position' => 0]);
-                if ($previousParentGithubNodeId !== null) {
-                    app(EnqueueGitHubPush::class)->handle('remove_issue_parent', 'issue', $issue->id, ['parent_github_node_id' => $previousParentGithubNodeId], 'issue:remove_parent:'.$issue->id.':'.now()->timestamp);
-                }
-            }
-
-            if ($project instanceof GitHubProject) {
-                $item = $issue->projectItems->firstWhere('project_id', $project->id);
-                if (! $item instanceof ProjectItem) {
-                    $item = ProjectItem::create([
-                        'project_id' => $project->id,
-                        'issue_id' => $issue->id,
-                        'github_node_id' => null,
-                        'content_type' => 'ISSUE',
-                        'is_available' => true,
-                        'last_seen_at' => now(),
-                    ]);
-                    app(EnqueueGitHubPush::class)->handle('add_project_membership', 'project_item', $item->id, [], 'project_item:create:'.$item->id);
-                }
-                foreach ($issue->projectItems->where('project_id', '!==', $project->id) as $obsolete) {
-                    if ($obsolete->github_node_id !== null) {
-                        app(EnqueueGitHubPush::class)->handle('delete_project_item', 'project_item', $obsolete->id, [], 'project_item:delete:'.$obsolete->id);
-                    } else {
-                        $obsolete->update(['is_available' => false]);
-                    }
-                }
-                if ($group instanceof ProjectFieldOption) {
-                    $item->update(['group_option_id' => $group->id]);
-                    app(EnqueueGitHubPush::class)->handle('set_project_item_group', 'project_item', $item->id, ['group_option_id' => $group->id], 'project_item:group:'.$item->id);
-                } elseif ($item->group_option_id !== null) {
-                    $item->update(['group_option_id' => null]);
-                    app(EnqueueGitHubPush::class)->handle('clear_project_item_group', 'project_item', $item->id, [], 'project_item:clear_group:'.$item->id.':'.now()->timestamp);
-                }
-                if ($priority instanceof ProjectFieldOption) {
-                    $item->update(['priority_option_id' => $priority->id]);
-                    app(EnqueueGitHubPush::class)->handle('set_project_item_priority', 'project_item', $item->id, ['priority_option_id' => $priority->id], 'project_item:priority:'.$item->id);
-                } elseif ($item->priority_option_id !== null) {
-                    $item->update(['priority_option_id' => null]);
-                    app(EnqueueGitHubPush::class)->handle('clear_project_item_priority', 'project_item', $item->id, [], 'project_item:clear_priority:'.$item->id.':'.now()->timestamp);
-                }
-            } else {
-                foreach ($issue->projectItems as $obsolete) {
-                    if ($obsolete->github_node_id !== null) {
-                        app(EnqueueGitHubPush::class)->handle('delete_project_item', 'project_item', $obsolete->id, [], 'project_item:delete:'.$obsolete->id);
-                    } else {
-                        $obsolete->update(['is_available' => false]);
-                    }
-                }
-            }
-        });
         $this->cancelEdit();
     }
 
