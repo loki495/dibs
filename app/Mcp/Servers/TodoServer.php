@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Servers;
 
 use App\Mcp\Methods\InitializeLegacyClient;
+use App\Mcp\Methods\LogToolCall;
 use App\Mcp\Tools\ClaimTodoTask;
 use App\Mcp\Tools\CommentOnTodoTask;
 use App\Mcp\Tools\CompleteTodoTaskTool;
@@ -71,6 +72,7 @@ class TodoServer extends Server
     protected function boot(): void
     {
         $this->addMethod('initialize', InitializeLegacyClient::class);
+        $this->addMethod('tools/call', LogToolCall::class);
     }
 
     protected function validateProtocolMeta(JsonRpcRequest $request, ServerContext $context): void

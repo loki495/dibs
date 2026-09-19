@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Activity;
 
 use App\Models\ChangeLog;
+use App\Models\McpCallLog;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Throwable;
@@ -41,6 +42,26 @@ class ActivityRecorder
     public function event(string $category, string $action, string $summary, array $changes = []): ?ChangeLog
     {
         return $this->write($category, $action, $summary, $changes, null, null);
+    }
+
+    /**
+     * Record one MCP tool call. The request id comes from the current context, so it lines up with any
+     * change entries the same call produced. Arguments are redacted and truncated like a diff would be.
+     *
+     * @param  array<array-key, mixed>  $arguments
+     * @param  McpCallLog::STATUS_*  $status
+     */
+    public function mcpCall(string $tool, array $arguments, string $status, ?string $errorMessage, int $durationMs, ?string $agentLabel): ?McpCallLog
+    {
+        return $this->guarded(fn (): McpCallLog => McpCallLog::query()->create([
+            'request_id' => $this->context->requestId(),
+            'tool' => Str::limit($tool, 255),
+            'arguments' => $this->redactor->redact($arguments),
+            'status' => $status,
+            'error_message' => $errorMessage === null ? null : $this->redactor->redact($errorMessage),
+            'duration_ms' => $durationMs,
+            'agent_label' => $agentLabel === null ? null : Str::limit($agentLabel, 255),
+        ]));
     }
 
     /**
@@ -95,23 +116,35 @@ class ActivityRecorder
     /** @param  array<string, array{from: mixed, to: mixed}>  $changes */
     private function write(string $category, string $action, string $summary, array $changes, ?Model $subject, ?string $subjectLabel): ?ChangeLog
     {
+        return $this->guarded(fn (): ChangeLog => ChangeLog::query()->create([
+            'request_id' => $this->context->requestId(),
+            'source' => $this->context->source(),
+            'category' => $category,
+            'action' => $action,
+            'subject_type' => $subject instanceof Model ? Str::lower(class_basename($subject)) : null,
+            'subject_id' => $subject?->getKey(),
+            'subject_label' => $subject instanceof Model ? Str::limit($subjectLabel ?? $this->labelOf($subject), 255) : null,
+            'summary' => $this->redactor->redact($summary),
+            'changes' => $changes === [] ? null : $this->redactor->redact($changes),
+            'actor_type' => $this->context->actorType(),
+            'actor_label' => $this->context->actorLabel(),
+        ]));
+    }
+
+    /**
+     * A log entry that cannot be written must not undo the write it describes in production,
+     * but a local/debug run has to see it.
+     *
+     * @template T
+     *
+     * @param  callable(): T  $write
+     * @return T|null
+     */
+    private function guarded(callable $write): mixed
+    {
         try {
-            return ChangeLog::query()->create([
-                'request_id' => $this->context->requestId(),
-                'source' => $this->context->source(),
-                'category' => $category,
-                'action' => $action,
-                'subject_type' => $subject instanceof Model ? Str::lower(class_basename($subject)) : null,
-                'subject_id' => $subject?->getKey(),
-                'subject_label' => $subject instanceof Model ? Str::limit($subjectLabel ?? $this->labelOf($subject), 255) : null,
-                'summary' => $this->redactor->redact($summary),
-                'changes' => $changes === [] ? null : $this->redactor->redact($changes),
-                'actor_type' => $this->context->actorType(),
-                'actor_label' => $this->context->actorLabel(),
-            ]);
+            return $write();
         } catch (Throwable $e) {
-            // A log entry that cannot be written must not undo the write it describes in production,
-            // but a local/debug run has to see it.
             if (config('app.debug')) {
                 throw $e;
             }
