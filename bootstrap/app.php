@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\BeginActivityContext;
 use App\Http\Middleware\ResolveDemoDatabase;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Application;
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // ResolveDemoDatabase's own docblock). appendToGroup only fixes the array position;
         // the priority list is what Laravel's router actually sorts by.
         $middleware->appendToGroup('web', ResolveDemoDatabase::class);
+        $middleware->appendToGroup('web', BeginActivityContext::class);
         $middleware->prependToPriorityList(before: StartSession::class, prepend: ResolveDemoDatabase::class);
         $middleware->appendToPriorityList(after: EncryptCookies::class, append: ResolveDemoDatabase::class);
     })
