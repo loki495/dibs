@@ -6,12 +6,16 @@ namespace App\Actions;
 
 use App\Models\GitHubRepository;
 use App\Models\Label;
+use App\Services\Activity\ActivityRecorder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class ResolveLabels
 {
-    public function __construct(private readonly EnqueueGitHubPush $enqueue) {}
+    public function __construct(
+        private readonly EnqueueGitHubPush $enqueue,
+        private readonly ActivityRecorder $recorder,
+    ) {}
 
     /**
      * Add labels by name to an already-selected set: an existing label in the repository is reused
@@ -44,6 +48,7 @@ class ResolveLabels
                 'is_available' => true,
             ]);
             $this->enqueue->handle('create_label', 'label', $label->id, ['name' => $label->name, 'color' => '6B7280', 'description' => null], 'label:create:'.$label->id);
+            $this->recorder->change('ResolveLabels', $label, 'Created label', $this->recorder->diffModel($label, ['name', 'color']));
             $resolved->push($label);
         }
 
