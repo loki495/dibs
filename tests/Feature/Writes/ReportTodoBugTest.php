@@ -28,7 +28,7 @@ it('creates a labeled issue with a composed body from tool, arguments, and detai
         ->and($issue->body)->toContain('**Tool/command:** todo_revise')
         ->and($issue->body)->toContain('**Arguments:** {"id":42,"expectedRevision":1}')
         ->and($issue->body)->toContain('Called todo_revise twice')
-        ->and($issue->labels->pluck('name')->all())->toBe(['agent-report'])
+        ->and($issue->labels->pluck('name')->all())->toBe(['agent report'])
         ->and(GitHubPushQueueItem::query()->where('operation', 'create_issue')->where('target_id', $issue->id)->exists())->toBeTrue();
 });
 
@@ -36,15 +36,15 @@ it('creates a report with only the required summary and details', function (): v
     $issue = app(ReportTodoBug::class)->handle(summary: 'Something felt off', details: 'Not sure what tool caused it, but the result looked wrong.');
 
     expect($issue->body)->toBe('Not sure what tool caused it, but the result looked wrong.')
-        ->and($issue->labels->pluck('name')->all())->toBe(['agent-report']);
+        ->and($issue->labels->pluck('name')->all())->toBe(['agent report']);
 });
 
-it('reuses the agent-report label case-insensitively across multiple reports', function (): void {
+it('reuses the agent report label case-insensitively across multiple reports', function (): void {
     app(ReportTodoBug::class)->handle(summary: 'First report', details: 'Details one.');
     app(ReportTodoBug::class)->handle(summary: 'Second report', details: 'Details two.');
 
-    expect(Label::query()->whereRaw('LOWER(name) = ?', ['agent-report'])->count())->toBe(1)
-        ->and(Issue::query()->whereHas('labels', fn ($query) => $query->where('name', 'agent-report'))->count())->toBe(2);
+    expect(Label::query()->whereRaw('LOWER(name) = ?', ['agent report'])->count())->toBe(1)
+        ->and(Issue::query()->whereHas('labels', fn ($query) => $query->where('name', 'agent report'))->count())->toBe(2);
 });
 
 it('throws a validation exception when the repository is not configured', function (): void {
@@ -87,5 +87,5 @@ it('falls back to an unparented report when the configured container is invalid'
 
     expect($issue->exists)->toBeTrue()
         ->and($issue->parent_issue_id)->toBeNull()
-        ->and($issue->labels->pluck('name')->all())->toBe(['agent-report']);
+        ->and($issue->labels->pluck('name')->all())->toBe(['agent report']);
 });

@@ -21,10 +21,10 @@ it('files a bug report and returns full issue detail', function (): void {
         'details' => 'Reread and reconciled but the message did not mention the field that changed.',
         'toolOrCommand' => 'todo_revise',
         'arguments' => '{"id":42}',
-    ])->assertOk()->assertHasNoErrors()->assertSee('todo_revise conflict message is confusing')->assertSee('agent-report');
+    ])->assertOk()->assertHasNoErrors()->assertSee('todo_revise conflict message is confusing')->assertSee('agent report');
 
     $issue = Issue::query()->where('title', 'todo_revise conflict message is confusing')->sole();
-    expect($issue->labels->pluck('name')->all())->toBe(['agent-report'])
+    expect($issue->labels->pluck('name')->all())->toBe(['agent report'])
         ->and($issue->body)->toContain('**Tool/command:** todo_revise');
 });
 

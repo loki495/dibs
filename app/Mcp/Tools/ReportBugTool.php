@@ -16,7 +16,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Reports a problem with the Todo MCP/CLI tooling itself — a bug, confusing behavior, or unexpected error hit while using these tools. NOT for product tasks; use todo_create for those. Creates a GitHub issue labeled agent-report and returns its full detail; add more detail later with todo_comment against the returned id.')]
+#[Description('Reports a problem with the Todo MCP/CLI tooling itself — a bug, confusing behavior, or unexpected error hit while using these tools. NOT for product tasks; use todo_create for those. Creates a GitHub issue labeled agent report and returns its full detail; add more detail later with todo_comment against the returned id.')]
 class ReportBugTool extends Tool implements Errable
 {
     protected string $name = 'todo_report_bug';
