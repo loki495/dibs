@@ -17,7 +17,7 @@ use App\Actions\RenameGroupOption;
 use App\Actions\RenameLabel;
 use App\Actions\RestoreTodoIssue;
 use App\Actions\ReviseTodoComment;
-use App\Actions\UpdateGitHubProject;
+use App\Actions\UpdateProjectSettings;
 use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
@@ -277,25 +277,10 @@ new class extends Component
             'projectSettingsTitle' => ['required', 'string', 'max:255'],
             'projectSettingsColor' => ['required', 'string', 'regex:/^[a-fA-F0-9]{6}$/'],
         ]);
-        $project = GitHubProject::query()->where('is_available', true)->find($this->projectSettingsProject);
-        if (! $project instanceof GitHubProject) {
-            $this->projectSettingsError = 'The selected project is no longer available. Refresh and try again.';
-
-            return;
-        }
-        $token = (string) config('github.token');
-        if ($token === '') {
-            $this->projectSettingsError = 'Project settings need a server-side GitHub token. Set GITHUB_TOKEN and try again.';
-
-            return;
-        }
 
         try {
-            if (trim($this->projectSettingsTitle) !== $project->title) {
-                $project = app(UpdateGitHubProject::class)->handle($token, $project, $this->projectSettingsTitle);
-            }
-            $project->update(['color' => strtolower($this->projectSettingsColor)]);
-        } catch (GitHubSyncException $exception) {
+            app(UpdateProjectSettings::class)->handle((string) config('github.token'), $this->projectSettingsProject, $this->projectSettingsTitle, $this->projectSettingsColor);
+        } catch (GitHubSyncException|TodoRecordUnavailableException|TodoValidationException $exception) {
             $this->projectSettingsError = $exception->getMessage();
 
             return;
