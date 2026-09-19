@@ -8,8 +8,8 @@ The same server lets agents save plans, track progress, and record project-speci
 decisions as they work, and a claim/heartbeat/release/complete lifecycle keeps multiple agents (or
 the same agent across sessions) from duplicating or colliding on the same task. You can also just
 use it yourself as a regular todo list — the web UI and the agent surface share the same data and
-the same Actions underneath. Backed by GitHub Issues and Projects as an asynchronous mirror; local
-SQLite is authoritative.
+the same Actions underneath. Optionally mirrored to GitHub Issues and Projects asynchronously;
+local SQLite is authoritative.
 
 **Stack:** Laravel 13, Livewire 4, PHP 8.5, SQLite, Tailwind 4, Flux UI.
 
@@ -95,8 +95,7 @@ For example, call `todo_search` with:
 
 Every term must match somewhere in the title or body. Add `area`, `group`, `label`, or `state`
 to narrow the search; use `todo_show` for full detail on selected results. Search currently
-covers keywords in titles and bodies, not comments or semantic similarity. Reconnect an
-existing MCP client after upgrading so it discovers the new tool.
+covers keywords in titles and bodies, not comments or semantic similarity.
 
 Claim/heartbeat/release/complete keeps multiple agents (or the same agent across sessions) from
 duplicating or colliding on the same task, all without ever handling your GitHub token — every
@@ -104,10 +103,16 @@ write goes through the same Actions the web UI uses. See
 [`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a JSON CLI
 fallback (`php artisan todo:agent:*`) for scripting or recovery.
 
+To teach an agent how to use these tools well, drop [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md)
+into its skills directory (or paste it into its instructions). It's a short, generic guide in the
+Agent Skills format (a `SKILL.md` with `name`/`description` frontmatter) covering cold start,
+plans, claims, and recording research and lessons.
+
 ## Learn more
 
 - [`docs/architecture.md`](docs/architecture.md) — data model and sync design
 - [`docs/agent-interface.md`](docs/agent-interface.md) — MCP/CLI contract for agents
+- [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md) — a ready-to-use agent skill for working with Dibs
 - [`docs/demo-hosting.md`](docs/demo-hosting.md) — how the public demo instance is built and deployed
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
 - [`CLAUDE.md`](CLAUDE.md) — conventions for AI coding assistants working in this repo
