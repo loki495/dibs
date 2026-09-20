@@ -54,3 +54,36 @@ it('reports unverifiable when /proc is not readable in this environment', functi
 it('reports verifiable when the real /proc is readable', function (): void {
     expect((new LinuxProcessLiveness)->isVerifiable())->toBeTrue();
 });
+
+it('returns null when the stat file has no closing paren after the process name', function (): void {
+    $procPath = sys_get_temp_dir().'/fake-proc-'.uniqid();
+    mkdir($procPath.'/123', recursive: true);
+    file_put_contents($procPath.'/stat', "btime 1000000000\n");
+    file_put_contents($procPath.'/123/stat', '123 (no-closing-paren-here');
+
+    $liveness = new LinuxProcessLiveness($procPath);
+
+    expect($liveness->startedAt(123))->toBeNull();
+});
+
+it('returns null when the stat file has too few fields to contain a start time', function (): void {
+    $procPath = sys_get_temp_dir().'/fake-proc-'.uniqid();
+    mkdir($procPath.'/123', recursive: true);
+    file_put_contents($procPath.'/stat', "btime 1000000000\n");
+    file_put_contents($procPath.'/123/stat', '123 (proc) S 1 1 1');
+
+    $liveness = new LinuxProcessLiveness($procPath);
+
+    expect($liveness->startedAt(123))->toBeNull();
+});
+
+it('returns null boot time when /proc/stat has no btime line', function (): void {
+    $procPath = sys_get_temp_dir().'/fake-proc-'.uniqid();
+    mkdir($procPath.'/123', recursive: true);
+    file_put_contents($procPath.'/stat', "cpu 0 0 0 0\n");
+    file_put_contents($procPath.'/123/stat', '123 (proc) S '.str_repeat('1 ', 20));
+
+    $liveness = new LinuxProcessLiveness($procPath);
+
+    expect($liveness->startedAt(123))->toBeNull();
+});
