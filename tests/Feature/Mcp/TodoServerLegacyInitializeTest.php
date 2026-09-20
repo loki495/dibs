@@ -88,14 +88,18 @@ it('serves tool calls without a _meta block once a legacy client has initialized
         ->and($response['result']['tools'])->not->toBeEmpty();
 });
 
-it('still enforces _meta on a new-style client that never sent a legacy initialize', function (): void {
+it('treats a call with no _meta and no prior initialize as legacy too, per the framework default', function (): void {
+    // laravel/mcp 1.0.0's own JsonRpcRequest::isLegacy() defines "legacy" as simply "no _meta
+    // present" - it doesn't require a prior initialize handshake the way Dibs' own pre-1.0.0
+    // detection did. This is the framework's call to make now, not Dibs' - see the "keep
+    // bespoke legacy-MCP handshake support" decision record for why we're not fighting it.
     $transport = new RecordingTransport;
     $server = bootTodoServer($transport);
 
     $response = sendRawRpc($server, $transport, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => (object) []]);
 
-    expect($response)->toHaveKey('error')
-        ->and($response['error']['code'])->toBe(-32602);
+    expect($response)->not->toHaveKey('error')
+        ->and($response['result']['tools'])->not->toBeEmpty();
 });
 
 it('still serves a new-style client that sends the required _meta block', function (): void {

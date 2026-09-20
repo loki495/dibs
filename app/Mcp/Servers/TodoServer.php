@@ -26,22 +26,12 @@ use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Version;
-use Laravel\Mcp\Server\ServerContext;
-use Laravel\Mcp\Transport\JsonRpcRequest;
 
 #[Name('Dibs')]
 #[Version('0.1.0')]
 #[Instructions('Host-local server for this Dibs workspace. Local SQLite is authoritative; GitHub is an asynchronous mirror reached through a push queue. Call todo_status first to confirm the server and repository identity before using other tools.')]
 class TodoServer extends Server
 {
-    /**
-     * Set once a pre-2026-07-28 client is detected (no `_meta` on any request, starting with
-     * `initialize` itself) so every later request on this same connection is also exempted from
-     * the new spec's `_meta` requirement. Safe as instance state: one TodoServer instance only
-     * ever serves the single stdio connection it was spawned for.
-     */
-    private bool $legacyClient = false;
-
     protected array $tools = [
         DescribeTodoServer::class,
         DescribeTodoContext::class,
@@ -73,16 +63,5 @@ class TodoServer extends Server
     {
         $this->addMethod('initialize', InitializeLegacyClient::class);
         $this->addMethod('tools/call', LogToolCall::class);
-    }
-
-    protected function validateProtocolMeta(JsonRpcRequest $request, ServerContext $context): void
-    {
-        if ($this->legacyClient || ($request->method === 'initialize' && $request->meta() === null)) {
-            $this->legacyClient = true;
-
-            return;
-        }
-
-        parent::validateProtocolMeta($request, $context);
     }
 }
