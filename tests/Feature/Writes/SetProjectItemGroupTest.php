@@ -40,3 +40,39 @@ it('refuses a group from another project before contacting GitHub', function ():
         ->toThrow(GitHubSyncException::class, 'same Project');
     Http::assertNothingSent();
 });
+
+it('refuses an unavailable project item before contacting GitHub', function (): void {
+    Http::fake();
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $item = ProjectItem::factory()->for($project, 'project')->create(['is_available' => false]);
+
+    expect(fn () => app(SetProjectItemGroup::class)->handle('test-token', $item, $group))
+        ->toThrow(GitHubSyncException::class, 'not available locally');
+    Http::assertNothingSent();
+});
+
+it('is a no-op when the requested group is already the current one', function (): void {
+    Http::fake();
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $item = ProjectItem::factory()->for($project, 'project')->create(['group_option_id' => $group->id]);
+
+    $result = app(SetProjectItemGroup::class)->handle('test-token', $item, $group);
+
+    expect($result->is($item))->toBeTrue();
+    Http::assertNothingSent();
+});
+
+it('rejects when github does not confirm the group assignment', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $item = ProjectItem::factory()->for($project, 'project')->create();
+    Http::fake(fn () => Http::response(['data' => ['updateProjectV2ItemFieldValue' => ['projectV2Item' => null]]], 200));
+
+    expect(fn () => app(SetProjectItemGroup::class)->handle('test-token', $item, $group))
+        ->toThrow(GitHubSyncException::class, 'did not confirm');
+});
