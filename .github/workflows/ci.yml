@@ -99,7 +99,7 @@ jobs:
       # deployable image comes from docker/Dockerfile.prod + docker-compose.prod.yml instead,
       # which bakes the app in and drops the bind mount. See docs/demo-hosting.md.
       - name: Build and push production image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.prod
