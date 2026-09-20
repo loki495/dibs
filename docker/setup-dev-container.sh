@@ -12,6 +12,9 @@ rm -rf /var/lib/apt/lists/*
 # vendor/ (and therefore this behavior) is shared with app-test via the same
 # bind-mounted project directory.
 docker-php-ext-install pdo_sqlite zip intl pcntl sockets
+# PCOV for `composer pest --coverage` (lighter/faster than Xdebug for coverage-only use)
+pecl install pcov
+echo 'extension=pcov.so' > /usr/local/etc/php/conf.d/pcov.ini
 usermod -u 1000 www-data
 groupmod -g 1000 www-data
 sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|' /etc/apache2/sites-available/000-default.conf

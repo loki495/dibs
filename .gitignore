@@ -39,3 +39,4 @@ Thumbs.db
 /docker/ssh/capture_bridge_ed25519
 /docker/ssh/capture_bridge_ed25519.pub
 /tests/Browser/Screenshots
+/coverage.xml
