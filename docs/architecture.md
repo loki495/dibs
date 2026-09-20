@@ -96,11 +96,13 @@ dependency order (`OPERATION_ORDER`), not insertion order — an issue must exis
 before its Project membership can, for example — and a handler whose dependency hasn't pushed
 yet returns `waiting` and is retried on the next pass rather than failing.
 
-`php artisan todo:push:drain` (registered `Schedule::command(...)->everyMinute()` in
-`routes/console.php`, run by the `dibs-scheduler` container's `schedule:work` daemon) loops
-internally for up to 55 seconds between passes (5s apart) rather than draining once and exiting,
-so delivery is closer to real-time than a bare once-a-minute tick would allow, while still
-leaving room before the next scheduled tick.
+`php artisan todo:push:drain` runs a single pass and exits, registered
+`Schedule::command(...)->everyTenSeconds()->withoutOverlapping(1)` in `routes/console.php` (run
+by the `dibs-scheduler` container's `schedule:work` daemon, which supports sub-minute frequencies
+natively — no extra infra needed). A single quick pass fired every ten seconds gives near-real-time
+delivery without the bookkeeping a long-lived internal loop would need, and keeps the window a
+container restart could catch mid-run down to however long one pass's GitHub calls take rather
+than up to a minute.
 
 **Operational note:** the long-lived `schedule:work` process can silently stop matching its own
 `everyMinute()` schedule (observed 2026-09-14 — its internal due-check disagreed with a fresh

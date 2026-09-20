@@ -10,12 +10,9 @@ use Illuminate\Console\Command;
 class DrainGitHubPushQueueCommand extends Command
 {
     protected $signature = 'todo:push:drain
-        {--limit=20 : Maximum queue rows to attempt per pass}
-        {--once : Run a single pass instead of looping for the rest of the scheduled slot}
-        {--interval=5 : Seconds to sleep between passes when looping}
-        {--duration=55 : Seconds to keep looping before exiting, leaving room before the next scheduled tick}';
+        {--limit=20 : Maximum queue rows to attempt per pass}';
 
-    protected $description = 'Deliver pending local writes to GitHub through the durable push queue, looping between scheduler ticks for near-real-time delivery';
+    protected $description = 'Deliver pending local writes to GitHub through the durable push queue in a single pass; scheduled every few seconds for near-real-time delivery';
 
     public function handle(DrainGitHubPushQueue $drain): int
     {
@@ -26,18 +23,8 @@ class DrainGitHubPushQueueCommand extends Command
             return self::FAILURE;
         }
 
-        $limit = (int) $this->option('limit');
-        $interval = max(1, (int) $this->option('interval'));
-        $deadline = now()->addSeconds(max(0, (int) $this->option('duration')));
-
-        do {
-            $result = $drain->handle($token, $limit);
-            $this->info(sprintf('Pushed %d, deferred %d, needing attention %d, waiting %d.', $result['pushed'], $result['deferred'], $result['needs_attention'], $result['waiting']));
-            if ($this->option('once') || now()->gte($deadline)) {
-                break;
-            }
-            sleep($interval);
-        } while (now()->lt($deadline));
+        $result = $drain->handle($token, (int) $this->option('limit'));
+        $this->info(sprintf('Pushed %d, deferred %d, needing attention %d, waiting %d.', $result['pushed'], $result['deferred'], $result['needs_attention'], $result['waiting']));
 
         return self::SUCCESS;
     }
