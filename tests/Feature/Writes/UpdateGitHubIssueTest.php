@@ -27,3 +27,20 @@ it('rejects an empty title before contacting GitHub', function (): void {
         ->toThrow(GitHubSyncException::class, 'title is required');
     Http::assertNothingSent();
 });
+
+it('rejects an unavailable issue before contacting GitHub', function (): void {
+    Http::fake();
+    $issue = Issue::factory()->create(['is_available' => false]);
+
+    expect(fn () => app(UpdateGitHubIssue::class)->handle('test-token', $issue, 'New title', null))
+        ->toThrow(GitHubSyncException::class, 'not available in the local snapshot');
+    Http::assertNothingSent();
+});
+
+it('rejects when github does not confirm the task update', function (): void {
+    $issue = Issue::factory()->create(['github_node_id' => 'I_task']);
+    Http::fake(fn () => Http::response(['data' => ['updateIssue' => ['issue' => null]]], 200));
+
+    expect(fn () => app(UpdateGitHubIssue::class)->handle('test-token', $issue, 'New title', null))
+        ->toThrow(GitHubSyncException::class, 'did not confirm');
+});

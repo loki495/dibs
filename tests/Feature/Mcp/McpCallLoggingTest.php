@@ -244,6 +244,43 @@ it('does not log methods other than tools/call', function (): void {
     expect(McpCallLog::count())->toBe(0);
 });
 
+it('logs a raw JSON-RPC error response (not thrown, not result.isError) as an error', function (): void {
+    // Distinct from the "unknown tool" test above: this covers CallTool returning a
+    // JsonRpcResponse whose content itself is a top-level {error: {message}} shape,
+    // rather than throwing or returning {result: {isError: true}}.
+    app()->bind(CallTool::class, fn (): CallTool => new class extends CallTool
+    {
+        public function handle(JsonRpcRequest $request, ServerContext $context): JsonRpcResponse
+        {
+            return JsonRpcResponse::error($request->id, -32000, 'raw protocol error');
+        }
+    });
+    $server = loggingServer($transport);
+
+    callTool($server, $transport, 'todo_status');
+
+    $log = onlyCallLog();
+    expect($log->status)->toBe(McpCallLog::STATUS_ERROR)
+        ->and($log->error_message)->toBe('raw protocol error');
+});
+
+it('logs an ok status when the response has neither a result nor an error', function (): void {
+    app()->bind(CallTool::class, fn (): CallTool => new class extends CallTool
+    {
+        public function handle(JsonRpcRequest $request, ServerContext $context): JsonRpcResponse
+        {
+            return new JsonRpcResponse(['jsonrpc' => '2.0', 'id' => $request->id]);
+        }
+    });
+    $server = loggingServer($transport);
+
+    callTool($server, $transport, 'todo_status');
+
+    $log = onlyCallLog();
+    expect($log->status)->toBe(McpCallLog::STATUS_OK)
+        ->and($log->error_message)->toBeNull();
+});
+
 describe('when the underlying call blows up', function (): void {
     beforeEach(function (): void {
         app()->bind(CallTool::class, fn (): CallTool => new class extends CallTool

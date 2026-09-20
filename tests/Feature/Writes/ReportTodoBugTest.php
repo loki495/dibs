@@ -54,6 +54,18 @@ it('throws a validation exception when the repository is not configured', functi
         ->toThrow(TodoValidationException::class);
 });
 
+it('still fails clearly when the repository is missing and no agent-report area/group/parent is configured either', function (): void {
+    // Unlike the test above, this covers the fallback retry path itself (not just the
+    // rethrow) - with no DIBS_AGENT_REPORT_*_ID configured at all, ReportTodoBug's catch
+    // block takes the "retry unparented" branch instead of rethrowing immediately, and
+    // that retry call fails for the same underlying reason (no repository configured).
+    config(['dibs.agent_report_area_id' => null, 'dibs.agent_report_group_id' => null, 'dibs.agent_report_parent_id' => null]);
+    GitHubRepository::query()->delete();
+
+    expect(fn () => app(ReportTodoBug::class)->handle(summary: 'x', details: 'y'))
+        ->toThrow(TodoValidationException::class);
+});
+
 it('is idempotent: retrying the same key does not duplicate the report', function (): void {
     $first = app(ReportTodoBug::class)->handle(summary: 'Dup check', details: 'x', idempotencyKey: 'report-1');
     $second = app(ReportTodoBug::class)->handle(summary: 'Dup check', details: 'x', idempotencyKey: 'report-1');
