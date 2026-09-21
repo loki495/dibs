@@ -6,14 +6,14 @@ namespace App\Actions;
 
 use App\Exceptions\TodoValidationException;
 use App\Models\Label;
+use App\Support\LabelName;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class RenameLabel
 {
     public function handle(Label $label, string $name): Label
     {
-        $name = Str::lower(trim($name));
+        $name = LabelName::normalize($name);
         if ($name === '') {
             throw new TodoValidationException('A label needs a name.');
         }

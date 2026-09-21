@@ -31,7 +31,7 @@ Before starting work that may already have a plan, look for an open issue labele
 
 - Create one task with `todo_create`. Set `area`, and `groupId` (or `newGroupName`) and `parentId` when they obviously fit. If it is unclear which area or Group applies, ask rather than guess.
 - `todo_context` lists label names but not ids, so attach labels by name with `labelNames`: an array such as `["bug", "agent task"]`, each matched case-insensitively against existing labels and created if missing. `labelIds` (ids you already have) and the older single `newLabelName` still work and combine with it.
-- Name any label you create with spaces, not hyphens (`needs research`, not `needs-research`); labels accept spaces, and the label filter matches the exact name.
+- Name any label you create with spaces, not hyphens (`needs research`, not `needs-research`); labels accept spaces, and the label filter matches the exact name. Labels are always stored lowercase, so pass any casing and it resolves to the same label; the filter still matches the lowercase name.
 - Apply the `agent task` label to a task an agent could complete on its own. Include `"agent task"` in `labelNames`; it is attached, and created on first use.
 - Multi-step work: use `todo_scaffold_plan` to create the plan and its initial child tasks in one atomic call, and add more with `todo_create(parentId: <plan id>)` as scope grows. Break the plan into child tasks as soon as its scope is known, even if you will do it all yourself. Open children are what is left; closed ones are done.
 - Pass an `idempotencyKey` on any create or revise so a retry returns the original result instead of duplicating it.
