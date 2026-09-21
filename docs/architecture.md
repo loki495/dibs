@@ -45,6 +45,8 @@ because those fields are Project-specific. `project_fields.semantic_key` maps a 
 field IDs to the meanings the app understands (status/group/priority/planned/due/repeat) so a
 renamed GitHub field doesn't silently break the mapping.
 
+Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals.
+
 **`sync_states`** — one row per mirrored resource, tracking last successful/attempted sync and
 the last error, read by the manual-pull path only (no longer drives any scheduled behavior).
 

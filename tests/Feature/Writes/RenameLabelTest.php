@@ -43,3 +43,10 @@ it('does nothing and enqueues nothing when the lowercased name is unchanged', fu
     expect($label->fresh()->name)->toBe('urgent');
     expect(GitHubPushQueueItem::query()->count())->toBe(0);
 });
+
+it('collapses irregular whitespace in the new name', function (): void {
+    Http::fake();
+    $label = Label::factory()->create(['name' => 'old-name', 'github_node_id' => 'L_1']);
+
+    expect(app(RenameLabel::class)->handle($label, "  New\t  NAME "))->name->toBe('new name');
+});

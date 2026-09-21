@@ -67,3 +67,14 @@ it('merges selected and new labels without duplicating one that is both', functi
 
     expect($resolved->pluck('name')->sort()->values()->all())->toBe(['extra', 'keep']);
 });
+
+it('matches an existing label whatever the case or spacing of the requested name', function (): void {
+    $repository = GitHubRepository::factory()->create();
+    $existing = Label::factory()->for($repository, 'repository')->create(['name' => 'agent task']);
+
+    $resolved = app(ResolveLabels::class)->handle($repository, collect(), ['  Agent    TASK ']);
+
+    expect($resolved->pluck('id')->all())->toBe([$existing->id])
+        ->and(Label::query()->count())->toBe(1)
+        ->and(GitHubPushQueueItem::query()->count())->toBe(0);
+});

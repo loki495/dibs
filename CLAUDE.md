@@ -73,6 +73,8 @@ The app ships with an example labels scheme: workflow markers (`today`, `next`, 
 
 **Label naming:** use spaces, not hyphens (`needs research`, `agent task`, not `needs-research`) — labels accept spaces fine, and the label filter matches the exact name, so a hyphen-versus-space mismatch silently returns nothing. Keep a hyphen only in a word that is genuinely hyphenated. Applies to any new label, including ones the code creates itself (e.g. `ReportTodoBug::LABEL`).
 
+**Labels are always stored lowercase with single spaces** (`App\Support\LabelName::normalize`, used by `ResolveLabels`, `RenameLabel` and the GitHub import), so a name passed in any casing matches and creates the same label. A label imported from GitHub with capitals is stored lowercase and a rename is queued to GitHub to match. `php artisan labels:normalize` lists labels already stored with capitals (`--apply` renames them through the push queue).
+
 **`agent task`:** marks a task as agent-suitable — self-contained technical/writing/research work an agent can execute without a human physically present (code changes, audits, drafting, investigation), as opposed to a task that requires a human body or judgment call only a human can make (errands, purchases, in-person chores, "go do X yourself"). An agent creating a task via `todo_create`/`todo_scaffold_plan` should apply it when the task it's filing fits that description, so a later cold-start agent querying `todo_list` can filter to work it's actually able to take on.
 
 ## Knowledge records

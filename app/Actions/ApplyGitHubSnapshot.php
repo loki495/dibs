@@ -13,6 +13,7 @@ use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubSyncException;
+use App\Support\LabelName;
 use App\Support\ProjectColor;
 use Illuminate\Support\Facades\DB;
 
@@ -43,10 +44,15 @@ class ApplyGitHubSnapshot
                 $label = Label::query()->where('github_node_id', $remoteLabel['id'])->first()
                     ?? Label::query()->where('repository_id', $repo->id)->whereRaw('LOWER(name) = LOWER(?)', [$remoteLabel['name']])->first()
                     ?? new Label;
+                $name = LabelName::normalize($remoteLabel['name']);
                 $label->fill([
-                    'repository_id' => $repo->id, 'github_node_id' => $remoteLabel['id'], 'name' => $remoteLabel['name'],
+                    'repository_id' => $repo->id, 'github_node_id' => $remoteLabel['id'], 'name' => $name,
                     'color' => $remoteLabel['color'], 'description' => $remoteLabel['description'], ...$stamp,
                 ])->save();
+                if ($remoteLabel['name'] !== $name) {
+                    // Keyed by the remote spelling so repeated pulls of the same drift queue a single rename.
+                    app(EnqueueGitHubPush::class)->handle('rename_label', 'label', $label->id, ['name' => $name], 'label:normalize:'.$label->id.':'.$remoteLabel['name']);
+                }
                 $labels[$remoteLabel['id']] = $label->id;
             }
             Label::query()->where('repository_id', $repo->id)->whereNotIn('github_node_id', array_keys($labels))->update(['is_available' => false]);

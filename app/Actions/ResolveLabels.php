@@ -7,8 +7,8 @@ namespace App\Actions;
 use App\Models\GitHubRepository;
 use App\Models\Label;
 use App\Services\Activity\ActivityRecorder;
+use App\Support\LabelName;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 
 class ResolveLabels
 {
@@ -30,7 +30,7 @@ class ResolveLabels
     {
         $resolved = collect($labels->all());
         foreach ($newNames as $name) {
-            $name = Str::lower(trim($name));
+            $name = LabelName::normalize($name);
             if ($name === '') {
                 continue;
             }

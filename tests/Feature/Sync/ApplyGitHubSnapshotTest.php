@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\ApplyGitHubSnapshot;
+use App\Models\GitHubPushQueueItem;
 use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
@@ -173,4 +174,54 @@ it('preserves multiple memberships and non-issue content', function (): void {
     expect(Issue::query()->where('github_node_id', 'I2')->sole()->projectItems()->count())->toBe(2)
         ->and(ProjectItem::query()->where('github_node_id', 'PI3')->sole()->issue_id)->toBeNull()
         ->and(ProjectItem::query()->where('github_node_id', 'PI3')->sole()->raw_fields_json['content']['title'])->toBe('A draft');
+});
+
+it('stores a label imported with capitals in lowercase and queues a GitHub rename to match', function (): void {
+    $snapshot = githubSnapshotFixture();
+    $snapshot['labels'][] = ['id' => 'L9', 'name' => 'Resume', 'color' => 'aaaaaa', 'description' => null];
+
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+
+    $label = Label::query()->where('github_node_id', 'L9')->sole();
+    $push = GitHubPushQueueItem::query()->where('operation', 'rename_label')->sole();
+
+    expect($label->name)->toBe('resume')
+        ->and($push->target_id)->toBe($label->id)
+        ->and($push->payload)->toBe(['name' => 'resume'])
+        ->and($push->status)->toBe('pending');
+});
+
+it('normalizes irregular whitespace in an imported label name too', function (): void {
+    $snapshot = githubSnapshotFixture();
+    $snapshot['labels'][] = ['id' => 'L9', 'name' => 'Needs   Research', 'color' => 'aaaaaa', 'description' => null];
+
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+
+    expect(Label::query()->where('github_node_id', 'L9')->sole()->name)->toBe('needs research');
+});
+
+it('queues no rename for labels that are already lowercase, and only one across repeated pulls of the same drift', function (): void {
+    $lowercase = githubSnapshotFixture();
+    app(ApplyGitHubSnapshot::class)->handle($lowercase);
+    expect(GitHubPushQueueItem::query()->where('operation', 'rename_label')->count())->toBe(0);
+
+    $drifted = githubSnapshotFixture();
+    $drifted['labels'][] = ['id' => 'L9', 'name' => 'Resume', 'color' => 'aaaaaa', 'description' => null];
+    app(ApplyGitHubSnapshot::class)->handle($drifted);
+    app(ApplyGitHubSnapshot::class)->handle($drifted);
+
+    expect(GitHubPushQueueItem::query()->where('operation', 'rename_label')->count())->toBe(1);
+});
+
+it('reconciles a capitalised remote label onto its lowercase local-first twin without duplicating it', function (): void {
+    $repository = GitHubRepository::factory()->create(['github_node_id' => 'R1']);
+    $local = Label::factory()->for($repository, 'repository')->create(['github_node_id' => null, 'name' => 'resume']);
+
+    $snapshot = githubSnapshotFixture();
+    $snapshot['labels'][] = ['id' => 'L9', 'name' => 'Resume', 'color' => 'aaaaaa', 'description' => null];
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+
+    expect(Label::query()->whereRaw('LOWER(name) = ?', ['resume'])->count())->toBe(1)
+        ->and($local->fresh()->github_node_id)->toBe('L9')
+        ->and($local->fresh()->name)->toBe('resume');
 });
