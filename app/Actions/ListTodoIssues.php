@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Actions;
 
 use App\Models\Issue;
+use App\Support\IssueFilters;
 use App\Support\IssueSummary;
 use App\Support\KnowledgeLabels;
 
 class ListTodoIssues
 {
+    public function __construct(private readonly ApplyIssueFilters $applyFilters) {}
+
     public const MAX_PER_PAGE = 50;
 
     public const DEFAULT_PER_PAGE = 15;
@@ -25,23 +28,21 @@ class ListTodoIssues
         ?int $parentId = null,
         int $page = 1,
         int $perPage = self::DEFAULT_PER_PAGE,
+        ?IssueFilters $filters = null,
     ): array {
         $perPage = max(1, min($perPage, self::MAX_PER_PAGE));
         $page = max(1, $page);
 
-        $paginator = Issue::query()->where('is_available', true)
+        $query = Issue::query()->where('is_available', true)
             ->when($state !== 'ALL', fn ($query) => $query->where('state', $state))
             ->when($search !== '', fn ($query) => $query->where(fn ($matches) => $matches
                 ->where('title', 'like', '%'.$search.'%')
                 ->orWhere('github_number', $search)))
-            ->when($area !== null, fn ($query) => $query->whereHas('projectItems', fn ($items) => $items
-                ->where('is_available', true)->where('project_id', $area)))
-            ->when($group !== null, fn ($query) => $query->whereHas('projectItems', fn ($items) => $items
-                ->where('is_available', true)->where('group_option_id', $group)))
-            ->when($label !== null, fn ($query) => $query->whereHas('labels', fn ($labels) => $labels->where('name', $label)))
-            ->when($parentId !== null, fn ($query) => $query->where('parent_issue_id', $parentId))
             ->when($view === 'knowledge', fn ($query) => $query->whereHas('labels', fn ($labels) => $labels->whereIn('name', KnowledgeLabels::NAMES)))
-            ->when($view === 'tasks', fn ($query) => $query->whereDoesntHave('labels', fn ($labels) => $labels->whereIn('name', KnowledgeLabels::NAMES)))
+            ->when($view === 'tasks', fn ($query) => $query->whereDoesntHave('labels', fn ($labels) => $labels->whereIn('name', KnowledgeLabels::NAMES)));
+        $unresolved = array_filter($this->applyFilters->handle($query, ($filters ?? new IssueFilters)->withLegacy($area, $group, $label, $parentId)));
+
+        $paginator = $query
             ->withCount(['children' => fn ($query) => $query->where('is_available', true)])
             ->with([
                 'labels' => fn ($query) => $query->where('is_available', true),
@@ -58,6 +59,7 @@ class ListTodoIssues
             'perPage' => $paginator->perPage(),
             'total' => $paginator->total(),
             'lastPage' => $paginator->lastPage(),
+            ...($unresolved === [] ? [] : ['unresolved' => $unresolved]),
         ];
     }
 }
