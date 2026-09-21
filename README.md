@@ -126,8 +126,10 @@ For example, call `todo_search` with:
 {"query": "queue retries", "perPage": 5}
 ```
 
-Every term must match somewhere in the title or body. Add `area`, `group`, `label`, or `state`
-to narrow the search; use `todo_show` for full detail on selected results. Search currently
+Every term must match somewhere in the title or body. Add `state`, or filter by labels
+(`labels`, `anyLabels`, `excludeLabels`), Projects and Groups (`areas`/`areaNames`,
+`groups`/`groupNames`) and issue trees (`parentId`, with `descendants` for everything beneath
+it), in any combination — with no keywords at all if you like; use `todo_show` for full detail on selected results. Search currently
 covers keywords in titles and bodies, not comments or semantic similarity.
 
 Claim/heartbeat/release/complete keeps multiple agents (or the same agent across sessions) from

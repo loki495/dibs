@@ -21,7 +21,7 @@ class SearchTodoIssues
 
     /** @return array<string, mixed> */
     public function handle(
-        string $query,
+        string $query = '',
         ?int $area = null,
         ?int $group = null,
         ?string $label = null,
@@ -31,8 +31,9 @@ class SearchTodoIssues
         ?IssueFilters $filters = null,
     ): array {
         $terms = array_values(array_unique(preg_split('/\s+/u', trim($query), -1, PREG_SPLIT_NO_EMPTY) ?: []));
-        if ($terms === [] || mb_strlen($query) > self::MAX_QUERY_LENGTH) {
-            throw ValidationException::withMessages(['query' => 'Provide a non-empty search query of at most '.self::MAX_QUERY_LENGTH.' characters.']);
+        $filters = ($filters ?? new IssueFilters)->withLegacy($area, $group, $label, null);
+        if (mb_strlen($query) > self::MAX_QUERY_LENGTH || ($terms === [] && $filters->isEmpty())) {
+            throw ValidationException::withMessages(['query' => 'Provide a non-empty search query of at most '.self::MAX_QUERY_LENGTH.' characters, or at least one filter.']);
         }
 
         $issues = Issue::query()->where('is_available', true)
@@ -45,7 +46,7 @@ class SearchTodoIssues
                 'projectItems.project', 'projectItems.groupOption', 'projectItems.priorityOption',
             ]);
 
-        $unresolved = array_filter($this->applyFilters->handle($issues, ($filters ?? new IssueFilters)->withLegacy($area, $group, $label, null)));
+        $unresolved = array_filter($this->applyFilters->handle($issues, $filters));
 
         $ranking = [];
         $patterns = [];
@@ -58,7 +59,7 @@ class SearchTodoIssues
             $patterns[] = $pattern;
         }
 
-        $paginator = $issues->orderByRaw('('.implode(' + ', $ranking).') DESC', $patterns)
+        $paginator = $issues->when($ranking !== [], fn ($ranked) => $ranked->orderByRaw('('.implode(' + ', $ranking).') DESC', $patterns))
             ->orderBy('id')
             ->paginate(max(1, min($perPage, ListTodoIssues::MAX_PER_PAGE)), ['*'], 'page', max(1, $page));
 
