@@ -12,6 +12,8 @@ Dibs is a task and knowledge tracker built for agents. Local SQLite is authorita
 
 1. Call `todo_status` once to confirm you are talking to the intended Dibs instance (app, repository, counts).
 2. Call `todo_context` for orientation: areas (Projects), Groups, label names, live claims, push-queue counts.
+
+Pass `noop: true` to both. It is ignored, but some MCP clients (Claude Code's permission callback, for one) fail a call whose input is an empty object, and these two tools have nothing else to send.
 3. Call `todo_list` to see what is outstanding. Scope it with `area`, `group` or `parentId`. Filter `label: "agent task"` (with a space, no hyphen; the label filter matches the exact name) to see only work an agent can finish unattended. That label is a convention, not something every install has: if `todo_context` does not list it, the filter returns nothing, so list without a label filter instead. A task without the label is not forbidden, but tasks that need a person (errands, purchases, judgment calls) are not yours to pick up.
 4. Use `todo_search` when you know a topic. Every term must appear in a title or body, and closed records are included by default, so look here before researching something that may already be written down.
 5. Use `todo_show` only for the records you actually need in full.
@@ -28,9 +30,9 @@ Before starting work that may already have a plan, look for an open issue labele
 ## Filing work
 
 - Create one task with `todo_create`. Set `area`, and `groupId` (or `newGroupName`) and `parentId` when they obviously fit. If it is unclear which area or Group applies, ask rather than guess.
-- `todo_context` lists label names but not ids. To attach an existing label, pass `newLabelName` (matched case-insensitively and reused) or a `labelIds` value you already have.
+- `todo_context` lists label names but not ids, so attach labels by name with `labelNames`: an array such as `["bug", "agent task"]`, each matched case-insensitively against existing labels and created if missing. `labelIds` (ids you already have) and the older single `newLabelName` still work and combine with it.
 - Name any label you create with spaces, not hyphens (`needs research`, not `needs-research`); labels accept spaces, and the label filter matches the exact name.
-- Apply the `agent task` label to a task an agent could complete on its own. Passing `newLabelName: "agent task"` attaches it, creating the label on first use.
+- Apply the `agent task` label to a task an agent could complete on its own. Include `"agent task"` in `labelNames`; it is attached, and created on first use.
 - Multi-step work: use `todo_scaffold_plan` to create the plan and its initial child tasks in one atomic call, and add more with `todo_create(parentId: <plan id>)` as scope grows. Break the plan into child tasks as soon as its scope is known, even if you will do it all yourself. Open children are what is left; closed ones are done.
 - Pass an `idempotencyKey` on any create or revise so a retry returns the original result instead of duplicating it.
 - If you notice a follow-up while busy with something else, file it as a task right then instead of mentioning it only in chat.
