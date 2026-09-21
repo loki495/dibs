@@ -26,6 +26,10 @@ Artisan::command('inspire', function () {
 // capping how long an orphaned lock can block real drains to six missed ticks at most.
 Schedule::command('todo:push:drain')->everyTenSeconds()->name('todo-github-push-drain')->withoutOverlapping(1);
 
+// Applies DIBS_ACTIVITY_*_RETENTION_DAYS. The 60 minute lock cap keeps a lock orphaned by a container
+// restart (see the drain comment above) from skipping a whole day's prune at the 24h default.
+Schedule::command('activity:prune')->daily()->name('dibs-activity-prune')->withoutOverlapping(60);
+
 // Demo mode only -- ->when() makes this a no-op on every normal (non-demo) deployment of this
 // same image, same convention as config('dibs.demo_mode') everywhere else. See ResolveDemoDatabase
 // and docs/demo-hosting.md.

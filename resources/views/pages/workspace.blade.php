@@ -896,6 +896,9 @@ new class extends Component
                     @endif
                 </a>
             @endif
+            <a href="{{ route('activity') }}" class="mt-1 flex min-h-9 cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
+                <flux:icon.clipboard-document-list class="size-4 shrink-0" /><span class="flex-1">{{ __('Activity') }}</span>
+            </a>
             <div class="mt-4 border-t border-slate-200 px-3 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800" aria-live="polite">
                 @if ($sync?->last_success_at)
                     <span class="mr-1 inline-block size-1.5 rounded-full bg-teal-600"></span>{{ __('Last synced :time', ['time' => $sync->last_success_at->diffForHumans()]) }}

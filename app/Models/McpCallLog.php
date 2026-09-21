@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Database\Factories\McpCallLogFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -14,6 +16,9 @@ use Illuminate\Support\Carbon;
  */
 class McpCallLog extends Model
 {
+    /** @use HasFactory<McpCallLogFactory> */
+    use HasFactory;
+
     public const STATUS_OK = 'ok';
 
     public const STATUS_ERROR = 'error';

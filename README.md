@@ -80,6 +80,19 @@ a fine-grained token to nothing beyond what's listed above.
 Local edits queue automatically and push to GitHub in the background; a manual
 **Refresh from GitHub** button pulls the latest.
 
+## Activity log
+
+**Activity** (settings menu → Activity, or `/activity`) shows every MCP tool call and the data changes
+Dibs has recorded, in two logs you switch between. Filter by date range, tool or action, status,
+category, source, or free text; expand an entry for its redacted arguments or its field-by-field diff;
+follow the link from an MCP call to the changes it made (and back); or **Clear** a log. Anything that
+looks like a token, secret, password, authorization or key is redacted before it is stored, so a
+capability token never reaches the page. Changes are recorded by the write paths instrumented so far
+(issue create/update/revise, parent moves, Project/Group assignment and labels), with more being added.
+
+Entries older than `DIBS_ACTIVITY_MCP_RETENTION_DAYS` / `DIBS_ACTIVITY_CHANGE_RETENTION_DAYS` (default
+30 days each; `0` keeps that log forever) are pruned daily by `php artisan activity:prune`.
+
 ## Running checks
 
 ```bash

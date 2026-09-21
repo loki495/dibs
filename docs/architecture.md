@@ -131,6 +131,34 @@ The full MCP tool surface, the CLI fallback, and the claim/heartbeat/release/com
 are documented in [`agent-interface.md`](agent-interface.md) — not duplicated here to avoid the
 two documents drifting apart.
 
+## Activity log
+
+Two tables record what happened, linked by a shared `request_id`: `mcp_call_logs` (every MCP tool
+call, reads included, with redacted and truncated arguments, status, duration and agent label) and
+`change_logs` (Action-level data changes with a field-level `changes` diff, plus source, actor and
+category). Write Actions record their own entries through `ActivityRecorder`; there are no model
+observers. `ActivityContext` (request-scoped) supplies the actor, source and `request_id` for a web
+request, an MCP call, a console command or a scheduler run. Values are redacted by key pattern
+(`token`, `secret`, `password`, `authorization`, `key`) and truncated before they are stored, so a
+`capabilityToken` never reaches either table.
+
+Retention is per log, in days, from `DIBS_ACTIVITY_MCP_RETENTION_DAYS` and
+`DIBS_ACTIVITY_CHANGE_RETENTION_DAYS` (default 30; `0` keeps that log forever). `activity:prune`
+(a thin command over the `PruneActivityLog` Action) applies them and is scheduled daily; a row
+exactly at the cutoff is kept. `ClearActivityLog` empties one log on request and records a single
+`ClearActivityLog` row in the change log (who cleared, how many) after deleting, so the audit row
+survives; clearing an already-empty log is a no-op.
+
+The `/activity` page (`pages::activity`, behind `auth`, linked from the settings menu and the workspace
+sidebar) is a Livewire page that reads through `ListActivityLog` (newest first, paginated, filtered by
+date range, tool/action, status, category, source, request id and free text), `DescribeActivityFilterOptions`
+(the dropdown values) and `CountRelatedActivity` (the link between an MCP call and the changes sharing its
+`request_id`), and clears through `ClearActivityLog`; it never writes itself. Date filters are inclusive
+days in `DIBS_TIMEZONE` (rows are stored in UTC), a date that doesn't parse is ignored and reported as a
+validation error, and the active log name is a locked Livewire property so a tampered request can't choose
+which log Clear empties. Following a request link pushes the current log, filters, page and open row onto a
+locked history, which the Back button pops, so a drill-down across both logs can be walked back one hop at a time.
+
 ## Testing
 
 Pest, run through `composer pint` → `composer phpstan` → `composer rector` (dry-run) →
@@ -151,6 +179,9 @@ dead-process claim cleanup, and push-queue failures — not just the happy path.
 ## Not yet built
 
 - The natural-language capture UI itself (bridge mechanism only — see `capture-bridge.md`)
+- The rest of the activity log: change recording for the remaining write Actions, sign-in /
+  GitHub pull / push-queue drain events, and the architecture guard that requires every write
+  Action to record or be allowlisted (see the activity-log plan in Dibs)
 - Scheduling fields beyond Planned/Due, recurrence, and any calendar/notification integration
 - Multiple configurable workspaces (repo + user) per Dibs instance — currently one instance
   targets one configured `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`
