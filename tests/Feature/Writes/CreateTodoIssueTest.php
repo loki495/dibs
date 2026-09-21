@@ -117,6 +117,16 @@ it('rejects a Group from another Project', function (): void {
         ->toThrow(TodoValidationException::class, 'Group is no longer available');
 });
 
+it('rejects a Priority from another Project', function (): void {
+    $project = GitHubProject::factory()->create();
+    $otherProject = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($otherProject, 'project')->create(['semantic_key' => 'priority']);
+    $priority = ProjectFieldOption::factory()->for($field, 'field')->create();
+
+    expect(fn () => app(CreateTodoIssue::class)->handle(title: 'Task', area: $project->id, priorityId: $priority->id))
+        ->toThrow(TodoValidationException::class, 'Priority is no longer available');
+});
+
 it('rejects labels from a different repository than the chosen parent', function (): void {
     $parent = Issue::factory()->create();
     $otherRepository = GitHubRepository::factory()->create();
