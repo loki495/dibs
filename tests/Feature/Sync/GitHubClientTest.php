@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\GitHub\GitHubClient;
 use App\Services\GitHub\GitHubSyncException;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
 it('collects every connection page', function (): void {
@@ -30,4 +31,28 @@ it('rejects a missing pagination cursor', function (): void {
     Http::fake(['*' => Http::response(['data' => ['node' => ['issues' => ['nodes' => [], 'pageInfo' => ['hasNextPage' => true, 'endCursor' => null]]]]])]);
     expect(fn () => (new GitHubClient('test-token'))->connection('R1', 'Repository', 'issues', 'id'))
         ->toThrow(GitHubSyncException::class, 'Invalid pagination cursor');
+});
+
+it('preserves the previous snapshot when the connection to github fails entirely', function (): void {
+    Http::fake(fn () => throw new ConnectionException('Could not connect'));
+    expect(fn () => (new GitHubClient('test-token'))->query('query { viewer { login } }'))
+        ->toThrow(GitHubSyncException::class, 'previous snapshot was preserved');
+});
+
+it('rejects a response with no data at all', function (): void {
+    Http::fake(['*' => Http::response(['errors' => []], 200)]);
+    expect(fn () => (new GitHubClient('test-token'))->query('query { viewer { login } }'))
+        ->toThrow(GitHubSyncException::class, 'invalid response');
+});
+
+it('rejects an incomplete connection page shape', function (): void {
+    Http::fake(['*' => Http::response(['data' => ['node' => ['issues' => ['nodes' => 'not-an-array', 'pageInfo' => ['hasNextPage' => false]]]]])]);
+    expect(fn () => (new GitHubClient('test-token'))->connection('R1', 'Repository', 'issues', 'id'))
+        ->toThrow(GitHubSyncException::class, 'Incomplete GitHub connection');
+});
+
+it('rejects a connection whose node is not an array', function (): void {
+    Http::fake(['*' => Http::response(['data' => ['node' => ['issues' => ['nodes' => ['not-an-array'], 'pageInfo' => ['hasNextPage' => false, 'endCursor' => null]]]]])]);
+    expect(fn () => (new GitHubClient('test-token'))->connection('R1', 'Repository', 'issues', 'id'))
+        ->toThrow(GitHubSyncException::class, 'Inaccessible GitHub connection node');
 });

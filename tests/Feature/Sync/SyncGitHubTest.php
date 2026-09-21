@@ -23,6 +23,38 @@ it('preserves a successful snapshot and records a failed fetch with backoff', fu
     expect(fn () => $sync->handle('test-token'))->toThrow(GitHubSyncException::class, 'retry window');
 });
 
+it('applies a successful snapshot and records success with an incremented reconciliation generation', function (): void {
+    $fetch = Mockery::mock(FetchGitHubSnapshot::class);
+    $fetch->shouldReceive('handle')->once()->andReturn(['repository' => ['id' => 'R_1'], 'labels' => [], 'issues' => [], 'projects' => []]);
+    $apply = Mockery::mock(ApplyGitHubSnapshot::class);
+    $apply->shouldReceive('handle')->once()->with(['repository' => ['id' => 'R_1'], 'labels' => [], 'issues' => [], 'projects' => []]);
+
+    (new SyncGitHub($fetch, $apply))->handle('test-token');
+
+    $state = SyncState::query()->sole();
+    expect($state->last_success_at)->not->toBeNull()
+        ->and($state->last_error)->toBeNull()
+        ->and($state->retry_after)->toBeNull()
+        ->and($state->completed_reconciliation_generation)->toBe(1);
+});
+
+it('rejects applying a snapshot fetched after the sync lock already expired', function (): void {
+    $fetch = Mockery::mock(FetchGitHubSnapshot::class);
+    $fetch->shouldReceive('handle')->once()->andReturnUsing(function () {
+        // Simulate the lock expiring mid-fetch (e.g. a very slow GitHub response outliving the
+        // lock's own TTL) by releasing it out from under the in-progress sync.
+        Cache::lock('github:'.config('github.owner').'/'.config('github.repository'), 900)->forceRelease();
+
+        return ['repository' => ['id' => 'R_1'], 'labels' => [], 'issues' => [], 'projects' => []];
+    });
+    $apply = Mockery::mock(ApplyGitHubSnapshot::class);
+    $apply->shouldNotReceive('handle');
+
+    expect(fn () => (new SyncGitHub($fetch, $apply))->handle('test-token'))
+        ->toThrow(GitHubSyncException::class, 'lock expired before import');
+    expect(SyncState::query()->sole()->last_error)->toContain('lock expired before import');
+});
+
 it('does not fetch while another sync owns the lock', function (): void {
     $lock = Cache::lock('github:'.config('github.owner').'/'.config('github.repository'), 900);
     $lock->get();

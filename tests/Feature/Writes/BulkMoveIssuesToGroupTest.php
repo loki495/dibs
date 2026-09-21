@@ -45,6 +45,36 @@ it('drops a task\'s membership in another project when moving it, matching the o
     expect(GitHubPushQueueItem::query()->where('operation', 'delete_project_item')->where('target_id', $oldItem->id)->exists())->toBeTrue();
 });
 
+it('deletes an obsolete membership locally without a GitHub round trip when it was never synced', function (): void {
+    Http::fake();
+    $oldProject = GitHubProject::factory()->create();
+    $newProject = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($newProject, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $issue = Issue::factory()->create();
+    $oldItem = ProjectItem::factory()->for($oldProject, 'project')->for($issue, 'issue')->create(['github_node_id' => null]);
+
+    app(BulkMoveIssuesToGroup::class)->handle([$issue->id], $newProject->id, $group->id);
+
+    expect($oldItem->refresh()->is_available)->toBeFalse()
+        ->and(GitHubPushQueueItem::query()->where('target_id', $oldItem->id)->exists())->toBeFalse();
+});
+
+it('clears the group and enqueues clear_project_item_group when moving to no group at all', function (): void {
+    Http::fake();
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $issue = Issue::factory()->create();
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create(['group_option_id' => $group->id]);
+
+    $moved = app(BulkMoveIssuesToGroup::class)->handle([$issue->id], $project->id, null);
+
+    expect($moved)->toBe(1)
+        ->and($item->refresh()->group_option_id)->toBeNull()
+        ->and(GitHubPushQueueItem::query()->where('operation', 'clear_project_item_group')->where('target_id', $item->id)->exists())->toBeTrue();
+});
+
 it('rejects a Group that does not belong to the target area', function (): void {
     $project = GitHubProject::factory()->create();
     $otherProject = GitHubProject::factory()->create();

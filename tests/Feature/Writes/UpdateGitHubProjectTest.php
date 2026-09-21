@@ -27,3 +27,20 @@ it('rejects an empty project title before contacting GitHub', function (): void 
         ->toThrow(GitHubSyncException::class, 'project name is required');
     Http::assertNothingSent();
 });
+
+it('rejects an unavailable project before contacting GitHub', function (): void {
+    Http::fake();
+    $project = GitHubProject::factory()->create(['is_available' => false]);
+
+    expect(fn () => app(UpdateGitHubProject::class)->handle('test-token', $project, 'New name'))
+        ->toThrow(GitHubSyncException::class, 'not available in the local snapshot');
+    Http::assertNothingSent();
+});
+
+it('rejects when github does not confirm the project update', function (): void {
+    $project = GitHubProject::factory()->create(['github_node_id' => 'PVT_area']);
+    Http::fake(fn () => Http::response(['data' => ['updateProjectV2' => ['projectV2' => null]]], 200));
+
+    expect(fn () => app(UpdateGitHubProject::class)->handle('test-token', $project, 'New name'))
+        ->toThrow(GitHubSyncException::class, 'did not confirm');
+});
