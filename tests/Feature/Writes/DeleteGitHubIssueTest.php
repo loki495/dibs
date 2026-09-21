@@ -19,6 +19,15 @@ it('deletes an unparented issue from GitHub before marking the local projection 
     expect($deleted->is_available)->toBeFalse();
 });
 
+it('refuses to delete an unavailable issue', function (): void {
+    Http::fake();
+    $issue = Issue::factory()->create(['is_available' => false]);
+
+    expect(fn () => app(DeleteGitHubIssue::class)->handle('test-token', $issue))
+        ->toThrow(GitHubSyncException::class, 'not available in the local snapshot');
+    Http::assertNothingSent();
+});
+
 it('refuses to delete an issue that still has available children', function (): void {
     Http::fake();
     $parent = Issue::factory()->create();

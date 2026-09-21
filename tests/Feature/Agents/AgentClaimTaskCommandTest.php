@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Issue;
 use App\Models\TaskClaim;
+use App\Services\Process\LinuxProcessLiveness;
 use Illuminate\Support\Facades\Artisan;
 
 it('claims a task and prints the claim as json', function (): void {
@@ -17,6 +18,15 @@ it('claims a task and prints the claim as json', function (): void {
     expect($exitCode)->toBe(0)
         ->and($output['issue_id'])->toBe($issue->id)
         ->and(TaskClaim::query()->where('issue_id', $issue->id)->exists())->toBeTrue();
+});
+
+it('adds a weaker-assurance note when process liveness cannot be verified in this environment', function (): void {
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(sys_get_temp_dir().'/nonexistent-proc-'.uniqid()));
+    $issue = Issue::factory()->create();
+
+    Artisan::call('todo:agent:claim', ['issue' => (string) $issue->id, '--agent' => 'codex', '--pid' => (string) posix_getppid()]);
+
+    expect(Artisan::output())->toContain('weaker-assurance claim');
 });
 
 it('rejects a missing --pid without crashing', function (): void {
