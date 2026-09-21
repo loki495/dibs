@@ -30,6 +30,15 @@ it('adds an existing issue to a GitHub Project and projects the membership local
         ->and($item->content_type)->toBe('ISSUE');
 });
 
+it('rejects when github does not return the project membership', function (): void {
+    $issue = Issue::factory()->create(['github_node_id' => 'I_task']);
+    $project = GitHubProject::factory()->create(['github_node_id' => 'PVT_area']);
+    Http::fake(fn () => Http::response(['data' => ['addProjectV2ItemById' => ['item' => null]]], 200));
+
+    expect(fn () => app(AddIssueToGitHubProject::class)->handle('test-token', $issue, $project))
+        ->toThrow(GitHubSyncException::class, 'did not return the Project membership');
+});
+
 it('rejects an unavailable Project before making a GitHub request', function (): void {
     Http::fake();
     $issue = Issue::factory()->create();
