@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions;
 
 use App\Models\Issue;
+use App\Support\IssueFilters;
 use App\Support\IssueSummary;
 use Illuminate\Validation\ValidationException;
 
@@ -16,6 +17,8 @@ class SearchTodoIssues
 
     private const int EXCERPT_CONTEXT = 60;
 
+    public function __construct(private readonly ApplyIssueFilters $applyFilters) {}
+
     /** @return array<string, mixed> */
     public function handle(
         string $query,
@@ -25,6 +28,7 @@ class SearchTodoIssues
         string $state = 'ALL',
         int $page = 1,
         int $perPage = ListTodoIssues::DEFAULT_PER_PAGE,
+        ?IssueFilters $filters = null,
     ): array {
         $terms = array_values(array_unique(preg_split('/\s+/u', trim($query), -1, PREG_SPLIT_NO_EMPTY) ?: []));
         if ($terms === [] || mb_strlen($query) > self::MAX_QUERY_LENGTH) {
@@ -33,13 +37,6 @@ class SearchTodoIssues
 
         $issues = Issue::query()->where('is_available', true)
             ->when($state !== 'ALL', fn ($builder) => $builder->where('state', $state))
-            ->when($area !== null || $group !== null, fn ($builder) => $builder->whereHas('projectItems', fn ($items) => $items
-                ->where('is_available', true)
-                ->whereHas('project', fn ($project) => $project->where('is_available', true))
-                ->when($area !== null, fn ($items) => $items->where('project_id', $area))
-                ->when($group !== null, fn ($items) => $items->where('group_option_id', $group))))
-            ->when($label !== null, fn ($builder) => $builder->whereHas('labels', fn ($labels) => $labels
-                ->where('is_available', true)->where('name', $label)))
             ->withCount(['children' => fn ($children) => $children->where('is_available', true)])
             ->with([
                 'labels' => fn ($labels) => $labels->where('is_available', true),
@@ -47,6 +44,8 @@ class SearchTodoIssues
                     ->whereHas('project', fn ($project) => $project->where('is_available', true)),
                 'projectItems.project', 'projectItems.groupOption', 'projectItems.priorityOption',
             ]);
+
+        $unresolved = array_filter($this->applyFilters->handle($issues, ($filters ?? new IssueFilters)->withLegacy($area, $group, $label, null)));
 
         $ranking = [];
         $patterns = [];
@@ -72,6 +71,7 @@ class SearchTodoIssues
             'perPage' => $paginator->perPage(),
             'total' => $paginator->total(),
             'lastPage' => $paginator->lastPage(),
+            ...($unresolved === [] ? [] : ['unresolved' => $unresolved]),
         ];
     }
 
