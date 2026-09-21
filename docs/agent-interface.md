@@ -38,8 +38,8 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 
 | Tool | Purpose |
 |---|---|
-| `todo_status` | Server/repository identity and record counts — call first to confirm identity. |
-| `todo_context` | Areas (Projects), Groups, labels, live claims, and push-queue counts — orientation before acting. |
+| `todo_status` | Server/repository identity and record counts — call first to confirm identity. Takes a placeholder `noop` boolean — pass `true` (see below). |
+| `todo_context` | Areas (Projects), Groups, labels, live claims, and push-queue counts — orientation before acting. Takes a placeholder `noop` boolean — pass `true` (see below). |
 | `todo_list` | Filtered/paginated task or knowledge listing (area/group/label/parent/state/search/view). |
 | `todo_search` | Keyword search across task, plan, and knowledge titles/bodies, including closed records; ranked summaries with excerpts. |
 | `todo_show` | Full detail for one issue, optionally with paginated comments. |
@@ -56,6 +56,8 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_report_bug` | Self-report a problem with the MCP/CLI tooling itself (not a product task) — creates an `agent report`-labeled issue; amend with `todo_comment`. |
 
 Every write tool implements `Laravel\Mcp\Server\Contracts\Errable` and validates its own arguments via `Request::validate()` — confirmed empirically that `laravel/mcp` `1.0.0-beta.1` does not enforce a tool's declared JSON Schema before calling `handle()`, so schema-shaped input alone is not a safety guarantee.
+
+Note on `noop`: `todo_status` and `todo_context` have nothing to configure, but Claude Code's `canUseTool` callback failed calls whose input was an empty object ("invalid permission result", reported as #336). Passing any argument avoided it, so both tools declare one boolean, `noop`, that the handler never reads (`App\Mcp\Tools\Concerns\DeclaresPlaceholderArgument`). It is `required` in the schema so a model always sends it — an optional one would just be omitted — but `laravel/mcp` does not enforce the schema, so callers that leave it out still succeed.
 
 Note on `pid`: the MCP protocol itself has no session/process identity a server can read from a tool call — a stdio server's own parent process *is* the connecting client, so `todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete` read it directly via `posix_getppid()` and never accept it as a tool argument. The CLI fallback has no equivalent (each Artisan invocation is its own short-lived process, not the long-running agent), so it requires an explicit `--pid=` naming the calling agent's own process — the shared Actions underneath verify whichever PID they're given the same way regardless of which surface it came from.
 
