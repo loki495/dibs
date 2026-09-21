@@ -218,3 +218,11 @@ it('lets todo_search combine the shared filters with its keyword query, and surf
         ->and($lenient['items'])->toBe([])
         ->and($lenient['unresolved'])->toBe(['areas' => ['Nope']]);
 });
+
+it('knows whether any filter is set; `descendants` alone is not a filter', function (): void {
+    expect((new IssueFilters)->isEmpty())->toBeTrue()
+        ->and((new IssueFilters(descendants: true))->isEmpty())->toBeTrue()
+        ->and((new IssueFilters(labels: ['bug']))->isEmpty())->toBeFalse()
+        ->and((new IssueFilters(parentId: 3))->isEmpty())->toBeFalse()
+        ->and((new IssueFilters(areaNames: ['Work']))->isEmpty())->toBeFalse();
+});
