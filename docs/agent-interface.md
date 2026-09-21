@@ -40,8 +40,8 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 |---|---|
 | `todo_status` | Server/repository identity and record counts — call first to confirm identity. Takes a placeholder `noop` boolean — pass `true` (see below). |
 | `todo_context` | Areas (Projects), Groups, labels, live claims, and push-queue counts — orientation before acting. Takes a placeholder `noop` boolean — pass `true` (see below). |
-| `todo_list` | Filtered/paginated task or knowledge listing (area/group/label/parent/state/search/view). |
-| `todo_search` | Keyword search across task, plan, and knowledge titles/bodies, including closed records; ranked summaries with excerpts. |
+| `todo_list` | Filtered/paginated task or knowledge listing (state/search/view plus the shared filters: labels, areas, groups, parent tree). |
+| `todo_search` | Keyword search across task, plan, and knowledge titles/bodies, including closed records, plus the same shared filters (the keyword query is optional when a filter is given); ranked summaries with excerpts. |
 | `todo_show` | Full detail for one issue, optionally with paginated comments. |
 | `todo_queue_status` | Pending/failed/needs-attention push-queue counts and per-item detail. |
 | `todo_create` | Create a task, plan, or knowledge record; enqueues the GitHub push. Idempotency-key supported. Labels: `labelNames` (array of names, matched case-insensitively, created if missing and always stored lowercase with single spaces — no `todo_context` id lookup needed), `labelIds`, and the legacy single `newLabelName` combine into one de-duplicated set. |
@@ -71,11 +71,18 @@ This is the primary way a new session (or a different agent/tool entirely) is me
 
 Call `todo_search` with `{"query":"queue retries"}` to search tasks, plans, and knowledge together. Every whitespace-separated term must occur in the title or body (terms may match different fields). Matching uses literal substrings with SQLite's ASCII case-insensitivity: `%` and `_` are literal characters, and quotes/operators have no special meaning. Comments are not searched.
 
-Optional `area`, `group` and `label` filters narrow the results (`todo_list` takes the same three); a label matches case-insensitively, since labels are stored lowercase. `state` defaults to `ALL` (including closed knowledge and completed work); use `OPEN` or `CLOSED` when needed. When area and group are both supplied, they must match the same available Project membership. A label that does not exist is not an error: the page comes back empty and the response carries `unresolved` (for example `{"labels": ["agnt task"]}`), so an empty result can be told from a typo. `unresolved` is absent when every name matched.
+`todo_search` and `todo_list` share one set of filters, which combine with each other and with the text query:
+
+- **Labels:** `labels` (the result must carry every one), `anyLabels` (at least one), `excludeLabels` (none). Names match case-insensitively, since labels are stored lowercase. The older single `label` still works and counts as one more `labels` entry.
+- **Projects and Groups:** `areas` and `groups` take id lists, `areaNames` and `groupNames` take names (case-insensitive, and a Group name matches in every Project that has a Group of that name); a result may be in any of the listed ones. The older single `area` and `group` still work.
+- **Trees:** `parentId` narrows to that issue's direct children; with `descendants: true` it means the whole tree beneath it (the parent itself is not included).
+- Each list holds at most 20 entries of at most 100 characters; a malformed value is a validation error naming the argument (for example `anyLabels.0`).
+
+`state` defaults to `ALL` (including closed knowledge and completed work); use `OPEN` or `CLOSED` when needed. When area and group are both supplied, they must match the same available Project membership. A label that does not exist is not an error: the page comes back empty and the response carries `unresolved` (for example `{"labels": ["agnt task"]}`), so an empty result can be told from a typo. `unresolved` is absent when every name matched.
 
 Results use the `todo_list` pagination shape (`items`, `page`, `perPage`, `total`, `lastPage`), defaulting to 15 results and capped at 50. More query terms matched in the title rank first, with local ID ascending as a stable tie-breaker. Each item includes the usual issue summary (including labels, knowledge flag, and parent ID) plus an `excerpt`: up to 240 body characters around the first body match, with ellipses when truncated. Title-only matches show the beginning of the body, or an empty excerpt if there is no body. Use `todo_show` only for selected results that need full detail.
 
-Queries must contain non-whitespace text and be at most 200 characters. This first version scans local titles/bodies without a search index or external service; it provides keyword matching, not semantic similarity. `todo_list` keeps its existing task/knowledge views and title/issue-number search behavior. Search is currently exposed through MCP, with the shared `SearchTodoIssues` Action available to other application entry points.
+A query is at most 200 characters. It may be omitted, or blank, when at least one filter is given, and results then list in id order with the start of each body as the excerpt; with no query and no filter the call is rejected as an error on `query`. This first version scans local titles/bodies without a search index or external service; it provides keyword matching, not semantic similarity. `todo_list` keeps its existing task/knowledge views and title/issue-number search behavior. Search is currently exposed through MCP, with the shared `SearchTodoIssues` Action available to other application entry points.
 
 ## Claims and checkpoints
 

@@ -33,6 +33,13 @@ final readonly class IssueFilters
         public bool $descendants = false,
     ) {}
 
+    /** Whether any narrowing is requested; `descendants` alone narrows nothing. */
+    public function isEmpty(): bool
+    {
+        return $this->areas === [] && $this->areaNames === [] && $this->groups === [] && $this->groupNames === []
+            && $this->labels === [] && $this->anyLabels === [] && $this->excludeLabels === [] && $this->parentId === null;
+    }
+
     /** Fold in the older single-value arguments (`area`, `group`, `label`, `parentId`) so both spellings work. */
     public function withLegacy(?int $area, ?int $group, ?string $label, ?int $parentId): self
     {
