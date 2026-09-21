@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Database\Factories\ChangeLogFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -14,6 +16,9 @@ use Illuminate\Support\Carbon;
  */
 class ChangeLog extends Model
 {
+    /** @use HasFactory<ChangeLogFactory> */
+    use HasFactory;
+
     public const SOURCE_UI = 'ui';
 
     public const SOURCE_MCP = 'mcp';
