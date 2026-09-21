@@ -10,6 +10,7 @@ use App\Models\Label;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
+use App\Services\Process\LinuxProcessLiveness;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -23,6 +24,18 @@ it('includes claim state on the row so the list can show a claimed pill without 
         ->and($row['claim']['agentName'])->toBe('codex')
         ->and($row['claim']['isExpired'])->toBeFalse()
         ->and($row['claim']['isCurrentlyAlive'])->toBeTrue();
+});
+
+it('reports null (not true or false) for isCurrentlyAlive when liveness could not be verified at claim time', function (): void {
+    // is_verified_live is decided and stored once, at claim creation - swap the liveness
+    // dependency before claiming (not before reading), so the stored flag itself is false.
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(sys_get_temp_dir().'/nonexistent-proc-'.uniqid()));
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+
+    $row = collect(app(BuildIssueTree::class)->handle()['rows'])->firstWhere('id', $issue->id);
+
+    expect($row['claim']['isCurrentlyAlive'])->toBeNull();
 });
 
 it('omits claim data for an unclaimed issue', function (): void {

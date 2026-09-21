@@ -65,6 +65,41 @@ it('rolls back a malformed snapshot without modifying the previous good data', f
     expect(Issue::query()->where('github_node_id', 'I1')->sole()->title)->toBe('Website');
 });
 
+it('imports comments and marks a locally-removed one unavailable on re-import', function (): void {
+    $fixture = githubSnapshotFixture();
+    $fixture['issues'][1]['comments'] = [
+        ['id' => 'C1', 'body' => 'First', 'author' => ['login' => 'octocat'], 'url' => 'https://github.test/1#c1', 'createdAt' => '2026-09-08T12:00:00Z', 'updatedAt' => '2026-09-08T12:00:00Z'],
+    ];
+    app(ApplyGitHubSnapshot::class)->handle($fixture);
+    $issue = Issue::query()->where('github_node_id', 'I2')->sole();
+    expect($issue->comments()->where('is_available', true)->count())->toBe(1)
+        ->and($issue->comments()->sole()->body)->toBe('First');
+
+    $fixture['issues'][1]['comments'] = [];
+    app(ApplyGitHubSnapshot::class)->handle($fixture);
+
+    expect($issue->comments()->where('is_available', true)->count())->toBe(0);
+});
+
+it('rejects a label referenced by an issue but missing from the snapshot label list', function (): void {
+    $fixture = githubSnapshotFixture();
+    $fixture['issues'][0]['labels'] = [['id' => 'L_MISSING']];
+
+    expect(fn () => app(ApplyGitHubSnapshot::class)->handle($fixture))
+        ->toThrow(GitHubSyncException::class, 'Labels changed during import');
+});
+
+it('applies a repeat rule from a text-type Project field', function (): void {
+    $fixture = githubSnapshotFixture();
+    $fixture['projects'][0]['fields'][] = ['id' => 'F3', 'name' => 'Repeat', 'dataType' => 'TEXT'];
+    $fixture['projects'][0]['items'][0]['values'][] = ['field' => ['id' => 'F3'], 'text' => 'weekly'];
+
+    app(ApplyGitHubSnapshot::class)->handle($fixture);
+
+    $item = ProjectItem::query()->where('github_node_id', 'PI1')->sole();
+    expect($item->repeat_rule)->toBe('weekly');
+});
+
 it('rejects a comment with no id instead of silently accepting it', function (): void {
     $snapshot = githubSnapshotFixture();
     $snapshot['issues'][0]['comments'] = [['id' => null, 'body' => 'Hello', 'author' => ['login' => 'loki495'], 'url' => null, 'createdAt' => '2026-09-08T12:00:00Z', 'updatedAt' => '2026-09-08T12:00:00Z']];
