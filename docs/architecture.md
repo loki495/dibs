@@ -67,7 +67,7 @@ comment for the note; the existing header "Mark done" icon still closes with no 
 current closing comment is excluded from the plain thread list so it isn't shown twice; an earlier
 closing comment from a prior close/reopen cycle still appears there as ordinary history.
 
-Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals.
+Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals. `CreateLabel` is the standalone "new label, not attached to any task" write the workspace's Manage labels popup uses — unlike `ResolveLabels` (which reuses an existing same-named label when resolving an issue's own labels), a duplicate name here is a validation error, since the point of this one is a brand new label.
 
 **`sync_states`** — one row per mirrored resource, tracking last successful/attempted sync and
 the last error, read by the manual-pull path only (no longer drives any scheduled behavior).
