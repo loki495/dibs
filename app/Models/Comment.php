@@ -11,7 +11,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
-/** @property Carbon|null $remote_created_at */
+/**
+ * @property Carbon|null $remote_created_at
+ * @property list<string>|null $references
+ */
 class Comment extends Model
 {
     /** @use HasFactory<CommentFactory> */
