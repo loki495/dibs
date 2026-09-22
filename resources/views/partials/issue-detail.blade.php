@@ -119,6 +119,23 @@
             @endif
             <section class="border-t border-slate-200 pt-5 dark:border-slate-800">
                 <h3 class="mb-4 text-sm font-semibold">{{ __('Discussion & history') }}</h3>
+                @if ($detail['closing'])
+                    <div class="mb-5 rounded-xl border border-teal-200 bg-teal-50 p-4 text-sm dark:border-teal-900 dark:bg-teal-950/30">
+                        <p class="font-medium text-teal-900 dark:text-teal-100">
+                            @if ($detail['closing']['reason'] === \App\Actions\CloseTodoIssue::REASON_COMPLETED){{ __('Completed') }}
+                            @elseif ($detail['closing']['reason'] === \App\Actions\CloseTodoIssue::REASON_NOT_PLANNED){{ __('Not planned') }}
+                            @else{{ __('Closed') }}
+                            @endif
+                            <span class="ml-1 font-normal text-teal-700 dark:text-teal-300">· {{ $detail['closing']['closedAt'] }}</span>
+                        </p>
+                        @if ($detail['closing']['note'])<div class="markdown-body mt-2 text-teal-900 dark:text-teal-100">{!! $detail['closing']['note'] !!}</div>@endif
+                        @if ($detail['closing']['references'])
+                            <ul class="mt-2 flex flex-wrap gap-2">
+                                @foreach ($detail['closing']['references'] as $reference)<li class="rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-900 dark:bg-teal-900/30 dark:text-teal-300">{{ $reference }}</li>@endforeach
+                            </ul>
+                        @endif
+                    </div>
+                @endif
                 @forelse ($detail['comments'] as $comment)
                     <article class="mb-5">
                         <div class="mb-2 flex items-center justify-between gap-3"><p class="text-xs text-slate-500"><span class="font-medium text-slate-700 dark:text-slate-300">{{ $comment['author'] ?? __('Unknown author') }}</span> · {{ $comment['date'] }}</p><flux:button type="button" wire:click="beginEditComment({{ $comment['id'] }})" variant="ghost" size="sm">{{ __('Edit') }}</flux:button></div>
@@ -127,7 +144,7 @@
                         @else <div class="markdown-body text-sm text-slate-700 dark:text-slate-300">{!! $comment['body'] !!}</div>@endif
                     </article>
                 @empty<p class="text-sm text-slate-500">{{ __('No saved comments.') }}</p>@endforelse
-                <form wire:submit="addComment" class="mt-5 space-y-3"><flux:textarea wire:model="newCommentBody" label="{{ __('Add a comment') }}" rows="4" placeholder="{{ __('Add context, a result, or a follow-up') }}" />@error('newCommentBody')<p role="alert" class="text-sm text-amber-700 dark:text-amber-400">{{ $message }}</p>@enderror@if ($commentError)<p role="alert" class="text-sm text-amber-700 dark:text-amber-400">{{ $commentError }}</p>@endif<div class="flex justify-end"><flux:button type="submit" size="sm">{{ __('Add comment') }}</flux:button></div></form>
+                <form wire:submit="addComment" class="mt-5 space-y-3"><flux:textarea wire:model="newCommentBody" label="{{ __('Add a comment') }}" rows="4" placeholder="{{ __('Add context, a result, or a follow-up') }}" />@error('newCommentBody')<p role="alert" class="text-sm text-amber-700 dark:text-amber-400">{{ $message }}</p>@enderror@if ($commentError)<p role="alert" class="text-sm text-amber-700 dark:text-amber-400">{{ $commentError }}</p>@endif<div class="flex flex-wrap justify-end gap-2">@if ($detail['issue']->state === 'OPEN')<flux:button type="button" wire:click="closeWithComment('{{ \App\Actions\CloseTodoIssue::REASON_NOT_PLANNED }}')" variant="ghost" size="sm">{{ __('Close as not planned') }}</flux:button><flux:button type="button" wire:click="closeWithComment('{{ \App\Actions\CloseTodoIssue::REASON_COMPLETED }}')" variant="ghost" size="sm">{{ __('Close with comment') }}</flux:button>@endif<flux:button type="submit" size="sm">{{ __('Add comment') }}</flux:button></div></form>
             </section>
         </div>
     </section>

@@ -742,6 +742,25 @@ new class extends Component
         $this->reset('newCommentBody', 'commentError');
     }
 
+    public function closeWithComment(string $reason): void
+    {
+        $this->reset('commentError');
+        if (! in_array($reason, CloseTodoIssue::REASONS, true)) {
+            $this->commentError = 'Not a valid close reason.';
+
+            return;
+        }
+        $issue = Issue::query()->where('is_available', true)->find($this->selected);
+        if (! $issue instanceof Issue) {
+            $this->selected = 0;
+
+            return;
+        }
+        $note = trim($this->newCommentBody) !== '' ? $this->newCommentBody : null;
+        app(CloseTodoIssue::class)->handle($issue, reason: $reason, note: $note);
+        $this->reset('newCommentBody', 'commentError');
+    }
+
     public function beginEditComment(int $id): void
     {
         $comment = Comment::query()->where('is_available', true)->where('issue_id', $this->selected)->find($id);
