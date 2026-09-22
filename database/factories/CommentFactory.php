@@ -13,6 +13,12 @@ class CommentFactory extends Factory
 {
     protected $model = Comment::class;
 
+    /** @return static */
+    public function closing()
+    {
+        return $this->state(['kind' => Comment::KIND_CLOSING]);
+    }
+
     /** @return array<string, mixed> */
     public function definition(): array
     {
