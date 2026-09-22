@@ -107,6 +107,7 @@ composer pest        # tests
 Dibs exposes a host-local stdio MCP server (`php artisan mcp:start todo`) that any agent (Claude,
 Codex, etc.) can connect to for:
 
+- **Discovering what exists** — `todo_metadata` lists every area with its Groups and Priority options, and every label with its id, description and usage count, plus how to attach or create each; search it with `query` before inventing a new label or Group.
 - **Cold-start orientation** — `todo_context` and `todo_list` answer "what's open?" with no prior
   state needed, across every project or scoped to one, so a brand-new session (or a different
   agent picking up someone else's work) can get oriented and start immediately.

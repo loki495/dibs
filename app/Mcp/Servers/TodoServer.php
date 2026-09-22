@@ -13,6 +13,7 @@ use App\Mcp\Tools\CreateTodoTask;
 use App\Mcp\Tools\DescribeTodoClaimTool;
 use App\Mcp\Tools\DescribeTodoContext;
 use App\Mcp\Tools\DescribeTodoIssue;
+use App\Mcp\Tools\DescribeTodoMetadata;
 use App\Mcp\Tools\DescribeTodoQueueStatus;
 use App\Mcp\Tools\DescribeTodoServer;
 use App\Mcp\Tools\HeartbeatTodoTask;
@@ -35,6 +36,7 @@ class TodoServer extends Server
     protected array $tools = [
         DescribeTodoServer::class,
         DescribeTodoContext::class,
+        DescribeTodoMetadata::class,
         ListTodoTasks::class,
         SearchTodoIssues::class,
         DescribeTodoIssue::class,

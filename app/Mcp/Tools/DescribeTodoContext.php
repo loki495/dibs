@@ -12,7 +12,7 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('The entry point for a newly started worker or subagent: the available areas (GitHub Projects) with open-task counts, Groups scoped to their area, available labels, currently live task claims (who holds what, and whether their process liveness was verified), and the push-queue snapshot. Call this first to orient, then use todo_list/todo_show to go deeper into one area or task.')]
+#[Description('The entry point for a newly started worker or subagent: the available areas (GitHub Projects) with open-task counts, Groups scoped to their area, available labels, currently live task claims (who holds what, and whether their process liveness was verified), and the push-queue snapshot. Call this first to orient, then use todo_list/todo_show to go deeper into one area or task; use todo_metadata for ids, Priority options and label details.')]
 class DescribeTodoContext extends Tool
 {
     use DeclaresPlaceholderArgument;
