@@ -93,7 +93,9 @@ new class extends Component
             @if ($currentArea > 0)
                 <button type="button" wire:click="$dispatch('open-project-settings')" class="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden">{{ __('Project settings') }}</button>
             @endif
-            <button type="button" wire:click="$dispatch('open-manage-labels')" class="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">{{ __('Manage labels') }}</button>
+            @if ($variant !== 'labeled')
+                <button type="button" wire:click="$dispatch('open-manage-labels')" class="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">{{ __('Manage labels') }}</button>
+            @endif
         @endauth
         <label class="flex items-center justify-between gap-2 px-2 py-1.5 text-sm" for="theme">{{ __('Theme') }}
             <select id="theme" x-model="theme" @change="window.todoTheme.set(theme)" class="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900">

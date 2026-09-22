@@ -5,6 +5,7 @@ use App\Actions\BulkAddLabelsToIssues;
 use App\Actions\BulkMoveIssuesToGroup;
 use App\Actions\BulkSetIssuesParent;
 use App\Actions\CloseTodoIssue;
+use App\Actions\CreateLabel;
 use App\Actions\CreateTodoComment;
 use App\Actions\CreateTodoIssue;
 use App\Actions\DeleteGroupOption;
@@ -155,6 +156,8 @@ new class extends Component
     public string $managingLabelName = '';
 
     public ?string $manageLabelsError = null;
+
+    public string $newManageLabelName = '';
 
     public bool $bulkMode = false;
 
@@ -346,8 +349,21 @@ new class extends Component
     #[On('open-manage-labels')]
     public function openManageLabels(): void
     {
-        $this->reset('manageLabelsError', 'managingLabelId', 'managingLabelName');
+        $this->reset('manageLabelsError', 'managingLabelId', 'managingLabelName', 'newManageLabelName');
         $this->manageLabelsOpen = true;
+    }
+
+    public function createManageLabel(): void
+    {
+        $this->reset('manageLabelsError');
+        try {
+            app(CreateLabel::class)->handle($this->newManageLabelName);
+        } catch (TodoValidationException $exception) {
+            $this->manageLabelsError = $exception->getMessage();
+
+            return;
+        }
+        $this->reset('newManageLabelName', 'manageLabelsError');
     }
 
     public function beginRenameLabel(int $id): void
@@ -918,6 +934,9 @@ new class extends Component
             <a href="{{ route('activity') }}" class="mt-1 flex min-h-9 cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
                 <flux:icon.clipboard-document-list class="size-4 shrink-0" /><span class="flex-1">{{ __('Activity') }}</span>
             </a>
+            <button type="button" wire:click="openManageLabels" class="mt-1 flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
+                <flux:icon.tag class="size-4 shrink-0" /><span class="flex-1">{{ __('Manage labels') }}</span>
+            </button>
             <div class="mt-4 border-t border-slate-200 px-3 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800" aria-live="polite">
                 @if ($sync?->last_success_at)
                     <span class="mr-1 inline-block size-1.5 rounded-full bg-teal-600"></span>{{ __('Last synced :time', ['time' => $sync->last_success_at->diffForHumans()]) }}
@@ -1150,12 +1169,16 @@ new class extends Component
             <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit" wire:loading.attr="disabled" wire:target="saveProjectSettings"><span wire:loading.remove wire:target="saveProjectSettings">{{ __('Save project') }}</span><span wire:loading wire:target="saveProjectSettings">{{ __('Saving…') }}</span></flux:button></div>
         </form>
     </flux:modal>
-    <flux:modal wire:model="manageLabelsOpen" name="manage-labels" class="w-full max-w-md">
+    <flux:modal wire:model="manageLabelsOpen" name="manage-labels" scroll="body" class="w-full max-w-md">
         <div class="space-y-5">
             <div>
                 <flux:heading size="lg">{{ __('Manage labels') }}</flux:heading>
                 <flux:text class="mt-1">{{ __('Rename or delete a label. New labels are lowercased by default.') }}</flux:text>
             </div>
+            <form wire:submit="createManageLabel" class="flex items-center gap-2">
+                <flux:input wire:model="newManageLabelName" placeholder="{{ __('New label name') }}" class="flex-1" />
+                <flux:button type="submit" size="sm">{{ __('Add') }}</flux:button>
+            </form>
             <div class="space-y-2">
                 @forelse ($manageLabelsList as $labelOption)
                     <div class="flex items-center gap-2" wire:key="manage-label-{{ $labelOption->id }}">
