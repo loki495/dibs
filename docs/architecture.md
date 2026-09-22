@@ -57,6 +57,16 @@ render next to the note — it is not folded into the GitHub-pushed comment body
 `stateReason` mutation variable; GitHub's echoed value then overwrites it, same as every other push
 confirmation.
 
+The workspace detail panel (`resources/views/partials/issue-detail.blade.php`) surfaces the current
+close as a highlighted block above the comment thread — reason, rendered note, and reference chips —
+built by `GetIssueDetails`'s own `closing` derivation (the same shape as `DescribeTodoIssue`'s, kept
+separate since one renders markdown/formats dates for the UI and the other returns raw ISO8601 for
+MCP). The comment box's "Close with comment"/"Close as not planned" buttons (open issues only) call a
+new `closeWithComment(reason)` on the workspace component, using the same textarea as an ordinary
+comment for the note; the existing header "Mark done" icon still closes with no reason or note. The
+current closing comment is excluded from the plain thread list so it isn't shown twice; an earlier
+closing comment from a prior close/reopen cycle still appears there as ordinary history.
+
 Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals.
 
 **`sync_states`** — one row per mirrored resource, tracking last successful/attempted sync and

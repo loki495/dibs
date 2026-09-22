@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\ClaimTaskForAgent;
 use App\Actions\GetIssueDetails;
+use App\Models\Comment;
 use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
 use App\Models\Label;
@@ -86,4 +87,41 @@ it('does not flag a pushed push-queue entry as pending', function (): void {
     $detail = app(GetIssueDetails::class)->handle($issue->id);
 
     expect($detail['pushQueuePending'])->toBeFalse();
+});
+
+it('reports null closing for an open issue', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+
+    expect(app(GetIssueDetails::class)->handle($issue->id)['closing'])->toBeNull();
+});
+
+it('reports the reason, rendered note, references and formatted close date for a closed issue', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED', 'state_reason' => 'NOT_PLANNED']);
+    $comment = Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'Turned out to be a duplicate.', 'references' => ['#7']]);
+
+    $closing = app(GetIssueDetails::class)->handle($issue->id)['closing'];
+
+    expect($closing['reason'])->toBe('NOT_PLANNED')
+        ->and($closing['note'])->toContain('Turned out to be a duplicate.')
+        ->and($closing['references'])->toBe(['#7'])
+        ->and($closing['closedAt'])->toBe($comment->created_at->timezone(config('dibs.timezone'))->format('M j, Y'));
+});
+
+it('excludes the current closing comment from the ordinary thread, but keeps an earlier one from a prior close', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED']);
+    $previousClose = Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'First close.', 'remote_created_at' => now()->subDay()]);
+    $ordinary = Comment::factory()->for($issue, 'issue')->create(['body' => 'Just a remark.', 'remote_created_at' => now()->subHours(2)]);
+    $currentClose = Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'Second close.', 'remote_created_at' => now()]);
+
+    $ids = collect(app(GetIssueDetails::class)->handle($issue->id)['comments'])->pluck('id')->all();
+
+    expect($ids)->toBe([$previousClose->id, $ordinary->id])
+        ->and($ids)->not->toContain($currentClose->id);
+});
+
+it('shows every comment, including a closing one, in the thread when the issue is open', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+    $closing = Comment::factory()->for($issue, 'issue')->closing()->create();
+
+    expect(collect(app(GetIssueDetails::class)->handle($issue->id)['comments'])->pluck('id')->all())->toBe([$closing->id]);
 });
