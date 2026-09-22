@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\CloseTodoIssue;
 use App\Actions\GetIssueDetails;
 use App\Actions\SyncGitHub;
 use App\Actions\UpdateGitHubProject;
@@ -944,4 +945,59 @@ it('loads the same contextual fields in task editing as task creation', function
         ->assertSet('editGroup', $group->id)->assertSet('editParent', $parent->id)->assertSet('editLabels', [$label->id])
         ->assertDontSee('New:')->assertSee('Search or create a label')
         ->call('selectNewEditGroup', 'Freelance')->assertSee('New: Freelance');
+});
+
+it('closes with a comment and a reason via Close with comment', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertSee('Close with comment')->assertSee('Close as not planned')
+        ->set('newCommentBody', 'Shipped it.')->call('closeWithComment', CloseTodoIssue::REASON_COMPLETED)
+        ->assertSet('newCommentBody', '')->assertSee('Shipped it.');
+
+    expect($issue->refresh())->state->toBe('CLOSED')->state_reason->toBe('COMPLETED')
+        ->and(Comment::query()->where('issue_id', $issue->id)->sole()->kind)->toBe(Comment::KIND_CLOSING);
+});
+
+it('closes as not planned with a reason and no comment', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('closeWithComment', CloseTodoIssue::REASON_NOT_PLANNED);
+
+    expect($issue->refresh())->state->toBe('CLOSED')->state_reason->toBe('NOT_PLANNED');
+    expect(Comment::query()->where('issue_id', $issue->id)->count())->toBe(0);
+});
+
+it('rejects a tampered close reason without closing the issue', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('closeWithComment', 'DONE')->assertSee('Not a valid close reason.');
+
+    expect($issue->refresh())->state->toBe('OPEN');
+});
+
+it('hides the close-with-comment buttons once the issue is closed', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertDontSee('Close with comment')->assertDontSee('Close as not planned')->assertSee('Add comment');
+});
+
+it('shows the closing note as a highlighted block for a closed issue, and not for an open one', function (): void {
+    $closed = Issue::factory()->create(['state' => 'CLOSED', 'state_reason' => 'COMPLETED']);
+    Comment::factory()->for($closed, 'issue')->closing()->create(['body' => 'All done here.', 'references' => ['#42']]);
+    $open = Issue::factory()->create(['state' => 'OPEN']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $closed->id)->assertSee('All done here.')->assertSee('#42')->assertSee('Completed')
+        ->set('selected', $open->id)->assertDontSee('All done here.');
+});
+
+it('does not show a highlighted closing block for a closed issue with no closing note', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED', 'state_reason' => null]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $issue->id)->assertDontSee('Not planned');
 });

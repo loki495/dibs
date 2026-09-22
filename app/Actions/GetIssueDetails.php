@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions;
 
+use App\Models\Comment;
 use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
 use App\Support\KnowledgeLabels;
@@ -27,11 +28,25 @@ class GetIssueDetails
         ])->findOrFail($id);
 
         $knowledge = $this->relatedKnowledge($issue);
+        // The most recently created closing comment, not the most recently pushed one — a local-first
+        // closing comment has no remote_created_at yet, so id order is what "current close" means here.
+        $closingComment = $issue->state === 'CLOSED'
+            ? $issue->comments->where('kind', Comment::KIND_CLOSING)->sortByDesc('id')->first()
+            : null;
 
         return [
             'issue' => $issue, 'body' => $this->renderMarkdown($issue->body ?? ''),
-            'comments' => $issue->comments->map(fn ($comment): array => ['id' => $comment->id, 'author' => $comment->author_login,
-                'date' => $comment->remote_created_at?->timezone(config('dibs.timezone'))->format('M j, Y'), 'body' => $this->renderMarkdown($comment->body)]),
+            // The current closing comment gets its own highlighted block instead, so it isn't shown twice.
+            'comments' => $issue->comments
+                ->reject(fn (Comment $comment): bool => $closingComment instanceof Comment && $comment->is($closingComment))
+                ->map(fn (Comment $comment): array => ['id' => $comment->id, 'author' => $comment->author_login,
+                    'date' => $comment->remote_created_at?->timezone(config('dibs.timezone'))->format('M j, Y'), 'body' => $this->renderMarkdown($comment->body)]),
+            'closing' => $issue->state === 'CLOSED' ? [
+                'reason' => $issue->state_reason,
+                'note' => $closingComment?->body !== null && $closingComment->body !== '' ? $this->renderMarkdown($closingComment->body) : null,
+                'references' => $closingComment?->references,
+                'closedAt' => ($closingComment !== null ? $closingComment->created_at : $issue->updated_at)->timezone(config('dibs.timezone'))->format('M j, Y'),
+            ] : null,
             'claim' => $this->claim->handle($issue->id),
             'parent' => $issue->parent instanceof Issue ? $this->summarize($issue->parent) : null,
             'children' => $issue->children->map(fn (Issue $child): array => $this->summarize($child))->all(),
