@@ -43,7 +43,7 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_metadata` | Everything attachable to a task: areas with open-task counts, Groups and Priority options with ids and areas, labels with ids/descriptions/usage counts, and the rules for attaching or creating each. Searchable by `query`; narrow with `kinds` and `area`. |
 | `todo_list` | Filtered/paginated task or knowledge listing (state/search/view plus the shared filters: labels, areas, groups, parent tree). |
 | `todo_search` | Keyword search across task, plan, and knowledge titles/bodies, including closed records, plus the same shared filters (the keyword query is optional when a filter is given); ranked summaries with excerpts. |
-| `todo_show` | Full detail for one issue, optionally with paginated comments. |
+| `todo_show` | Full detail for one issue, optionally with paginated comments. A closed issue's payload includes `closing: {reason, note, references, closedAt}` (all but `closedAt` are `null` when that close had no reason/note); `closing` is `null` for an open issue. Reopening and closing again reports only the latest close. |
 | `todo_queue_status` | Pending/failed/needs-attention push-queue counts and per-item detail. |
 | `todo_create` | Create a task, plan, or knowledge record; enqueues the GitHub push. Idempotency-key supported. Labels: `labelNames` (array of names, matched case-insensitively, created if missing and always stored lowercase with single spaces — no `todo_context` id lookup needed), `labelIds`, and the legacy single `newLabelName` combine into one de-duplicated set. |
 | `todo_scaffold_plan` | Create a parent plan issue plus its child tasks atomically, in one transaction. `groupId`/`priorityId` set the plan issue's own Group/Priority, independently of each child's own. |
@@ -52,7 +52,7 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_claim` | Claim a task for the calling process. Returns a `capabilityToken` once, in plaintext. |
 | `todo_heartbeat` | Renew the calling process's own live claim lease. Creates no GitHub comment or push-queue entry. |
 | `todo_release` | Release the calling process's own live claim without completing the task. |
-| `todo_complete` | Close a claimed task, enqueue the push, optionally post a result summary comment, and release the claim. |
+| `todo_complete` | Close a claimed task, enqueue the push, and release the claim. `summary` becomes the closing note (a comment on the issue); optional `reason` (`COMPLETED`/`NOT_PLANNED`, pushed to GitHub as the close reason) and `references` (commit/PR pointers) add detail, ignored without `summary`. |
 | `todo_claim_status` | Read-only: whether a task has a live claim, and by whom — no capability token exposed. |
 | `todo_report_bug` | Self-report a problem with the MCP/CLI tooling itself (not a product task) — creates an `agent report`-labeled issue; amend with `todo_comment`. |
 

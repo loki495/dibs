@@ -43,7 +43,7 @@ Before starting work that may already have a plan, look for an open issue labele
 2. `todo_claim` with your `agentName`. It returns a `capabilityToken` once, in plaintext. Keep it: `todo_heartbeat`, `todo_release` and `todo_complete` all need it. The server identifies your process itself; you never pass a pid.
 3. On a long task, call `todo_heartbeat` periodically so the lease does not expire. It creates no comments or pushes.
 4. Post `todo_comment` checkpoints for a material result, decision, blocker or verification outcome. Keep them concise; never paste raw tool logs.
-5. Finish with `todo_complete` and a short `summary` (what changed, how it was verified, what remains). Only close a task once its acceptance criteria are actually met. To give a task up unfinished, use `todo_release` so another agent can take it immediately.
+5. Finish with `todo_complete` and a short `summary` (what changed, how it was verified, what remains) — it becomes the closing note, shown by `todo_show` as `closing.note`. Add `reason` (`COMPLETED` or `NOT_PLANNED`) and `references` (commit/PR pointers) when useful; both are ignored without a `summary`. Only close a task once its acceptance criteria are actually met. To give a task up unfinished, use `todo_release` so another agent can take it immediately.
 
 ## Revising and conflicts
 

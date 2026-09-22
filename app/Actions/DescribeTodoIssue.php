@@ -51,6 +51,7 @@ class DescribeTodoIssue
                 'planned' => $item->planned_on?->toDateString(),
                 'due' => $item->due_on?->toDateString(),
             ])->all(),
+            'closing' => $this->closing($issue),
         ];
 
         if ($withComments) {
@@ -68,5 +69,29 @@ class DescribeTodoIssue
         }
 
         return $result;
+    }
+
+    /**
+     * The most recent close, if the issue is currently closed: its reason, the note and references
+     * from that close's closing comment (if a note was given), and when it closed. Reopening and
+     * closing an issue again leaves its earlier closing comments in history but reports only the
+     * latest one here, alongside the current `state_reason`.
+     *
+     * @return array{reason: ?string, note: ?string, references: ?list<string>, closedAt: string}|null
+     */
+    private function closing(Issue $issue): ?array
+    {
+        if ($issue->state !== 'CLOSED') {
+            return null;
+        }
+
+        $note = $issue->comments()->where('is_available', true)->closing()->latest('id')->first();
+
+        return [
+            'reason' => $issue->state_reason,
+            'note' => $note?->body,
+            'references' => $note?->references,
+            'closedAt' => ($note !== null ? $note->created_at : $issue->updated_at)->toIso8601String(),
+        ];
     }
 }

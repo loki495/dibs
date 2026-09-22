@@ -135,7 +135,8 @@ covers keywords in titles and bodies, not comments or semantic similarity.
 
 Claim/heartbeat/release/complete keeps multiple agents (or the same agent across sessions) from
 duplicating or colliding on the same task, all without ever handling your GitHub token — every
-write goes through the same Actions the web UI uses. See
+write goes through the same Actions the web UI uses. Completing a task can carry a closing note,
+a reason (`COMPLETED`/`NOT_PLANNED`), and references, all visible afterward via `todo_show`. See
 [`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a JSON CLI
 fallback (`php artisan todo:agent:*`) for scripting or recovery.
 
