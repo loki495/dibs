@@ -1001,3 +1001,62 @@ it('does not show a highlighted closing block for a closed issue with no closing
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('selected', $issue->id)->assertDontSee('Not planned');
 });
+
+it('creates a label from the Manage labels popup and shows it in the list', function (): void {
+    Http::fake();
+    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('openManageLabels')
+        ->set('newManageLabelName', 'Waiting on Vendor')->call('createManageLabel')
+        ->assertSet('newManageLabelName', '')->assertSee('waiting on vendor');
+
+    expect(Label::query()->where('name', 'waiting on vendor')->exists())->toBeTrue();
+});
+
+it('shows a validation error inline instead of closing Manage labels when creating a duplicate label', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Label::factory()->for($repository, 'repository')->create(['name' => 'bug']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('openManageLabels')
+        ->set('newManageLabelName', 'Bug')->call('createManageLabel')
+        ->assertSet('manageLabelsOpen', true)->assertSee('A label with this name already exists.');
+
+    expect(Label::query()->where('name', 'bug')->count())->toBe(1);
+});
+
+it('clears the new-label field and any error each time Manage labels is opened', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+    Label::factory()->for($repository, 'repository')->create(['name' => 'bug']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('openManageLabels')->set('newManageLabelName', 'Bug')->call('createManageLabel')
+        ->assertSee('A label with this name already exists.')
+        ->call('openManageLabels')
+        ->assertSet('newManageLabelName', '')->assertDontSee('A label with this name already exists.');
+});
+
+it('hides Manage labels from the labeled top-bar\'s settings popup, since the sidebar has its own link', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('top-bar', ['variant' => 'labeled'])
+        ->assertDontSee('Manage labels');
+});
+
+it('keeps Manage labels in the icon top-bar\'s settings popup for mobile, which has no sidebar', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('top-bar')
+        ->assertSee('Manage labels');
+});
+
+it('opens Manage labels from the sidebar link', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->assertSet('manageLabelsOpen', false)
+        ->call('openManageLabels')
+        ->assertSet('manageLabelsOpen', true);
+});
+
+it('lets the Manage labels popup scroll internally so a long label list never hides the Close button off-screen', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('openManageLabels')
+        ->assertSeeHtml('data-modal="manage-labels"')
+        ->assertSeeHtml('data-flux-modal-overflow');
+});
