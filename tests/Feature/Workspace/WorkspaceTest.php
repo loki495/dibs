@@ -1060,3 +1060,9 @@ it('lets the Manage labels popup scroll internally so a long label list never hi
         ->assertSeeHtml('data-modal="manage-labels"')
         ->assertSeeHtml('data-flux-modal-overflow');
 });
+
+it('asks for confirmation before Refresh from GitHub, the same way other consequential actions do', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('top-bar')
+        ->assertSeeHtml('wire:click="refreshFromGitHub"')
+        ->assertSeeHtml('wire:confirm=');
+});
