@@ -70,3 +70,46 @@ it('throws a distinct unavailable error for a soft-removed issue', function (): 
     expect(fn () => app(DescribeTodoIssue::class)->handle($issue->id))
         ->toThrow(TodoRecordUnavailableException::class);
 });
+
+it('reports null closing for an open issue', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+
+    expect(app(DescribeTodoIssue::class)->handle($issue->id)['closing'])->toBeNull();
+});
+
+it('reports the reason, note, references and when it closed for a closed issue', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED', 'state_reason' => 'COMPLETED']);
+    $comment = Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'All done.', 'references' => ['#42']]);
+
+    $closing = app(DescribeTodoIssue::class)->handle($issue->id)['closing'];
+
+    expect($closing)->toBe([
+        'reason' => 'COMPLETED', 'note' => 'All done.', 'references' => ['#42'],
+        'closedAt' => $comment->created_at->toIso8601String(),
+    ]);
+});
+
+it('reports a null reason, note and references for a closed issue that has neither', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED', 'state_reason' => null, 'updated_at' => now()]);
+
+    $closing = app(DescribeTodoIssue::class)->handle($issue->id)['closing'];
+
+    expect($closing)->toBe(['reason' => null, 'note' => null, 'references' => null, 'closedAt' => $issue->updated_at->toIso8601String()]);
+});
+
+it('reflects the most recent closing note when an issue was closed, reopened, and closed again', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED']);
+    Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'First close.', 'created_at' => now()->subDay()]);
+    $latest = Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'Second close.', 'created_at' => now()]);
+
+    $closing = app(DescribeTodoIssue::class)->handle($issue->id)['closing'];
+
+    expect($closing['note'])->toBe('Second close.')->and($closing['closedAt'])->toBe($latest->created_at->toIso8601String());
+});
+
+it('ignores an ordinary, non-closing comment when reporting the closing note', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED']);
+    Comment::factory()->for($issue, 'issue')->create(['body' => 'Just a remark.']);
+
+    expect(app(DescribeTodoIssue::class)->handle($issue->id)['closing']['note'])->toBeNull();
+});
