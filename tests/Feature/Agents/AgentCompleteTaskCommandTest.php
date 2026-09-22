@@ -20,7 +20,7 @@ it('completes a claimed task through the CLI as JSON', function (): void {
 
     expect($issue->fresh()->state)->toBe('CLOSED')
         ->and(GitHubPushQueueItem::query()->where('operation', 'close_issue')->exists())->toBeTrue()
-        ->and(Comment::query()->where('issue_id', $issue->id)->sole()->body)->toBe('**Completed:** Shipped it.');
+        ->and(Comment::query()->where('issue_id', $issue->id)->sole()->body)->toBe('Shipped it.');
 });
 
 it('refuses completion without the matching capability token', function (): void {

@@ -45,7 +45,17 @@ because those fields are Project-specific. `project_fields.semantic_key` maps a 
 field IDs to the meanings the app understands (status/group/priority/planned/due/repeat) so a
 renamed GitHub field doesn't silently break the mapping.
 
-`comments.kind` is nullable and only ever `null` or `Comment::KIND_CLOSING`; a closing-note comment is an ordinary comment for GitHub's purposes (the `kind` column is local-only bookkeeping so the app can find and highlight it), created when an issue is closed or completed. See the closing-note plan (Dibs group) for the reason and references pushed alongside it.
+`comments.kind` is nullable and only ever `null` or `Comment::KIND_CLOSING`; a closing-note comment is
+an ordinary comment for GitHub's purposes (the `kind` column is local-only bookkeeping so the app can
+find and highlight it). `CloseTodoIssue` creates one via `CreateClosingComment` when an issue is closed
+with a note, never for an issue that was already closed. `comments.references` (nullable JSON, a list
+of strings such as commit or PR references) is local-only structured data for the UI/`todo_show` to
+render next to the note — it is not folded into the GitHub-pushed comment body.
+
+`issues.state_reason` (`CloseTodoIssue::REASONS`: `COMPLETED`, `NOT_PLANNED`, GitHub's own
+`IssueClosedStateReason` values) is set locally on close and sent to GitHub as the `close_issue` push's
+`stateReason` mutation variable; GitHub's echoed value then overwrites it, same as every other push
+confirmation.
 
 Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals.
 

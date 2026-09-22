@@ -393,6 +393,38 @@ it('closes an issue on GitHub', function (): void {
     expect($queueItem->refresh())->status->toBe('pushed');
 });
 
+it('sends the local close reason to GitHub as the stateReason variable', function (): void {
+    $repository = GitHubRepository::factory()->create(['github_node_id' => 'R_test']);
+    $issue = Issue::factory()->create(['repository_id' => $repository->id, 'github_node_id' => 'I_test', 'state' => 'OPEN']);
+    GitHubPushQueueItem::factory()->create(['operation' => 'close_issue', 'target_type' => 'issue', 'target_id' => $issue->id, 'payload' => ['stateReason' => 'NOT_PLANNED']]);
+    $sent = null;
+    Http::fake(function (Request $request) use (&$sent) {
+        $sent = (array) ($request->data()['variables'] ?? null);
+
+        return Http::response(['data' => ['closeIssue' => ['issue' => ['id' => 'I_test', 'state' => 'CLOSED', 'stateReason' => 'NOT_PLANNED', 'updatedAt' => '2026-09-11T20:00:00Z']]]], 200);
+    });
+
+    app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($sent)->toBe(['issueId' => 'I_test', 'stateReason' => 'NOT_PLANNED']);
+});
+
+it('sends a null stateReason when the close carries none', function (): void {
+    $repository = GitHubRepository::factory()->create(['github_node_id' => 'R_test']);
+    $issue = Issue::factory()->create(['repository_id' => $repository->id, 'github_node_id' => 'I_test', 'state' => 'OPEN']);
+    GitHubPushQueueItem::factory()->create(['operation' => 'close_issue', 'target_type' => 'issue', 'target_id' => $issue->id]);
+    $sent = null;
+    Http::fake(function (Request $request) use (&$sent) {
+        $sent = (array) ($request->data()['variables'] ?? null);
+
+        return Http::response(['data' => ['closeIssue' => ['issue' => ['id' => 'I_test', 'state' => 'CLOSED', 'stateReason' => null, 'updatedAt' => '2026-09-11T20:00:00Z']]]], 200);
+    });
+
+    app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($sent)->toBe(['issueId' => 'I_test', 'stateReason' => null]);
+});
+
 it('deletes an issue on GitHub', function (): void {
     $repository = GitHubRepository::factory()->create(['github_node_id' => 'R_test']);
     $issue = Issue::factory()->create(['repository_id' => $repository->id, 'github_node_id' => 'I_test', 'is_available' => false]);
