@@ -40,6 +40,7 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 |---|---|
 | `todo_status` | Server/repository identity and record counts — call first to confirm identity. Takes a placeholder `noop` boolean — pass `true` (see below). |
 | `todo_context` | Areas (Projects), Groups, labels, live claims, and push-queue counts — orientation before acting. Takes a placeholder `noop` boolean — pass `true` (see below). |
+| `todo_metadata` | Everything attachable to a task: areas with open-task counts, Groups and Priority options with ids and areas, labels with ids/descriptions/usage counts, and the rules for attaching or creating each. Searchable by `query`; narrow with `kinds` and `area`. |
 | `todo_list` | Filtered/paginated task or knowledge listing (state/search/view plus the shared filters: labels, areas, groups, parent tree). |
 | `todo_search` | Keyword search across task, plan, and knowledge titles/bodies, including closed records, plus the same shared filters (the keyword query is optional when a filter is given); ranked summaries with excerpts. |
 | `todo_show` | Full detail for one issue, optionally with paginated comments. |
@@ -77,6 +78,8 @@ Call `todo_search` with `{"query":"queue retries"}` to search tasks, plans, and 
 - **Projects and Groups:** `areas` and `groups` take id lists, `areaNames` and `groupNames` take names (case-insensitive, and a Group name matches in every Project that has a Group of that name); a result may be in any of the listed ones. The older single `area` and `group` still work.
 - **Trees:** `parentId` narrows to that issue's direct children; with `descendants: true` it means the whole tree beneath it (the parent itself is not included).
 - Each list holds at most 20 entries of at most 100 characters; a malformed value is a validation error naming the argument (for example `anyLabels.0`).
+
+Use `todo_metadata` first to discover what an `areaNames`/`groupNames`/`labels` value could be, or to get an id for `areas`/`groups`/`labelIds`: it lists every area with its Groups and Priority options, and every label with its id, description and usage counts, plus the rule for attaching or creating each. `query` matches names (and label descriptions); `kinds` (`areas`, `groups`, `priorities`, `labels`) and `area` narrow the response. An unknown `area` id is a validation error, not an empty result.
 
 `state` defaults to `ALL` (including closed knowledge and completed work); use `OPEN` or `CLOSED` when needed. When area and group are both supplied, they must match the same available Project membership. A label that does not exist is not an error: the page comes back empty and the response carries `unresolved` (for example `{"labels": ["agnt task"]}`), so an empty result can be told from a typo. `unresolved` is absent when every name matched.
 
