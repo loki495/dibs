@@ -61,9 +61,11 @@ The workspace detail panel (`resources/views/partials/issue-detail.blade.php`) s
 close as a highlighted block above the comment thread — reason, rendered note, and reference chips —
 built by `GetIssueDetails`'s own `closing` derivation (the same shape as `DescribeTodoIssue`'s, kept
 separate since one renders markdown/formats dates for the UI and the other returns raw ISO8601 for
-MCP). The comment box's "Close with comment"/"Close as not planned" buttons (open issues only) call a
-new `closeWithComment(reason)` on the workspace component, using the same textarea as an ordinary
-comment for the note; the existing header "Mark done" icon still closes with no reason or note. The
+MCP). The comment box's red "Close" button (open issues only, with a confirm) calls
+`closeWithComment(reason)` on the workspace component with reason `COMPLETED`, using the same
+textarea as an ordinary comment for the note (`NOT_PLANNED` remains supported by the method and by
+`todo_complete`, but no button offers it); the header "Mark done" icon still closes with no reason
+or note. On a closed task the same spot shows "Reopen". The
 current closing comment is excluded from the plain thread list so it isn't shown twice; an earlier
 closing comment from a prior close/reopen cycle still appears there as ordinary history.
 
