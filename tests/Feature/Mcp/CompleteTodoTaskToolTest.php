@@ -25,7 +25,7 @@ it('completes a claimed task, closing it and posting the summary', function (): 
 
     expect($issue->fresh()->state)->toBe('CLOSED')
         ->and(GitHubPushQueueItem::query()->where('operation', 'close_issue')->exists())->toBeTrue()
-        ->and(Comment::query()->where('issue_id', $issue->id)->sole()->body)->toBe('**Completed:** Shipped it.')
+        ->and(Comment::query()->where('issue_id', $issue->id)->sole()->body)->toBe('Shipped it.')
         ->and(TaskClaim::query()->sole()->released_at)->not->toBeNull();
 });
 

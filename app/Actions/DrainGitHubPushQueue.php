@@ -687,8 +687,8 @@ class DrainGitHubPushQueue
 
         try {
             $data = (new GitHubClient($token))->query(
-                'mutation($issueId: ID!) { closeIssue(input: {issueId: $issueId}) { issue { id state stateReason updatedAt } } }',
-                ['issueId' => $issue->github_node_id],
+                'mutation($issueId: ID!, $stateReason: IssueClosedStateReason) { closeIssue(input: {issueId: $issueId, stateReason: $stateReason}) { issue { id state stateReason updatedAt } } }',
+                ['issueId' => $issue->github_node_id, 'stateReason' => $item->payload['stateReason'] ?? null],
             );
             $remote = $data['closeIssue']['issue'] ?? null;
             if (! is_array($remote) || $remote['state'] !== 'CLOSED') {
