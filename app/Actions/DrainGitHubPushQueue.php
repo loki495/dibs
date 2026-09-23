@@ -679,12 +679,12 @@ class DrainGitHubPushQueue
         if ($issue->github_node_id === null) {
             return 'waiting';
         }
-        if ($issue->state === 'CLOSED') {
-            $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
 
-            return 'pushed';
-        }
-
+        // No "already CLOSED locally, skip" short-circuit here: CloseTodoIssue always sets local
+        // state to CLOSED *before* enqueueing this push, so local state is CLOSED on every real
+        // attempt regardless of whether GitHub has actually been told yet. GitHub's own closeIssue
+        // mutation is idempotent (closing an already-closed issue is a harmless no-op), so it's the
+        // only reliable signal of whether this specific push has actually reached GitHub.
         try {
             $data = (new GitHubClient($token))->query(
                 'mutation($issueId: ID!, $stateReason: IssueClosedStateReason) { closeIssue(input: {issueId: $issueId, stateReason: $stateReason}) { issue { id state stateReason updatedAt } } }',
@@ -793,43 +793,47 @@ class DrainGitHubPushQueue
 
     private function pushClearProjectItemGroup(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
     {
-        return $this->pushClearProjectItemField($token, $item, 'group', 'groupOption.field', 'group_option_id');
+        return $this->pushClearProjectItemField($token, $item, 'group', 'group_option_id');
     }
 
     private function pushClearProjectItemPriority(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
     {
-        return $this->pushClearProjectItemField($token, $item, 'priority', 'priorityOption.field', 'priority_option_id');
+        return $this->pushClearProjectItemField($token, $item, 'priority', 'priority_option_id');
     }
 
-    private function pushClearProjectItemField(#[SensitiveParameter] string $token, GitHubPushQueueItem $item, string $semanticKey, string $relationName, string $columnName): string
+    private function pushClearProjectItemField(#[SensitiveParameter] string $token, GitHubPushQueueItem $item, string $semanticKey, string $columnName): string
     {
         $projectItem = ProjectItem::query()->find($item->target_id);
         if (! $projectItem instanceof ProjectItem) {
             return $this->giveUp($item, 'Target project membership no longer exists locally.');
         }
-        if ($projectItem->{$columnName} === null) {
-            $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
-
-            return 'pushed';
-        }
         if ($projectItem->github_node_id === null) {
             return 'waiting';
         }
 
-        $projectItem->loadMissing('project', $relationName);
+        // No "already null locally, skip" short-circuit here: ApplyProjectItemFields/BulkMoveIssuesToGroup
+        // always null this column locally *before* enqueueing this push, so it's already null on every
+        // real attempt regardless of whether GitHub has actually been told yet. GitHub's own
+        // clearProjectV2ItemFieldValue mutation is idempotent (clearing an already-empty field is a
+        // harmless no-op), so it's the only reliable signal of whether this push has actually landed.
+        //
+        // The field is looked up by (project, semantic_key) rather than via the projectItem's own
+        // group/priority option relation, because that relation is exactly what's already null by the
+        // time this runs -- it can no longer tell us which field was cleared.
+        $projectItem->loadMissing('project');
         if ($projectItem->project === null) {
             return $this->giveUp($item, 'The associated project is not available.');
         }
 
-        $option = $relationName === 'groupOption.field' ? $projectItem->groupOption : $projectItem->priorityOption;
-        if (! $option instanceof ProjectFieldOption || $option->field === null) {
-            return $this->giveUp($item, "The $semanticKey option is not available.");
+        $field = ProjectField::query()->where('project_id', $projectItem->project_id)->where('semantic_key', $semanticKey)->where('is_available', true)->first();
+        if (! $field instanceof ProjectField) {
+            return $this->giveUp($item, "The $semanticKey field is not available.");
         }
 
         try {
             $data = (new GitHubClient($token))->query(
                 'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) { clearProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId}) { projectV2Item { id updatedAt } } }',
-                ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id, 'fieldId' => $option->field->github_node_id],
+                ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id, 'fieldId' => $field->github_node_id],
             );
             $remote = $data['clearProjectV2ItemFieldValue']['projectV2Item'] ?? null;
             if (! is_array($remote) || ! is_string($remote['id'] ?? null)) {

@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\ApplyProjectItemFields;
+use App\Actions\CloseTodoIssue;
+use App\Actions\DeleteLabel;
 use App\Actions\DrainGitHubPushQueue;
+use App\Actions\RenameLabel;
 use App\Models\Comment;
 use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
@@ -948,16 +952,24 @@ it('waits to close an issue until it is pushed', function (): void {
     Http::assertNothingSent();
 });
 
-it('reconciles a close-issue row when the issue was already closed', function (): void {
-    $issue = Issue::factory()->create(['github_node_id' => 'I_test', 'state' => 'CLOSED']);
-    $queueItem = GitHubPushQueueItem::factory()->create(['operation' => 'close_issue', 'target_type' => 'issue', 'target_id' => $issue->id]);
-    Http::fake();
+it('still calls GitHub to close an issue that a real CloseTodoIssue write already marked CLOSED locally', function (): void {
+    // Regression test for a real bug (2026-09-22): CloseTodoIssue always sets local state to CLOSED
+    // *before* enqueueing the push, so by the time drain runs, local state is always already CLOSED --
+    // a short-circuit keyed on that fact meant the closeIssue mutation was never actually reachable for
+    // any real close. Driving this through the real Action (not a bare factory row) is what exposes it.
+    $issue = Issue::factory()->create(['github_node_id' => 'I_test', 'state' => 'OPEN']);
+    app(CloseTodoIssue::class)->handle($issue);
+    $called = false;
+    Http::fake(function (Request $request) use (&$called) {
+        $called = true;
+
+        return Http::response(['data' => ['closeIssue' => ['issue' => ['id' => 'I_test', 'state' => 'CLOSED', 'stateReason' => null, 'updatedAt' => '2026-09-11T20:00:00Z']]]], 200);
+    });
 
     $result = app(DrainGitHubPushQueue::class)->handle('test-token');
 
+    expect($called)->toBeTrue();
     expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
-    expect($queueItem->refresh())->status->toBe('pushed');
-    Http::assertNothingSent();
 });
 
 it('defers closing an issue when GitHub is unreachable', function (): void {
@@ -1054,7 +1066,52 @@ it('gives up clearing a project item group when the target membership no longer 
     Http::assertNothingSent();
 });
 
-it('reconciles a clear-project-item-group row when the field is already empty', function (): void {
+it('still calls GitHub to clear a project item group that a real ApplyProjectItemFields write already nulled locally', function (): void {
+    // Regression test for a real bug (2026-09-22): ApplyProjectItemFields always nulls group_option_id
+    // locally *before* enqueueing clear_project_item_group, so a short-circuit keyed on that column
+    // being null meant the clearProjectV2ItemFieldValue mutation was never actually reachable.
+    $project = GitHubProject::factory()->create(['github_node_id' => 'P_test']);
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group', 'github_node_id' => 'F_group']);
+    $option = ProjectFieldOption::factory()->for($field, 'field')->create(['github_option_id' => 'O_group']);
+    $issue = Issue::factory()->create(['github_node_id' => 'I_test']);
+    $item = ProjectItem::factory()->create(['project_id' => $project->id, 'issue_id' => $issue->id, 'github_node_id' => 'PI_test', 'group_option_id' => $option->id]);
+    app(ApplyProjectItemFields::class)->handle($item, null, null);
+    $called = false;
+    Http::fake(function (Request $request) use (&$called) {
+        $called = true;
+
+        return Http::response(['data' => ['clearProjectV2ItemFieldValue' => ['projectV2Item' => ['id' => 'PI_test', 'updatedAt' => '2026-09-11T20:00:00Z']]]], 200);
+    });
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($called)->toBeTrue();
+    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
+    expect($item->refresh()->group_option_id)->toBeNull();
+});
+
+it('still calls GitHub to clear a project item priority that a real ApplyProjectItemFields write already nulled locally', function (): void {
+    $project = GitHubProject::factory()->create(['github_node_id' => 'P_test']);
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'priority', 'github_node_id' => 'F_priority']);
+    $option = ProjectFieldOption::factory()->for($field, 'field')->create(['github_option_id' => 'O_priority']);
+    $issue = Issue::factory()->create(['github_node_id' => 'I_test']);
+    $item = ProjectItem::factory()->create(['project_id' => $project->id, 'issue_id' => $issue->id, 'github_node_id' => 'PI_test', 'priority_option_id' => $option->id]);
+    app(ApplyProjectItemFields::class)->handle($item, null, null);
+    $called = false;
+    Http::fake(function (Request $request) use (&$called) {
+        $called = true;
+
+        return Http::response(['data' => ['clearProjectV2ItemFieldValue' => ['projectV2Item' => ['id' => 'PI_test', 'updatedAt' => '2026-09-11T20:00:00Z']]]], 200);
+    });
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($called)->toBeTrue();
+    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
+    expect($item->refresh()->priority_option_id)->toBeNull();
+});
+
+it('gives up clearing a project item group when the field is no longer available locally, without calling GitHub', function (): void {
     $project = GitHubProject::factory()->create(['github_node_id' => 'P_test']);
     $issue = Issue::factory()->create(['github_node_id' => 'I_test']);
     $item = ProjectItem::factory()->create(['project_id' => $project->id, 'issue_id' => $issue->id, 'github_node_id' => 'PI_test', 'group_option_id' => null]);
@@ -1063,9 +1120,39 @@ it('reconciles a clear-project-item-group row when the field is already empty', 
 
     $result = app(DrainGitHubPushQueue::class)->handle('test-token');
 
-    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
-    expect($queueItem->refresh()->status)->toBe('pushed');
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 1, 'waiting' => 0]);
+    expect($queueItem->refresh())->status->toBe('needs_attention')->last_error->toContain('field is not available');
     Http::assertNothingSent();
+});
+
+it('confirms pushRenameLabel already calls GitHub for a real RenameLabel write (not affected by the same bug class)', function (): void {
+    $renamed = Label::factory()->create(['github_node_id' => 'L_rename', 'name' => 'old-name']);
+    app(RenameLabel::class)->handle($renamed, 'new name');
+    $called = false;
+    Http::fake(function (Request $request) use (&$called) {
+        $called = true;
+
+        return Http::response(['data' => ['updateProjectV2Field' => ['projectV2Field' => ['options' => []]]]], 200);
+    });
+
+    app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($called)->toBeTrue();
+});
+
+it('confirms pushDeleteLabel already calls GitHub for a real DeleteLabel write (not affected by the same bug class)', function (): void {
+    $deleted = Label::factory()->create(['github_node_id' => 'L_delete']);
+    app(DeleteLabel::class)->handle($deleted);
+    $called = false;
+    Http::fake(function (Request $request) use (&$called) {
+        $called = true;
+
+        return Http::response(['data' => ['deleteLabel' => ['clientMutationId' => null]]], 200);
+    });
+
+    app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($called)->toBeTrue();
 });
 
 it('waits to clear a project item group until the membership is pushed', function (): void {
