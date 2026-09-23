@@ -122,6 +122,19 @@ dependency order (`OPERATION_ORDER`), not insertion order — an issue must exis
 before its Project membership can, for example — and a handler whose dependency hasn't pushed
 yet returns `waiting` and is retried on the next pass rather than failing.
 
+**A push handler must never treat "the local field already matches the target value" as proof
+the mutation already reached GitHub.** Because the originating write Action always applies its
+target state locally *before* enqueueing the push, that local state is the target value on
+every single real attempt, including the very first — it can never distinguish "already pushed"
+from "just applied locally, not yet pushed." Two handlers did this wrong until 2026-09-22
+(`pushCloseIssue` checking local `state === 'CLOSED'`, `pushClearProjectItemField` checking the
+local group/priority column `=== null`) and, as a result, silently never called their mutation
+for any real close or Group/Priority clear performed through the app. The only reliable signal
+a push handler may use is a value the mutation's own response sets (`github_node_id`, etc.) —
+GitHub's own mutations are idempotent, so calling one again for a state GitHub already has is a
+harmless no-op, which is the correct way to handle "maybe already pushed" rather than guessing
+from local state.
+
 `php artisan todo:push:drain` runs a single pass and exits, registered
 `Schedule::command(...)->everyTenSeconds()->withoutOverlapping(1)` in `routes/console.php` (run
 by the `dibs-scheduler` container's `schedule:work` daemon, which supports sub-minute frequencies
