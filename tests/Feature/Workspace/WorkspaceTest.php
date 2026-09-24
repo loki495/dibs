@@ -947,11 +947,11 @@ it('loads the same contextual fields in task editing as task creation', function
         ->call('selectNewEditGroup', 'Freelance')->assertSee('New: Freelance');
 });
 
-it('closes with a comment and a reason via Close with comment', function (): void {
+it('closes via the single Close button, saving whatever is in the comment box as the note', function (): void {
     $issue = Issue::factory()->create(['state' => 'OPEN']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
-        ->assertSee('Close with comment')->assertSee('Close as not planned')
+        ->assertSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")
         ->set('newCommentBody', 'Shipped it.')->call('closeWithComment', CloseTodoIssue::REASON_COMPLETED)
         ->assertSet('newCommentBody', '')->assertSee('Shipped it.');
 
@@ -959,14 +959,23 @@ it('closes with a comment and a reason via Close with comment', function (): voi
         ->and(Comment::query()->where('issue_id', $issue->id)->sole()->kind)->toBe(Comment::KIND_CLOSING);
 });
 
-it('closes as not planned with a reason and no comment', function (): void {
+it('closes via the single Close button with an empty comment box, leaving no closing note', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('closeWithComment', CloseTodoIssue::REASON_COMPLETED);
+
+    expect($issue->refresh())->state->toBe('CLOSED')->state_reason->toBe('COMPLETED');
+    expect(Comment::query()->where('issue_id', $issue->id)->count())->toBe(0);
+});
+
+it('still supports closing as not planned at the method level, even though no button currently reaches it', function (): void {
     $issue = Issue::factory()->create(['state' => 'OPEN']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
         ->call('closeWithComment', CloseTodoIssue::REASON_NOT_PLANNED);
 
     expect($issue->refresh())->state->toBe('CLOSED')->state_reason->toBe('NOT_PLANNED');
-    expect(Comment::query()->where('issue_id', $issue->id)->count())->toBe(0);
 });
 
 it('rejects a tampered close reason without closing the issue', function (): void {
@@ -978,11 +987,17 @@ it('rejects a tampered close reason without closing the issue', function (): voi
     expect($issue->refresh())->state->toBe('OPEN');
 });
 
-it('hides the close-with-comment buttons once the issue is closed', function (): void {
-    $issue = Issue::factory()->create(['state' => 'CLOSED']);
+it('puts Close and Add comment on the same row, styles Close red, and hides it once the issue is closed', function (): void {
+    $open = Issue::factory()->create(['state' => 'OPEN']);
+    $closed = Issue::factory()->create(['state' => 'CLOSED']);
 
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
-        ->assertDontSee('Close with comment')->assertDontSee('Close as not planned')->assertSee('Add comment');
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $open->id)
+        ->assertSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")->assertSeeHtml('wire:submit="addComment"')
+        ->assertSeeHtml('text-red-600')
+        ->assertSeeHtml('wire:confirm=')
+        ->set('selected', $closed->id)
+        ->assertDontSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")->assertSee('Add comment');
 });
 
 it('shows the closing note as a highlighted block for a closed issue, and not for an open one', function (): void {
@@ -1059,4 +1074,10 @@ it('lets the Manage labels popup scroll internally so a long label list never hi
         ->call('openManageLabels')
         ->assertSeeHtml('data-modal="manage-labels"')
         ->assertSeeHtml('data-flux-modal-overflow');
+});
+
+it('asks for confirmation before Refresh from GitHub, the same way other consequential actions do', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('top-bar')
+        ->assertSeeHtml('wire:click="refreshFromGitHub"')
+        ->assertSeeHtml('wire:confirm=');
 });

@@ -86,7 +86,7 @@ new class extends Component
             @if ($variant !== 'labeled')
                 <a href="{{ route('activity') }}" class="flex items-center rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">{{ __('Activity') }}</a>
             @endif
-            <button type="button" wire:click="refreshFromGitHub" wire:loading.attr="disabled" wire:target="refreshFromGitHub" class="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+            <button type="button" wire:click="refreshFromGitHub" wire:confirm="{{ __('Refresh from GitHub now? This pulls the latest issues, comments and Project data; your own unpushed changes are never overwritten.') }}" wire:loading.attr="disabled" wire:target="refreshFromGitHub" class="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
                 <span wire:loading.remove wire:target="refreshFromGitHub">{{ __('Refresh from GitHub') }}</span>
                 <span wire:loading wire:target="refreshFromGitHub">{{ __('Refreshing…') }}</span>
             </button>
