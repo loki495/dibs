@@ -1115,3 +1115,14 @@ it('hides the Reopen icon for an open task and the Mark done icon for a closed o
         ->set('selected', $open->id)->assertSeeHtml('wire:click="closeIssue"')->assertDontSeeHtml('wire:click="reopenIssue"')
         ->set('selected', $closed->id)->assertSeeHtml('wire:click="reopenIssue"')->assertDontSeeHtml('wire:click="closeIssue"');
 });
+
+it('offers a Reopen button beside Add comment at the bottom of a closed task, and Close instead for an open one', function (): void {
+    $open = Issue::factory()->create(['state' => 'OPEN']);
+    $closed = Issue::factory()->create(['state' => 'CLOSED']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $closed->id)->assertSeeHtml('wire:submit="addComment"')->assertSeeInOrder(['Add a comment', 'Reopen', 'Add comment'])
+        ->assertDontSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")
+        ->call('reopenIssue')->assertDontSeeHtml('wire:click="reopenIssue"')->assertSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")
+        ->set('selected', $open->id)->assertDontSeeHtml('wire:click="reopenIssue"');
+});
