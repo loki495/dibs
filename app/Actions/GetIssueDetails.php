@@ -45,7 +45,7 @@ class GetIssueDetails
                 'reason' => $issue->state_reason,
                 'note' => $closingComment?->body !== null && $closingComment->body !== '' ? $this->renderMarkdown($closingComment->body) : null,
                 'references' => $closingComment?->references,
-                'closedAt' => ($closingComment !== null ? $closingComment->created_at : $issue->updated_at)->timezone(config('dibs.timezone'))->format('M j, Y'),
+                'closedAt' => ($issue->closed_at ?? ($closingComment !== null ? $closingComment->created_at : $issue->updated_at))->timezone(config('dibs.timezone'))->format('M j, Y'),
             ] : null,
             'claim' => $this->claim->handle($issue->id),
             'parent' => $issue->parent instanceof Issue ? $this->summarize($issue->parent) : null,

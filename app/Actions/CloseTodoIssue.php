@@ -45,7 +45,7 @@ class CloseTodoIssue
         // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
         return DB::transaction(function () use ($issue, $reason, $note, $references): Issue {
             $wasAlreadyClosed = $issue->state === 'CLOSED';
-            $issue->update(['state' => 'CLOSED', 'state_reason' => $reason]);
+            $issue->update(['state' => 'CLOSED', 'state_reason' => $reason, 'closed_at' => $wasAlreadyClosed ? ($issue->closed_at ?? now()) : now()]);
             $this->enqueue->handle('close_issue', 'issue', $issue->id, ['stateReason' => $reason], 'issue:close:'.$issue->id);
 
             if (! $wasAlreadyClosed) {

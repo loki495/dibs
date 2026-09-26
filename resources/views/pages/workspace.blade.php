@@ -1036,7 +1036,7 @@ new class extends Component
                             <div wire:key="deleted-row-{{ $row->id }}" role="listitem" class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 last:border-0 dark:border-slate-800/70">
                                 <div class="min-w-0">
                                     <span class="block truncate text-sm text-slate-500 line-through dark:text-slate-400">{{ $row->title }}</span>
-                                    <span class="text-[11px] text-slate-500">#{{ $row->github_number }} · {{ __('Deleted :time', ['time' => $row->updated_at->diffForHumans()]) }}</span>
+                                    <span class="text-[11px] text-slate-500" title="{{ $row->updated_at->diffForHumans() }}">#{{ $row->github_number }} · {{ __('Deleted :date', ['date' => $row->updated_at->copy()->timezone((string) config('dibs.timezone'))->format('M j, Y')]) }}</span>
                                 </div>
                                 <flux:button type="button" wire:click="restoreIssue({{ $row->id }})" size="sm">{{ __('Restore') }}</flux:button>
                             </div>
@@ -1108,6 +1108,7 @@ new class extends Component
                                                 @if ($membership['due'])<span @class(['text-amber-700 dark:text-amber-400' => $membership['due'] <= $today])>{{ __('Due :date', ['date' => $membership['due']]) }}</span>@endif
                                                 @if ($membership['planned'])<span>{{ __('Planned :date', ['date' => $membership['planned']]) }}</span>@endif
                                             @endforeach
+                                            @if ($row['closedAt'] ?? null)<span>{{ __('Closed :date', ['date' => $row['closedAt']]) }}</span>@elseif ($row['modifiedAt'] ?? null)<span>{{ __('Modified :date', ['date' => $row['modifiedAt']]) }}</span>@endif
                                             @foreach ($row['labelData'] as $badge)<button type="button" wire:click.stop="toggleLabel(@js($badge['name']))" data-label="{{ $badge['name'] }}" class="rounded border px-1.5 hover:brightness-95" @if ($badge['color']) style="border-color: {{ $badge['color'] }}; background-color: color-mix(in srgb, {{ $badge['color'] }} 16%, transparent); color: {{ $badge['color'] }}" @endif>{{ $badge['name'] }}</button>@endforeach
                                         </span>
                                     </div>

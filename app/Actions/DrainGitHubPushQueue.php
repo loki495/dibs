@@ -648,7 +648,7 @@ class DrainGitHubPushQueue
 
         try {
             $data = (new GitHubClient($token))->query(
-                'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason url updatedAt } } }',
+                'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason closedAt url updatedAt } } }',
                 ['issueId' => $issue->github_node_id, 'title' => $title, 'body' => $body],
             );
             $remote = $data['updateIssue']['issue'] ?? null;
@@ -662,7 +662,7 @@ class DrainGitHubPushQueue
         DB::transaction(function () use ($issue, $item, $remote): void {
             $issue->update([
                 'title' => $remote['title'], 'body' => $remote['body'] ?? null, 'state' => $remote['state'] ?? $issue->state,
-                'state_reason' => $remote['stateReason'] ?? null, 'url' => $remote['url'] ?? $issue->url,
+                'state_reason' => $remote['stateReason'] ?? null, 'closed_at' => $remote['closedAt'] ?? $issue->closed_at, 'url' => $remote['url'] ?? $issue->url,
                 'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
             ]);
             $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
@@ -688,7 +688,7 @@ class DrainGitHubPushQueue
         // only reliable signal of whether this specific push has actually reached GitHub.
         try {
             $data = (new GitHubClient($token))->query(
-                'mutation($issueId: ID!, $stateReason: IssueClosedStateReason) { closeIssue(input: {issueId: $issueId, stateReason: $stateReason}) { issue { id state stateReason updatedAt } } }',
+                'mutation($issueId: ID!, $stateReason: IssueClosedStateReason) { closeIssue(input: {issueId: $issueId, stateReason: $stateReason}) { issue { id state stateReason closedAt updatedAt } } }',
                 ['issueId' => $issue->github_node_id, 'stateReason' => $item->payload['stateReason'] ?? null],
             );
             $remote = $data['closeIssue']['issue'] ?? null;
@@ -701,7 +701,7 @@ class DrainGitHubPushQueue
 
         DB::transaction(function () use ($issue, $item, $remote): void {
             $issue->update([
-                'state' => 'CLOSED', 'state_reason' => $remote['stateReason'] ?? null,
+                'state' => 'CLOSED', 'state_reason' => $remote['stateReason'] ?? null, 'closed_at' => $remote['closedAt'] ?? $issue->closed_at ?? now(),
                 'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
             ]);
             $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
@@ -736,7 +736,7 @@ class DrainGitHubPushQueue
 
         DB::transaction(function () use ($issue, $item, $remote): void {
             $issue->update([
-                'state' => 'OPEN', 'state_reason' => $remote['stateReason'] ?? null,
+                'state' => 'OPEN', 'state_reason' => $remote['stateReason'] ?? null, 'closed_at' => null,
                 'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
             ]);
             $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);

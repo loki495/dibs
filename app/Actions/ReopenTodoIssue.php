@@ -26,7 +26,7 @@ class ReopenTodoIssue
         // attempts: 3 — same transient "database is locked" race against the scheduler's
         // push-queue drain as CloseTodoIssue; see that Action for the observed incident.
         return DB::transaction(function () use ($issue): Issue {
-            $issue->update(['state' => 'OPEN', 'state_reason' => null]);
+            $issue->update(['state' => 'OPEN', 'state_reason' => null, 'closed_at' => null]);
             $this->enqueue->handle('reopen_issue', 'issue', $issue->id, [], 'issue:reopen:'.$issue->id);
 
             return $issue;

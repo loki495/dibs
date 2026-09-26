@@ -85,3 +85,14 @@ it('does not create a second closing comment when an already-closed issue is clo
     expect(Comment::query()->count())->toBe(1)
         ->and(Comment::query()->sole()->body)->toBe('First close.');
 });
+
+it('stamps closed_at when closing, and keeps the original stamp when closed again', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN', 'closed_at' => null]);
+
+    app(CloseTodoIssue::class)->handle($issue);
+    $first = $issue->refresh()->closed_at;
+    $this->travel(2)->days();
+    app(CloseTodoIssue::class)->handle($issue);
+
+    expect($first)->not->toBeNull()->and($issue->refresh()->closed_at->equalTo($first))->toBeTrue();
+});

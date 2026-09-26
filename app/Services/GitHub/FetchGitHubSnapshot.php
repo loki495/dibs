@@ -24,7 +24,7 @@ class FetchGitHubSnapshot
         }
         $labels = $client->connection($repo['id'], 'Repository', 'labels', self::LABEL);
         $issues = $client->connection($repo['id'], 'Repository', 'issues',
-            'id number title body state stateReason url updatedAt parent { id } labels(first:100) { nodes { '.self::LABEL.' } '.self::PAGE.' } subIssues(first:100) { nodes { id } '.self::PAGE.' }');
+            'id number title body state stateReason closedAt url updatedAt parent { id } labels(first:100) { nodes { '.self::LABEL.' } '.self::PAGE.' } subIssues(first:100) { nodes { id } '.self::PAGE.' }');
         foreach ($issues as &$issue) {
             $issue['labels'] = $client->connection($issue['id'], 'Issue', 'labels', self::LABEL, $issue['labels']);
             $issue['children'] = $client->connection($issue['id'], 'Issue', 'subIssues', 'id', $issue['subIssues']);

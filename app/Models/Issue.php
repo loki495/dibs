@@ -21,7 +21,7 @@ class Issue extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['remote_updated_at' => 'datetime', 'last_synced_at' => 'datetime', 'is_available' => 'boolean', 'last_seen_at' => 'datetime'];
+        return ['remote_updated_at' => 'datetime', 'closed_at' => 'datetime', 'last_synced_at' => 'datetime', 'is_available' => 'boolean', 'last_seen_at' => 'datetime'];
     }
 
     /** @return BelongsTo<GitHubRepository, $this> */
