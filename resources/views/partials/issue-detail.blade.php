@@ -6,7 +6,8 @@
                 <span class="text-xs text-slate-500">{{ $detail['issue']->repository->full_name }} · #{{ $detail['issue']->github_number }}</span>
                 <div class="flex items-center gap-1">
                     @if (! $editingIssue)
-                        @if ($detail['issue']->state === 'OPEN')<button type="button" wire:click="closeIssue" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Mark done') }}"><flux:icon.check class="size-4" /></button>@endif
+                        @if ($detail['issue']->state === 'OPEN')<button type="button" wire:click="closeIssue" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Mark done') }}"><flux:icon.check class="size-4" /></button>
+                        @else<button type="button" wire:click="reopenIssue" wire:confirm="{{ __('Reopen this task?') }}" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Reopen') }}"><flux:icon.arrow-uturn-left class="size-4" /></button>@endif
                         <button type="button" wire:click="beginEdit" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Edit') }}"><flux:icon.pencil-square class="size-4" /></button>
                         <button type="button" wire:click="openDeleteConfirm" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Delete') }}"><flux:icon.trash class="size-4" /></button>
                     @endif
