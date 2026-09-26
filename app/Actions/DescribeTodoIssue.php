@@ -91,7 +91,7 @@ class DescribeTodoIssue
             'reason' => $issue->state_reason,
             'note' => $note?->body,
             'references' => $note?->references,
-            'closedAt' => ($note !== null ? $note->created_at : $issue->updated_at)->toIso8601String(),
+            'closedAt' => ($issue->closed_at ?? ($note !== null ? $note->created_at : $issue->updated_at))->toIso8601String(),
         ];
     }
 }

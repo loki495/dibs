@@ -225,3 +225,14 @@ it('reconciles a capitalised remote label onto its lowercase local-first twin wi
         ->and($local->fresh()->github_node_id)->toBe('L9')
         ->and($local->fresh()->name)->toBe('resume');
 });
+
+it('stores GitHub\'s closedAt on a closed issue, and leaves closed_at null when the field is absent or the issue is open', function (): void {
+    $snapshot = githubSnapshotFixture();
+    $snapshot['issues'][0]['state'] = 'CLOSED';
+    $snapshot['issues'][0]['closedAt'] = '2026-09-10T08:30:00Z';
+
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+
+    expect(Issue::query()->where('github_node_id', 'I1')->sole()->closed_at?->toIso8601String())->toBe('2026-09-10T08:30:00+00:00')
+        ->and(Issue::query()->where('github_node_id', 'I2')->sole()->closed_at)->toBeNull();
+});

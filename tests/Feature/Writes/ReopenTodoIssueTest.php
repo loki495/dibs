@@ -39,3 +39,11 @@ it('refuses an unavailable issue with a specific error and changes nothing', fun
     expect($issue->refresh()->state)->toBe('CLOSED');
     expect(GitHubPushQueueItem::query()->count())->toBe(0);
 });
+
+it('clears closed_at when reopening', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED', 'closed_at' => now()->subDay()]);
+
+    app(ReopenTodoIssue::class)->handle($issue);
+
+    expect($issue->refresh()->closed_at)->toBeNull();
+});

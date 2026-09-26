@@ -11,6 +11,7 @@ use App\Models\SyncState;
 use App\Models\TaskClaim;
 use App\Services\Process\LinuxProcessLiveness;
 use App\Support\ProjectColor;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
 
 class BuildIssueTree
@@ -76,6 +77,8 @@ class BuildIssueTree
             $matches[$issue->id] = $inArea && $inGroup && $modeMatches && $stateMatches && $searchMatches && $labelMatches && $priorityMatches;
             $claim = $claims->get($issue->id);
             $nodes[$issue->id] = ['id' => $issue->id, 'number' => $issue->github_number, 'title' => $issue->title, 'state' => $issue->state,
+                'modifiedAt' => $this->formatDate($issue->remote_updated_at ?? $issue->updated_at),
+                'closedAt' => $issue->state === 'CLOSED' ? $this->formatDate($issue->closed_at ?? $issue->remote_updated_at ?? $issue->updated_at) : null,
                 'parent' => $issue->parent_issue_id, 'remoteParent' => $issue->github_parent_node_id,
                 'container' => $container, 'knowledge' => $knowledge, 'memberships' => $memberships, 'projectTitle' => $memberships[0]['title'] ?? null, 'projectColor' => $memberships[0]['color'] ?? null, 'projectAreaId' => $memberships[0]['area'] ?? null, 'labels' => $names, 'labelData' => $issue->labels->map(fn (Label $label): array => ['name' => $label->name, 'color' => ctype_xdigit((string) $label->color) && strlen((string) $label->color) === 6 ? '#'.$label->color : null])->all(),
                 'context' => ! $matches[$issue->id], 'outsideArea' => ! $inArea, 'claim' => $claim instanceof TaskClaim ? $this->summarizeClaim($claim) : null];
@@ -356,10 +359,15 @@ class BuildIssueTree
         return $segments;
     }
 
+    private function formatDate(?CarbonInterface $date): ?string
+    {
+        return $date?->copy()->timezone((string) config('dibs.timezone'))->format('M j, Y');
+    }
+
     /** @return array<string, mixed> */
     private function virtualRow(string $id, string $title, ?string $projectTitle, ?string $color, ?int $projectAreaId): array
     {
-        return ['id' => $id, 'number' => null, 'title' => $title, 'state' => 'OPEN', 'parent' => null,
+        return ['id' => $id, 'number' => null, 'title' => $title, 'state' => 'OPEN', 'modifiedAt' => null, 'closedAt' => null, 'parent' => null,
             'remoteParent' => null, 'container' => true, 'knowledge' => false, 'memberships' => [], 'projectTitle' => $projectTitle, 'projectColor' => $color, 'projectAreaId' => $projectAreaId, 'labels' => [], 'labelData' => [],
             'context' => false, 'outsideArea' => false, 'ancestors' => [], 'depth' => 0, 'hasChildren' => true,
             'unresolvedParent' => false, 'virtual' => true, 'parentTitle' => null, 'treeRootId' => $id, 'claim' => null];

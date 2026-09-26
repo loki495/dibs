@@ -430,6 +430,22 @@ it('sends a null stateReason when the close carries none', function (): void {
     expect($sent)->toBe(['issueId' => 'I_test', 'stateReason' => null]);
 });
 
+it('stores GitHub\'s closedAt from the close confirmation, falling back to the local stamp when it is absent', function (): void {
+    $withRemote = Issue::factory()->create(['github_node_id' => 'I_a', 'state' => 'OPEN']);
+    $withoutRemote = Issue::factory()->create(['github_node_id' => 'I_b', 'state' => 'OPEN']);
+    app(CloseTodoIssue::class)->handle($withRemote);
+    app(CloseTodoIssue::class)->handle($withoutRemote);
+    $localStamp = $withoutRemote->refresh()->closed_at;
+    Http::fake(fn (Request $request) => Http::response(['data' => ['closeIssue' => ['issue' => ((array) $request->data()['variables'])['issueId'] === 'I_a'
+        ? ['id' => 'I_a', 'state' => 'CLOSED', 'stateReason' => null, 'closedAt' => '2026-09-10T08:30:00Z', 'updatedAt' => '2026-09-10T08:30:00Z']
+        : ['id' => 'I_b', 'state' => 'CLOSED', 'stateReason' => null, 'updatedAt' => '2026-09-10T08:30:00Z']]]], 200));
+
+    app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($withRemote->refresh()->closed_at->toIso8601String())->toBe('2026-09-10T08:30:00+00:00')
+        ->and($withoutRemote->refresh()->closed_at->equalTo($localStamp))->toBeTrue();
+});
+
 it('reopens an issue on GitHub for a real ReopenTodoIssue write, clearing state_reason', function (): void {
     // Driven through the real Action, not a bare factory row -- see the pushCloseIssue/
     // pushClearProjectItemField fix (2026-09-22) for why that distinction matters here.
