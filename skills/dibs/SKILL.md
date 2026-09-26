@@ -39,6 +39,8 @@ Before starting work that may already have a plan, look for an open issue labele
 
 ## Claim, work, finish
 
+Claim the task **before** you start on it, not after: a claim is what tells other agents and sessions the work is taken, so claiming only when you finish (a quick claim-then-close after the work is done) defeats it and lets two agents collide. The order is claim, work (heartbeat if long), then complete. If you did work without claiming, say so in the closing note rather than presenting a claim as if it covered the work.
+
 1. `todo_claim_status` first. A live claim (`isCurrentlyAlive: true`) means another process is working on that task right now: pick a different one.
 2. `todo_claim` with your `agentName`. It returns a `capabilityToken` once, in plaintext. Keep it: `todo_heartbeat`, `todo_release` and `todo_complete` all need it. The server identifies your process itself; you never pass a pid.
 3. On a long task, call `todo_heartbeat` periodically so the lease does not expire. It creates no comments or pushes.
