@@ -57,6 +57,11 @@ render next to the note — it is not folded into the GitHub-pushed comment body
 `stateReason` mutation variable; GitHub's echoed value then overwrites it, same as every other push
 confirmation.
 
+Reopening (`ReopenTodoIssue`, the workspace header's Reopen icon, `todo_reopen`) sets `state` back to
+`OPEN` and clears `state_reason`, and enqueues a `reopen_issue` push (GitHub's `reopenIssue` mutation).
+Nothing is deleted: earlier closing comments stay in the thread, and the highlighted closing block
+disappears because `closing` is only derived while the issue is `CLOSED`.
+
 The workspace detail panel (`resources/views/partials/issue-detail.blade.php`) surfaces the current
 close as a highlighted block above the comment thread — reason, rendered note, and reference chips —
 built by `GetIssueDetails`'s own `closing` derivation (the same shape as `DescribeTodoIssue`'s, kept
