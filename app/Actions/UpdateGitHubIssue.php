@@ -23,7 +23,7 @@ class UpdateGitHubIssue
         }
 
         $data = (new GitHubClient($token))->query(
-            'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason url updatedAt } } }',
+            'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason closedAt url updatedAt } } }',
             ['issueId' => $issue->github_node_id, 'title' => $title, 'body' => $body],
         );
         $remote = $data['updateIssue']['issue'] ?? null;
@@ -33,7 +33,7 @@ class UpdateGitHubIssue
 
         return DB::transaction(function () use ($issue, $remote): Issue {
             $issue->update(['title' => $remote['title'], 'body' => $remote['body'] ?? null, 'state' => $remote['state'] ?? $issue->state,
-                'state_reason' => $remote['stateReason'] ?? null, 'url' => $remote['url'] ?? $issue->url,
+                'state_reason' => $remote['stateReason'] ?? null, 'closed_at' => $remote['closedAt'] ?? $issue->closed_at, 'url' => $remote['url'] ?? $issue->url,
                 'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now()]);
 
             return $issue->refresh();

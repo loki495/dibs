@@ -57,6 +57,14 @@ render next to the note — it is not folded into the GitHub-pushed comment body
 `stateReason` mutation variable; GitHub's echoed value then overwrites it, same as every other push
 confirmation.
 
+`issues.closed_at` is stamped by `CloseTodoIssue` (kept if closed again), cleared on reopen, and
+overwritten by GitHub's own `closedAt` from the close confirmation and from every sync (the snapshot
+query fetches it). The task list shows "Closed <date>" for a closed row (`closed_at`, falling back to
+`remote_updated_at` for issues closed before the column existed) and "Modified <date>"
+(`remote_updated_at`, falling back to `updated_at`) for an open one, in `config('dibs.timezone')`;
+`updated_at` alone isn't used because every sync bumps it. The Deleted view shows when each task was
+deleted.
+
 Reopening (`ReopenTodoIssue`, the workspace detail panel's Reopen icon and the Reopen button beside Add comment, `todo_reopen`) sets `state` back to
 `OPEN` and clears `state_reason`, and enqueues a `reopen_issue` push (GitHub's `reopenIssue` mutation).
 Nothing is deleted: earlier closing comments stay in the thread, and the highlighted closing block

@@ -1126,3 +1126,21 @@ it('offers a Reopen button beside Add comment at the bottom of a closed task, an
         ->call('reopenIssue')->assertDontSeeHtml('wire:click="reopenIssue"')->assertSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")
         ->set('selected', $open->id)->assertDontSeeHtml('wire:click="reopenIssue"');
 });
+
+it('shows Closed for a closed row and Modified for an open one in the task list', function (): void {
+    config(['dibs.timezone' => 'America/Los_Angeles']);
+    Issue::factory()->create(['title' => 'Open one', 'state' => 'OPEN', 'remote_updated_at' => '2026-09-10 03:00:00']);
+    Issue::factory()->create(['title' => 'Closed one', 'state' => 'CLOSED', 'closed_at' => '2026-09-12 20:00:00']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('state', 'ALL')
+        ->assertSee('Modified Sep 9, 2026')->assertSee('Closed Sep 12, 2026');
+});
+
+it('shows the deletion date on a deleted task in the Deleted view, in the configured timezone', function (): void {
+    config(['dibs.timezone' => 'America/Los_Angeles']);
+    $issue = Issue::factory()->create(['title' => 'Gone task', 'is_available' => false]);
+    $issue->forceFill(['updated_at' => '2026-09-12 03:00:00'])->saveQuietly();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('view', 'deleted')
+        ->assertSee('Gone task')->assertSee('Deleted Sep 11, 2026');
+});
