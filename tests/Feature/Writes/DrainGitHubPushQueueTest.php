@@ -7,6 +7,7 @@ use App\Actions\CloseTodoIssue;
 use App\Actions\DeleteLabel;
 use App\Actions\DrainGitHubPushQueue;
 use App\Actions\RenameLabel;
+use App\Actions\ReopenTodoIssue;
 use App\Models\Comment;
 use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
@@ -427,6 +428,60 @@ it('sends a null stateReason when the close carries none', function (): void {
     app(DrainGitHubPushQueue::class)->handle('test-token');
 
     expect($sent)->toBe(['issueId' => 'I_test', 'stateReason' => null]);
+});
+
+it('reopens an issue on GitHub for a real ReopenTodoIssue write, clearing state_reason', function (): void {
+    // Driven through the real Action, not a bare factory row -- see the pushCloseIssue/
+    // pushClearProjectItemField fix (2026-09-22) for why that distinction matters here.
+    $repository = GitHubRepository::factory()->create(['github_node_id' => 'R_test']);
+    $issue = Issue::factory()->create(['repository_id' => $repository->id, 'github_node_id' => 'I_test', 'state' => 'CLOSED', 'state_reason' => 'COMPLETED']);
+    app(ReopenTodoIssue::class)->handle($issue);
+    $called = false;
+    Http::fake(function (Request $request) use (&$called) {
+        $called = true;
+
+        return Http::response(['data' => ['reopenIssue' => ['issue' => ['id' => 'I_test', 'state' => 'OPEN', 'stateReason' => null, 'updatedAt' => '2026-09-11T20:00:00Z']]]], 200);
+    });
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($called)->toBeTrue();
+    expect($result)->toBe(['pushed' => 1, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0]);
+    expect($issue->refresh())->state->toBe('OPEN')->state_reason->toBeNull();
+});
+
+it('waits to reopen an issue that has not been created on GitHub yet', function (): void {
+    $issue = Issue::factory()->create(['github_node_id' => null, 'state' => 'CLOSED']);
+    $queueItem = GitHubPushQueueItem::factory()->create(['operation' => 'reopen_issue', 'target_type' => 'issue', 'target_id' => $issue->id, 'attempts' => 0]);
+    Http::fake();
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 1]);
+    expect($queueItem->refresh())->attempts->toBe(0)->status->toBe('pending');
+    Http::assertNothingSent();
+});
+
+it('defers reopening an issue when GitHub is unreachable', function (): void {
+    $issue = Issue::factory()->create(['github_node_id' => 'I_test', 'state' => 'CLOSED']);
+    $queueItem = GitHubPushQueueItem::factory()->create(['operation' => 'reopen_issue', 'target_type' => 'issue', 'target_id' => $issue->id, 'attempts' => 0]);
+    Http::fake(fn () => Http::response(['errors' => [['message' => 'rate limited']]], 200));
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 1, 'needs_attention' => 0, 'waiting' => 0]);
+    expect($queueItem->refresh())->attempts->toBe(1)->status->toBe('pending');
+});
+
+it('gives up reopening an issue that no longer exists locally', function (): void {
+    $item = GitHubPushQueueItem::factory()->create(['operation' => 'reopen_issue', 'target_type' => 'issue', 'target_id' => 999999]);
+    Http::fake();
+
+    $result = app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 1, 'waiting' => 0]);
+    expect($item->refresh())->status->toBe('needs_attention');
+    Http::assertNothingSent();
 });
 
 it('deletes an issue on GitHub', function (): void {

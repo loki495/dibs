@@ -16,6 +16,7 @@ use App\Actions\GetIssueDetails;
 use App\Actions\ReleaseAbandonedTaskClaim;
 use App\Actions\RenameGroupOption;
 use App\Actions\RenameLabel;
+use App\Actions\ReopenTodoIssue;
 use App\Actions\RestoreTodoIssue;
 use App\Actions\ReviseTodoComment;
 use App\Actions\UpdateProjectSettings;
@@ -684,6 +685,18 @@ new class extends Component
             return;
         }
         app(CloseTodoIssue::class)->handle($issue);
+    }
+
+    public function reopenIssue(): void
+    {
+        $this->reset('editError');
+        $issue = Issue::query()->where('is_available', true)->find($this->selected);
+        if (! $issue instanceof Issue) {
+            $this->selected = 0;
+
+            return;
+        }
+        app(ReopenTodoIssue::class)->handle($issue);
     }
 
     public function openDeleteConfirm(): void

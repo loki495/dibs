@@ -53,6 +53,7 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_heartbeat` | Renew the calling process's own live claim lease. Creates no GitHub comment or push-queue entry. |
 | `todo_release` | Release the calling process's own live claim without completing the task. |
 | `todo_complete` | Close a claimed task, enqueue the push, and release the claim. `summary` becomes the closing note (a comment on the issue); optional `reason` (`COMPLETED`/`NOT_PLANNED`, pushed to GitHub as the close reason) and `references` (commit/PR pointers) add detail, ignored without `summary`. |
+| `todo_reopen` | Reopen a closed task: state back to `OPEN`, `state_reason` cleared (as GitHub does on a real reopen), a `reopen_issue` push enqueued. Not claim-scoped — takes just `issueId`, like the workspace UI's Reopen icon. Earlier closing notes stay in the comment history; `closing` in `todo_show` is `null` again. Returns the fresh `todo_show` detail. |
 | `todo_claim_status` | Read-only: whether a task has a live claim, and by whom — no capability token exposed. |
 | `todo_report_bug` | Self-report a problem with the MCP/CLI tooling itself (not a product task) — creates an `agent report`-labeled issue; amend with `todo_comment`. |
 

@@ -37,7 +37,7 @@ class DrainGitHubPushQueue
         'create_issue', 'create_label', 'rename_label', 'create_group_option', 'rename_group_option',
         'add_project_membership', 'set_project_item_group', 'set_project_item_priority',
         'add_issue_labels', 'set_issue_parent',
-        'update_issue_body', 'close_issue', 'delete_issue', 'delete_label',
+        'update_issue_body', 'close_issue', 'reopen_issue', 'delete_issue', 'delete_label',
         'delete_project_item', 'clear_project_item_group', 'clear_project_item_priority', 'delete_group_option',
         'set_issue_labels', 'remove_issue_parent',
         'create_comment', 'update_comment',
@@ -64,6 +64,7 @@ class DrainGitHubPushQueue
                     'set_issue_parent' => $this->pushSetIssueParent($token, $item),
                     'update_issue_body' => $this->pushUpdateIssueBody($token, $item),
                     'close_issue' => $this->pushCloseIssue($token, $item),
+                    'reopen_issue' => $this->pushReopenIssue($token, $item),
                     'delete_issue' => $this->pushDeleteIssue($token, $item),
                     'delete_label' => $this->pushDeleteLabel($token, $item),
                     'delete_project_item' => $this->pushDeleteProjectItem($token, $item),
@@ -701,6 +702,41 @@ class DrainGitHubPushQueue
         DB::transaction(function () use ($issue, $item, $remote): void {
             $issue->update([
                 'state' => 'CLOSED', 'state_reason' => $remote['stateReason'] ?? null,
+                'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
+            ]);
+            $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
+        });
+
+        return 'pushed';
+    }
+
+    private function pushReopenIssue(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
+    {
+        $issue = Issue::query()->find($item->target_id);
+        if (! $issue instanceof Issue) {
+            return $this->giveUp($item, 'Target issue no longer exists locally.');
+        }
+        if ($issue->github_node_id === null) {
+            return 'waiting';
+        }
+
+        // No "already OPEN locally, skip" short-circuit — see the note on pushCloseIssue above.
+        try {
+            $data = (new GitHubClient($token))->query(
+                'mutation($issueId: ID!) { reopenIssue(input: {issueId: $issueId}) { issue { id state stateReason updatedAt } } }',
+                ['issueId' => $issue->github_node_id],
+            );
+            $remote = $data['reopenIssue']['issue'] ?? null;
+            if (! is_array($remote) || $remote['state'] !== 'OPEN') {
+                throw new GitHubSyncException('GitHub did not confirm the issue was reopened.');
+            }
+        } catch (GitHubSyncException $exception) {
+            return $this->deferOrFail($item, $exception);
+        }
+
+        DB::transaction(function () use ($issue, $item, $remote): void {
+            $issue->update([
+                'state' => 'OPEN', 'state_reason' => $remote['stateReason'] ?? null,
                 'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
             ]);
             $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);

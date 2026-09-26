@@ -1081,3 +1081,37 @@ it('asks for confirmation before Refresh from GitHub, the same way other consequ
         ->assertSeeHtml('wire:click="refreshFromGitHub"')
         ->assertSeeHtml('wire:confirm=');
 });
+
+it('reopens a closed task via the header icon, with confirmation, clearing the reason and closing block', function (): void {
+    // The note itself isn't expected to vanish -- it moves from the highlighted closing block into
+    // the ordinary thread once reopened (see the next test); "Completed" is what should disappear,
+    // since state_reason is cleared and there's no longer a current close to highlight.
+    $issue = Issue::factory()->create(['state' => 'CLOSED', 'state_reason' => 'COMPLETED']);
+    Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'Turned out fine.']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertSeeHtml('wire:click="reopenIssue"')->assertSeeHtml('wire:confirm=')
+        ->assertSee('Turned out fine.')->assertSee('Completed')
+        ->call('reopenIssue')
+        ->assertDontSee('Completed');
+
+    expect($issue->refresh())->state->toBe('OPEN')->state_reason->toBeNull();
+});
+
+it('shows the old closing note back in the ordinary thread once reopened', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED']);
+    Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'First close note.']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('reopenIssue')
+        ->assertSee('First close note.');
+});
+
+it('hides the Reopen icon for an open task and the Mark done icon for a closed one', function (): void {
+    $open = Issue::factory()->create(['state' => 'OPEN']);
+    $closed = Issue::factory()->create(['state' => 'CLOSED']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $open->id)->assertSeeHtml('wire:click="closeIssue"')->assertDontSeeHtml('wire:click="reopenIssue"')
+        ->set('selected', $closed->id)->assertSeeHtml('wire:click="reopenIssue"')->assertDontSeeHtml('wire:click="closeIssue"');
+});

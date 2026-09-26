@@ -77,6 +77,7 @@ When you find something durable, file it as a knowledge issue instead of leaving
 | Edit title/body/Group safely | `todo_revise` |
 | Comment or edit a comment | `todo_comment` |
 | Take, keep, drop, finish a task | `todo_claim`, `todo_heartbeat`, `todo_release`, `todo_complete` |
+| Reopen a closed task | `todo_reopen` |
 | Who holds a task | `todo_claim_status` |
 | Report tooling problem | `todo_report_bug` |
 
