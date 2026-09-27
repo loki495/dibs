@@ -1,4 +1,5 @@
 import './connection-watchdog';
+import './loading-indicator';
 
 window.todoTree = (defaultOpen = false) => ({
     expanded: {},

@@ -122,7 +122,7 @@ new class extends Component
     </div>
 
     <div class="mt-6 overflow-x-auto">
-        <table class="w-full text-left text-sm">
+        <table data-busy class="w-full text-left text-sm">
             <thead>
                 <tr class="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
                     <th class="py-2 pr-4">{{ __('Operation') }}</th>

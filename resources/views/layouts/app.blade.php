@@ -33,6 +33,7 @@
         })();
     </script>
     <meta name="dibs-request-timeout" content="{{ config('dibs.livewire_request_timeout_seconds') }}">
+    <meta name="dibs-loading-delay" content="{{ config('dibs.loading_indicator_delay_ms') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
@@ -47,6 +48,7 @@
         </div>
     </div>
     <main class="mx-auto max-w-[1600px] px-6 pb-12">{{ $slot }}</main>
+    <div data-loading-bar popover="manual" aria-hidden="true"><div></div></div>
     @auth
         <livewire:manage-labels />
     @endauth
