@@ -136,3 +136,62 @@ html[data-loading] [data-busy] { opacity: 0.55; }
 @media (prefers-reduced-motion: reduce) {
     [data-loading-bar] > div { width: 100%; animation: none; opacity: 0.7; }
 }
+
+/* Optimistic pressed state (resources/js/optimistic.js). An element with data-optimistic is restyled the
+   moment it is tapped: data-pending="on" looks selected, "off" looks unselected, and once a tap in a
+   [data-optimistic-group] is pending, whatever was selected (aria-pressed="true") looks unselected. The
+   looks match the Tailwind classes each kind already uses for its real selected/unselected state. */
+[data-optimistic="teal"][data-pending="on"] {
+    border-color: var(--color-teal-600, #0d9488) !important;
+    background-color: var(--color-teal-100, #ccfbf1) !important;
+    color: var(--color-teal-900, #134e4a) !important;
+}
+.dark [data-optimistic="teal"][data-pending="on"] {
+    border-color: var(--color-teal-500, #14b8a6) !important;
+    background-color: var(--color-teal-950, #042f2e) !important;
+    color: var(--color-teal-100, #ccfbf1) !important;
+}
+[data-optimistic="teal"][data-pending="off"],
+[data-pending-group] [data-optimistic="teal"][aria-pressed="true"]:not([data-pending]) {
+    border-color: var(--color-slate-200, #e2e8f0) !important;
+    background-color: transparent !important;
+    color: var(--color-slate-600, #475569) !important;
+}
+.dark [data-optimistic="teal"][data-pending="off"],
+.dark [data-pending-group] [data-optimistic="teal"][aria-pressed="true"]:not([data-pending]) {
+    border-color: var(--color-slate-700, #334155) !important;
+    color: var(--color-slate-300, #cbd5e1) !important;
+}
+[data-optimistic="tealfill"][data-pending="on"] {
+    background-color: var(--color-teal-100, #ccfbf1) !important;
+    color: var(--color-teal-900, #134e4a) !important;
+}
+.dark [data-optimistic="tealfill"][data-pending="on"] {
+    background-color: var(--color-teal-950, #042f2e) !important;
+    color: var(--color-teal-200, #99f6e4) !important;
+}
+[data-optimistic="slate"][data-pending="on"] {
+    background-color: color-mix(in srgb, var(--color-slate-200, #e2e8f0) 70%, transparent) !important;
+}
+.dark [data-optimistic="slate"][data-pending="on"] {
+    background-color: var(--color-slate-800, #1e293b) !important;
+}
+[data-optimistic="segment"][data-pending="on"] {
+    background-color: #fff !important;
+    color: inherit !important;
+    font-weight: 500;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.dark [data-optimistic="segment"][data-pending="on"] {
+    background-color: var(--color-slate-800, #1e293b) !important;
+}
+[data-pending-group] [data-optimistic="tealfill"][aria-pressed="true"]:not([data-pending]),
+[data-pending-group] [data-optimistic="slate"][aria-pressed="true"]:not([data-pending]),
+[data-pending-group] [data-optimistic="segment"][aria-pressed="true"]:not([data-pending]) {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    font-weight: 400;
+}
+[data-pending-group] [data-optimistic="segment"][aria-pressed="true"]:not([data-pending]) {
+    color: var(--color-slate-500, #64748b) !important;
+}

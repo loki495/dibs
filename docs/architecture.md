@@ -233,7 +233,18 @@ push queue table, activity list) dim and get `aria-busy`. The bar is a `popover=
 renders in the top layer above open popups, and sits below the status bar via `--safe-top`. It counts
 requests in flight, clears when the last one finishes, fails or is cancelled, and resets when a page is
 restored from the back/forward cache. Covered by `tests/Feature/Workspace/LoadingIndicatorMarkupTest.php`
-and `tests/Browser/LoadingIndicatorTest.php` (slow, quick and failing requests).
+and `tests/Browser/RequestFeedbackTest.php` (slow, quick and failing requests).
+
+Filter chips, area pills, the sidebar area buttons and the Tasks/Knowledge/Deleted tabs look selected the
+instant they are tapped instead of after the round trip. An element opts in with `data-optimistic`
+(`teal`, `tealfill`, `slate` or `segment`, matching the classes it already uses for its real state) plus
+`aria-pressed` for that real state, `data-optimistic-mode="toggle"` for a chip that flips on and off, and
+`data-optimistic-group` on the container of an exclusive set. `resources/js/optimistic.js` only marks the
+tapped element `data-pending`; `app.css` restyles it (and un-highlights the previously selected one in the
+group) with `!important` rules, so the normal `wire:click` and the server stay the source of truth. The marks
+clear on the `dibs:idle` event the loading indicator fires when the last request finishes, so a failed request
+leaves the real unchanged state showing. Native selects and the search box are already immediate. Covered by
+the browser tests in `tests/Browser/RequestFeedbackTest.php` (toggle on and off, failure, phone pills).
 
 ## Client-side request failures
 
