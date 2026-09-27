@@ -82,7 +82,7 @@ or note. On a closed task the same spot shows "Reopen". The
 current closing comment is excluded from the plain thread list so it isn't shown twice; an earlier
 closing comment from a prior close/reopen cycle still appears there as ordinary history.
 
-Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals. `CreateLabel` is the standalone "new label, not attached to any task" write the workspace's Manage labels popup uses — unlike `ResolveLabels` (which reuses an existing same-named label when resolving an issue's own labels), a duplicate name here is a validation error, since the point of this one is a brand new label.
+Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals. `CreateLabel` is the standalone "new label, not attached to any task" write the Manage labels popup uses — unlike `ResolveLabels` (which reuses an existing same-named label when resolving an issue's own labels), a duplicate name here is a validation error, since the point of this one is a brand new label.
 
 **`sync_states`** — one row per mirrored resource, tracking last successful/attempted sync and
 the last error, read by the manual-pull path only (no longer drives any scheduled behavior).
@@ -210,6 +210,12 @@ days in `DIBS_TIMEZONE` (rows are stored in UTC), a date that doesn't parse is i
 validation error, and the active log name is a locked Livewire property so a tampered request can't choose
 which log Clear empties. Following a request link pushes the current log, filters, page and open row onto a
 locked history, which the Back button pops, so a drill-down across both logs can be walked back one hop at a time.
+
+The Manage labels popup is its own Livewire component (`resources/views/livewire/manage-labels.blade.php`)
+rendered once by the layout for signed-in users, so the gear menu's link works on every page (push queue,
+activity), not only the workspace. It listens for `open-manage-labels` (dispatched by the gear menu and
+the workspace sidebar link) and announces `labels-changed` and `label-deleted`; the workspace listens for
+those to re-render and to drop a deleted label from its filter and pending selections.
 
 ## Client-side request failures
 
