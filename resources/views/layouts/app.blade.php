@@ -32,6 +32,7 @@
             apply();
         })();
     </script>
+    <meta name="dibs-request-timeout" content="{{ config('dibs.livewire_request_timeout_seconds') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
@@ -46,6 +47,10 @@
         </div>
     </div>
     <main class="mx-auto max-w-[1600px] px-6 pb-12">{{ $slot }}</main>
+    <div data-connection-banner role="alert" hidden class="fixed inset-x-0 bottom-0 z-[60] flex items-center justify-between gap-3 bg-amber-50 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] text-sm text-amber-950 shadow-lg dark:bg-amber-950 dark:text-amber-100">
+        <span>{{ __('Lost contact with the server, so your last change may not have been saved.') }}</span>
+        <button type="button" data-reload class="shrink-0 rounded-lg border border-amber-700 px-3 py-1.5 font-medium hover:bg-amber-100 dark:border-amber-400 dark:hover:bg-amber-900">{{ __('Reload') }}</button>
+    </div>
     @livewireScripts
     @fluxScripts
 </body>

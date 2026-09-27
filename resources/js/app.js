@@ -1,3 +1,5 @@
+import './connection-watchdog';
+
 window.todoTree = (defaultOpen = false) => ({
     expanded: {},
     overrides: {},
