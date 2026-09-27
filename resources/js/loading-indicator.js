@@ -31,7 +31,10 @@ const start = () => {
 
 const finish = () => {
     pending = Math.max(0, pending - 1);
-    if (pending === 0) hide();
+    if (pending === 0) {
+        hide();
+        document.dispatchEvent(new CustomEvent('dibs:idle'));
+    }
 };
 
 document.addEventListener('livewire:init', () => {

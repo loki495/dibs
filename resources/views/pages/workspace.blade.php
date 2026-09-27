@@ -840,29 +840,29 @@ new class extends Component
         if (! locked) { document.documentElement.style.removeProperty('overflow'); document.documentElement.style.removeProperty('padding-right'); }
     ">
     <div class="grid items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-10">
-            <div class="mb-4 flex gap-1.5 overflow-x-auto pb-0.5 md:hidden" aria-label="{{ __('Workspace area') }}">
-                <button type="button" wire:click="daily" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $view === 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $view !== 'daily']) aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}">{{ __('Daily') }} · {{ $dailyCount }}</button>
-                <button type="button" wire:click="chooseArea(0)" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === 0 && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $area !== 0 || $view === 'daily']) aria-pressed="{{ $area === 0 && $view !== 'daily' ? 'true' : 'false' }}">{{ __('All') }} · {{ $taskCount }}</button>
+            <div class="mb-4 flex gap-1.5 overflow-x-auto pb-0.5 md:hidden" aria-label="{{ __('Workspace area') }}" data-optimistic-group>
+                <button type="button" wire:click="daily" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $view === 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $view !== 'daily']) aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}" data-optimistic="teal">{{ __('Daily') }} · {{ $dailyCount }}</button>
+                <button type="button" wire:click="chooseArea(0)" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === 0 && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $area !== 0 || $view === 'daily']) aria-pressed="{{ $area === 0 && $view !== 'daily' ? 'true' : 'false' }}" data-optimistic="teal">{{ __('All') }} · {{ $taskCount }}</button>
                 @foreach ($projects as $project)
-                    <button type="button" wire:click="chooseArea({{ $project->id }})" @class(['flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === $project->id && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! ($area === $project->id && $view !== 'daily')]) aria-pressed="{{ $area === $project->id && $view !== 'daily' ? 'true' : 'false' }}">
+                    <button type="button" wire:click="chooseArea({{ $project->id }})" @class(['flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === $project->id && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! ($area === $project->id && $view !== 'daily')]) data-optimistic="teal" aria-pressed="{{ $area === $project->id && $view !== 'daily' ? 'true' : 'false' }}">
                         <span class="size-1.5 shrink-0 rounded-full" style="background-color: #{{ $project->color }}"></span>{{ $project->title }} · {{ $areaCounts[$project->id] ?? 0 }}
                     </button>
                 @endforeach
             </div>
         <aside class="hidden lg:sticky lg:top-6 md:block">
-            <nav aria-label="{{ __('Workspace navigation') }}" class="space-y-1">
+            <nav aria-label="{{ __('Workspace navigation') }}" class="space-y-1" data-optimistic-group>
                 <div class="flex gap-1">
-                    <button wire:click="daily" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200' => $view === 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $view !== 'daily'])>
+                    <button wire:click="daily" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200' => $view === 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $view !== 'daily']) data-optimistic="tealfill" aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}">
                         <flux:icon.sun class="size-4" /><span>{{ __('Daily') }}</span><span class="text-xs tabular-nums">{{ $dailyCount }}</span>
                     </button>
-                    <button wire:click="chooseArea(0)" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-slate-200/70 dark:bg-slate-800' => $area === 0 && $view !== 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== 0 || $view === 'daily'])>
+                    <button wire:click="chooseArea(0)" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-slate-200/70 dark:bg-slate-800' => $area === 0 && $view !== 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== 0 || $view === 'daily']) data-optimistic="slate" aria-pressed="{{ $area === 0 && $view !== 'daily' ? 'true' : 'false' }}">
                         <flux:icon.squares-2x2 class="size-4" /><span>{{ __('All') }}</span><span class="text-xs tabular-nums">{{ $taskCount }}</span>
                     </button>
                 </div>
                 <p class="px-3 pb-2 pt-5 text-xs font-medium uppercase tracking-widest text-slate-500">{{ __('Areas') }}</p>
                 <div class="grid grid-cols-2 gap-1 lg:grid-cols-1">
                     @foreach ($projects as $project)
-                        <button wire:click="chooseArea({{ $project->id }})" @class(['flex min-h-9 items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm', 'bg-slate-200/70 font-medium dark:bg-slate-800' => $area === $project->id, 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== $project->id]) aria-pressed="{{ $area === $project->id ? 'true' : 'false' }}">
+                        <button wire:click="chooseArea({{ $project->id }})" @class(['flex min-h-9 items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm', 'bg-slate-200/70 font-medium dark:bg-slate-800' => $area === $project->id, 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== $project->id]) data-optimistic="slate" aria-pressed="{{ $area === $project->id ? 'true' : 'false' }}">
                             <span class="size-1.5 shrink-0 rounded-full" style="background-color: #{{ $project->color }}"></span><span class="flex-1">{{ $project->title }}</span><span class="text-xs tabular-nums text-slate-500">{{ $areaCounts[$project->id] ?? 0 }}</span>
                         </button>
                     @endforeach
@@ -907,9 +907,9 @@ new class extends Component
             @endif
             <div class="mb-5">
                 <div class="flex items-center justify-between gap-2">
-                    <div class="flex rounded-lg border border-slate-200 p-1 dark:border-slate-800" aria-label="{{ __('Content type') }}">
+                    <div class="flex rounded-lg border border-slate-200 p-1 dark:border-slate-800" aria-label="{{ __('Content type') }}" data-optimistic-group>
                         @foreach (['tasks' => __('Tasks'), 'knowledge' => __('Knowledge'), 'deleted' => __('Deleted')] as $mode => $title)
-                            <button wire:click="$set('view', '{{ $mode }}')" @class(['min-h-9 rounded-md px-3 text-sm sm:px-4', 'bg-white font-medium shadow-sm dark:bg-slate-800' => $view === $mode, 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100' => $view !== $mode]) aria-pressed="{{ $view === $mode ? 'true' : 'false' }}">{{ $title }}</button>
+                            <button wire:click="$set('view', '{{ $mode }}')" @class(['min-h-9 rounded-md px-3 text-sm sm:px-4', 'bg-white font-medium shadow-sm dark:bg-slate-800' => $view === $mode, 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100' => $view !== $mode]) aria-pressed="{{ $view === $mode ? 'true' : 'false' }}" data-optimistic="segment">{{ $title }}</button>
                         @endforeach
                     </div>
                     <div class="flex items-center gap-2">
@@ -953,7 +953,7 @@ new class extends Component
                     <div x-data="{ open: false }" class="flex items-start gap-1.5" aria-label="{{ __('Labels') }}">
                         <div class="flex max-h-8 flex-1 flex-nowrap gap-1.5 overflow-auto md:max-h-none md:flex-wrap md:overflow-visible" :class="open ? 'max-h-40 flex-wrap' : ''">
                             @foreach ($labelOptions as $name)
-                                <button wire:click="toggleLabel(@js($name))" @class(['shrink-0 rounded-full border px-2 py-1 text-xs transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => in_array($name, $labels, true), 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! in_array($name, $labels, true)]) aria-pressed="{{ in_array($name, $labels, true) ? 'true' : 'false' }}">{{ $name }}</button>
+                                <button wire:click="toggleLabel(@js($name))" @class(['shrink-0 rounded-full border px-2 py-1 text-xs transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => in_array($name, $labels, true), 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! in_array($name, $labels, true)]) aria-pressed="{{ in_array($name, $labels, true) ? 'true' : 'false' }}" data-optimistic="teal" data-optimistic-mode="toggle">{{ $name }}</button>
                             @endforeach
                         </div>
                         <button type="button" @click="open = ! open" class="flex size-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-900/5 md:hidden dark:hover:bg-white/10" :aria-expanded="open.toString()" aria-label="{{ __('Show all labels') }}"><flux:icon.chevron-right class="size-4 transition-transform" ::class="open ? 'rotate-90' : ''" /></button>
