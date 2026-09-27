@@ -237,3 +237,8 @@ dead-process claim cleanup, and push-queue failures — not just the happy path.
 - Scheduling fields beyond Planned/Due, recurrence, and any calendar/notification integration
 - Multiple configurable workspaces (repo + user) per Dibs instance — currently one instance
   targets one configured `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`
+Browser tests (`composer pest:browser`, `tests/Browser/`) run in the `app-test` container, whose image
+bakes Chromium for the Playwright version pinned in `docker/setup-test-container.sh`; that pin must move
+together with `package.json` (a Dependabot bump that skipped it broke every browser test with "Playwright
+is outdated" until the image was rebuilt).
+
