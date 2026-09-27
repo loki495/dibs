@@ -67,6 +67,27 @@ body {
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
 }
+/* The insets as custom properties so the modal rules below can use them (and so they can be overridden
+   to simulate a notched phone in a desktop browser). */
+:root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* Flux modals are native <dialog>s centred with the browser's default max-height, which ignores the
+   safe-area insets: with viewport-fit=cover a tall popup (Manage labels, Add task) started about 1em from
+   the top edge, under the iOS status bar, and could run past the home indicator. Confine plain dialogs to
+   the visible area and scroll inside; the scroll="body" variant is a full-screen scroller, so it is padded
+   instead. */
+[data-flux-modal] > dialog:not([data-flux-modal-overflow]):not([data-flux-flyout]) {
+    inset-block: var(--safe-top) var(--safe-bottom);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 1rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+[data-flux-modal] > dialog[data-flux-modal-overflow] {
+    padding-block: var(--safe-top) var(--safe-bottom);
+    overscroll-behavior: contain;
+}
 @layer components {
     .markdown-body { overflow-wrap: anywhere; line-height: 1.7; }
     .markdown-body > * + * { margin-top: 1rem; }

@@ -217,6 +217,12 @@ activity), not only the workspace. It listens for `open-manage-labels` (dispatch
 the workspace sidebar link) and announces `labels-changed` and `label-deleted`; the workspace listens for
 those to re-render and to drop a deleted label from its filter and pending selections.
 
+Popups (Flux `<dialog>`s) stay inside the visible area on a notched phone: `resources/css/app.css` exposes
+the safe-area insets as `--safe-top`/`--safe-bottom` and bounds plain dialogs to the viewport minus them,
+scrolling inside, while `scroll="body"` dialogs are padded by them. Without it a tall popup started under
+the iOS status bar (the app runs edge-to-edge with `viewport-fit=cover`). Overriding the two variables
+simulates a notch in a desktop browser; `tests/Browser/ModalSafeAreaTest.php` does exactly that.
+
 ## Client-side request failures
 
 Livewire 4 shows nothing when a request fails at the network level (only HTTP errors get its modal)
