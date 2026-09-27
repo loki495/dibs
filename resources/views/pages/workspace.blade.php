@@ -966,7 +966,7 @@ new class extends Component
                     <div class="flex min-h-14 items-center px-4 text-xs text-slate-500 dark:border-slate-800">
                         <span aria-live="polite">{{ trans_choice(':count deleted task|:count deleted tasks', $deletedRows->count(), ['count' => $deletedRows->count()]) }}</span>
                     </div>
-                    <div role="list" aria-label="{{ __('Deleted tasks') }}">
+                    <div role="list" data-busy aria-label="{{ __('Deleted tasks') }}">
                         @forelse ($deletedRows as $row)
                             <div wire:key="deleted-row-{{ $row->id }}" role="listitem" class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 last:border-0 dark:border-slate-800/70">
                                 <div class="min-w-0">
@@ -996,7 +996,7 @@ new class extends Component
                     @endif
                 </div>
             @endif
-            <div wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$sortBy.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <div data-busy wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$sortBy.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 text-xs text-slate-500 dark:border-slate-800">
                     <span class="flex items-center gap-3">
                         <span aria-live="polite">{{ trans_choice(':count result|:count results', $matchCount, ['count' => $matchCount]) }}{{ $filtered ? ' · '.__('with parent context') : '' }}</span>

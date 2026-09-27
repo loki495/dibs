@@ -223,6 +223,18 @@ scrolling inside, while `scroll="body"` dialogs are padded by them. Without it a
 the iOS status bar (the app runs edge-to-edge with `viewport-fit=cover`). Overriding the two variables
 simulates a notch in a desktop browser; `tests/Browser/ModalSafeAreaTest.php` does exactly that.
 
+## Loading indicator
+
+`resources/js/loading-indicator.js` gives one indicator for every Livewire request and every full-page
+link navigation (which the installed iOS app otherwise shows no progress for): after
+`dibs.loading_indicator_delay_ms` (`DIBS_LOADING_INDICATOR_DELAY_MS`, default 150, so fast requests never
+flicker) a thin teal bar shows at the top and the lists marked `data-busy` (the task list, deleted list,
+push queue table, activity list) dim and get `aria-busy`. The bar is a `popover="manual"` element so it
+renders in the top layer above open popups, and sits below the status bar via `--safe-top`. It counts
+requests in flight, clears when the last one finishes, fails or is cancelled, and resets when a page is
+restored from the back/forward cache. Covered by `tests/Feature/Workspace/LoadingIndicatorMarkupTest.php`
+and `tests/Browser/LoadingIndicatorTest.php` (slow, quick and failing requests).
+
 ## Client-side request failures
 
 Livewire 4 shows nothing when a request fails at the network level (only HTTP errors get its modal)
