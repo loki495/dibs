@@ -211,6 +211,22 @@ validation error, and the active log name is a locked Livewire property so a tam
 which log Clear empties. Following a request link pushes the current log, filters, page and open row onto a
 locked history, which the Back button pops, so a drill-down across both logs can be walked back one hop at a time.
 
+## Client-side request failures
+
+Livewire 4 shows nothing when a request fails at the network level (only HTTP errors get its modal)
+and has no request timeout, so one lost or hung response left taps changing the URL while the page
+never re-rendered, and every later action queued silently behind the stuck request. It looked like a
+frozen page that "fixed itself" on refresh, typically on a phone whose connection dropped or took the
+Cloudflare path. `resources/js/connection-watchdog.js` hooks `Livewire.interceptRequest`: a failed
+request, or one still pending after `dibs.livewire_request_timeout_seconds` (`DIBS_LIVEWIRE_REQUEST_TIMEOUT`,
+default 20, `0` disables only the timeout), shows the `[data-connection-banner]` in
+`layouts/app.blade.php` ("Lost contact with the server, so your last change may not have been saved"
+with a Reload button); a timed-out request is cancelled so the queue drains. The next successful
+request hides the banner again. Requests Livewire cancels itself, and failures while the page is
+unloading, don't show it. The timeout reaches the script through a `dibs-request-timeout` meta tag.
+Covered by `tests/Feature/Workspace/ConnectionBannerMarkupTest.php` and the real-browser
+`tests/Browser/ConnectionBannerTest.php`, which replace `fetch` to simulate a lost and a hung response.
+
 ## Testing
 
 Pest, run through `composer pint` → `composer phpstan` → `composer rector` (dry-run) →
@@ -225,6 +241,11 @@ transaction (see `ManagesTransactions::handleTransactionException`), converting 
 a `DeadlockException` instead. That class of behavior is verified by reasoning about the code
 and Laravel's own upstream test coverage, not by a Dibs-level regression test.
 
+Browser tests (`composer pest:browser`, `tests/Browser/`) run in the `app-test` container, whose image
+bakes Chromium for the Playwright version pinned in `docker/setup-test-container.sh`; that pin must move
+together with `package.json` (a Dependabot bump that skipped it broke every browser test with "Playwright
+is outdated" until the image was rebuilt).
+
 Cover sad paths explicitly: validation failures, stale-revision conflicts, claim conflicts,
 dead-process claim cleanup, and push-queue failures — not just the happy path.
 
@@ -237,8 +258,3 @@ dead-process claim cleanup, and push-queue failures — not just the happy path.
 - Scheduling fields beyond Planned/Due, recurrence, and any calendar/notification integration
 - Multiple configurable workspaces (repo + user) per Dibs instance — currently one instance
   targets one configured `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`
-Browser tests (`composer pest:browser`, `tests/Browser/`) run in the `app-test` container, whose image
-bakes Chromium for the Playwright version pinned in `docker/setup-test-container.sh`; that pin must move
-together with `package.json` (a Dependabot bump that skipped it broke every browser test with "Playwright
-is outdated" until the image was rebuilt).
-
