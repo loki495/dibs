@@ -795,48 +795,6 @@ it('deletes a Group from Project settings, clearing the active filter and any pe
     expect(ProjectFieldOption::query()->find($group->id))->toBeNull();
 });
 
-it('opens Manage labels via the cross-component event the gear menu dispatches, and renames a label', function (): void {
-    Http::fake();
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    $label = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->dispatch('open-manage-labels')
-        ->assertSet('manageLabelsOpen', true)->assertSee('urgent')
-        ->call('beginRenameLabel', $label->id)->assertSet('managingLabelName', 'urgent')
-        ->set('managingLabelName', 'Blocked')->call('saveLabelRename')
-        ->assertSet('managingLabelId', 0)->assertSee('blocked');
-
-    expect($label->refresh()->name)->toBe('blocked');
-});
-
-it('shows a validation error inline instead of closing Manage labels when a label rename collides', function (): void {
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
-    $blocked = Label::factory()->for($repository, 'repository')->create(['name' => 'blocked']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')
-        ->call('beginRenameLabel', $blocked->id)->set('managingLabelName', 'Urgent')->call('saveLabelRename')
-        ->assertSet('manageLabelsOpen', true)->assertSee('Another label already has this name.');
-
-    expect($blocked->refresh()->name)->toBe('blocked');
-});
-
-it('deletes a label from Manage labels, clearing it from the active filter and any pending selections', function (): void {
-    Http::fake();
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    $label = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('toggleLabel', 'urgent')->assertSet('labels', ['urgent'])
-        ->call('openManageLabels')->assertSee('urgent')
-        ->call('deleteLabelOption', $label->id)
-        ->assertSet('labels', [])->assertDontSee('urgent');
-
-    expect($label->refresh()->is_available)->toBeFalse();
-});
-
 it('switches between Daily and an area via the navigation actions the mobile pill row uses', function (): void {
     $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
 
@@ -1017,41 +975,6 @@ it('does not show a highlighted closing block for a closed issue with no closing
         ->set('selected', $issue->id)->assertDontSee('Not planned');
 });
 
-it('creates a label from the Manage labels popup and shows it in the list', function (): void {
-    Http::fake();
-    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')
-        ->set('newManageLabelName', 'Waiting on Vendor')->call('createManageLabel')
-        ->assertSet('newManageLabelName', '')->assertSee('waiting on vendor');
-
-    expect(Label::query()->where('name', 'waiting on vendor')->exists())->toBeTrue();
-});
-
-it('shows a validation error inline instead of closing Manage labels when creating a duplicate label', function (): void {
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    Label::factory()->for($repository, 'repository')->create(['name' => 'bug']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')
-        ->set('newManageLabelName', 'Bug')->call('createManageLabel')
-        ->assertSet('manageLabelsOpen', true)->assertSee('A label with this name already exists.');
-
-    expect(Label::query()->where('name', 'bug')->count())->toBe(1);
-});
-
-it('clears the new-label field and any error each time Manage labels is opened', function (): void {
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    Label::factory()->for($repository, 'repository')->create(['name' => 'bug']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')->set('newManageLabelName', 'Bug')->call('createManageLabel')
-        ->assertSee('A label with this name already exists.')
-        ->call('openManageLabels')
-        ->assertSet('newManageLabelName', '')->assertDontSee('A label with this name already exists.');
-});
-
 it('hides Manage labels from the labeled top-bar\'s settings popup, since the sidebar has its own link', function (): void {
     Livewire::actingAs(User::factory()->create())->test('top-bar', ['variant' => 'labeled'])
         ->assertDontSee('Manage labels');
@@ -1060,20 +983,6 @@ it('hides Manage labels from the labeled top-bar\'s settings popup, since the si
 it('keeps Manage labels in the icon top-bar\'s settings popup for mobile, which has no sidebar', function (): void {
     Livewire::actingAs(User::factory()->create())->test('top-bar')
         ->assertSee('Manage labels');
-});
-
-it('opens Manage labels from the sidebar link', function (): void {
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->assertSet('manageLabelsOpen', false)
-        ->call('openManageLabels')
-        ->assertSet('manageLabelsOpen', true);
-});
-
-it('lets the Manage labels popup scroll internally so a long label list never hides the Close button off-screen', function (): void {
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')
-        ->assertSeeHtml('data-modal="manage-labels"')
-        ->assertSeeHtml('data-flux-modal-overflow');
 });
 
 it('asks for confirmation before Refresh from GitHub, the same way other consequential actions do', function (): void {
@@ -1143,4 +1052,26 @@ it('shows the deletion date on a deleted task in the Deleted view, in the config
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('view', 'deleted')
         ->assertSee('Gone task')->assertSee('Deleted Sep 11, 2026');
+});
+
+it('forgets a deleted label from the active filter and any pending selections when the Manage labels popup deletes it', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('toggleLabel', 'urgent')->assertSet('labels', ['urgent'])
+        ->set('captureLabels', [5, 9])->set('editLabels', [9])
+        ->dispatch('label-deleted', id: 9, name: 'urgent')
+        ->assertSet('labels', [])->assertSet('captureLabels', [5])->assertSet('editLabels', []);
+});
+
+it('re-renders with a freshly created label when the Manage labels popup announces a change', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+
+    $workspace = Livewire::actingAs(User::factory()->create())->test('pages::workspace')->assertDontSee('fresh label');
+    Label::factory()->for($repository, 'repository')->create(['name' => 'fresh label']);
+
+    $workspace->dispatch('labels-changed')->assertSee('fresh label');
+});
+
+it('opens Manage labels from the sidebar link through the shared event', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->assertSeeHtml("wire:click=\"\$dispatch('open-manage-labels')\"");
 });

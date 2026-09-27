@@ -150,16 +150,6 @@ new class extends Component
 
     public string $managingGroupName = '';
 
-    public bool $manageLabelsOpen = false;
-
-    public int $managingLabelId = 0;
-
-    public string $managingLabelName = '';
-
-    public ?string $manageLabelsError = null;
-
-    public string $newManageLabelName = '';
-
     public bool $bulkMode = false;
 
     /** @var list<int> */
@@ -347,72 +337,17 @@ new class extends Component
         }
     }
 
-    #[On('open-manage-labels')]
-    public function openManageLabels(): void
+    #[On('label-deleted')]
+    public function forgetDeletedLabel(int $id, string $name): void
     {
-        $this->reset('manageLabelsError', 'managingLabelId', 'managingLabelName', 'newManageLabelName');
-        $this->manageLabelsOpen = true;
-    }
-
-    public function createManageLabel(): void
-    {
-        $this->reset('manageLabelsError');
-        try {
-            app(CreateLabel::class)->handle($this->newManageLabelName);
-        } catch (TodoValidationException $exception) {
-            $this->manageLabelsError = $exception->getMessage();
-
-            return;
-        }
-        $this->reset('newManageLabelName', 'manageLabelsError');
-    }
-
-    public function beginRenameLabel(int $id): void
-    {
-        $label = Label::query()->where('is_available', true)->find($id);
-        if (! $label instanceof Label) {
-            return;
-        }
-        $this->reset('manageLabelsError');
-        $this->managingLabelId = $id;
-        $this->managingLabelName = $label->name;
-    }
-
-    public function cancelRenameLabel(): void
-    {
-        $this->reset('managingLabelId', 'managingLabelName');
-    }
-
-    public function saveLabelRename(): void
-    {
-        $label = Label::query()->where('is_available', true)->find($this->managingLabelId);
-        if (! $label instanceof Label) {
-            $this->reset('managingLabelId', 'managingLabelName');
-
-            return;
-        }
-        try {
-            app(RenameLabel::class)->handle($label, $this->managingLabelName);
-        } catch (TodoValidationException $exception) {
-            $this->manageLabelsError = $exception->getMessage();
-
-            return;
-        }
-        $this->reset('managingLabelId', 'managingLabelName', 'manageLabelsError');
-    }
-
-    public function deleteLabelOption(int $id): void
-    {
-        $label = Label::query()->where('is_available', true)->find($id);
-        if (! $label instanceof Label) {
-            return;
-        }
-        $name = $label->name;
-        app(DeleteLabel::class)->handle($label);
         $this->labels = array_values(array_diff($this->labels, [$name]));
         $this->captureLabels = array_values(array_diff($this->captureLabels, [$id]));
         $this->editLabels = array_values(array_diff($this->editLabels, [$id]));
     }
+
+    /** Re-renders the list after the Manage labels popup created or renamed a label; nothing else to do. */
+    #[On('labels-changed')]
+    public function refreshAfterLabelsChanged(): void {}
 
     public function toggleBulkMode(): void
     {
@@ -894,13 +829,13 @@ new class extends Component
             'deletedRows' => $deletedRows,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $captureLabelOptions,
             'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions,
-            'projectSettingsGroups' => $projectSettingsGroups, 'manageLabelsList' => $labelOptions,
+            'projectSettingsGroups' => $projectSettingsGroups,
             'bulkGroups' => $bulkGroups, 'bulkParents' => $bulkParents, 'bulkLabelOptions' => $bulkLabelOptions];
     }
 }; ?>
 
 <div class="pb-8 pt-3" @keydown.escape.window="$wire.set('selected', 0)" x-effect="
-        let locked = $wire.captureOpen || $wire.projectSettingsOpen || $wire.manageLabelsOpen || $wire.bulkGroupOpen || $wire.bulkParentOpen || $wire.bulkLabelsOpen || $wire.deleteConfirmOpen || $wire.selected > 0;
+        let locked = $wire.captureOpen || $wire.projectSettingsOpen || $wire.bulkGroupOpen || $wire.bulkParentOpen || $wire.bulkLabelsOpen || $wire.deleteConfirmOpen || $wire.selected > 0;
         document.documentElement.classList.toggle('overflow-hidden', locked);
         if (! locked) { document.documentElement.style.removeProperty('overflow'); document.documentElement.style.removeProperty('padding-right'); }
     ">
@@ -947,7 +882,7 @@ new class extends Component
             <a href="{{ route('activity') }}" class="mt-1 flex min-h-9 cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
                 <flux:icon.clipboard-document-list class="size-4 shrink-0" /><span class="flex-1">{{ __('Activity') }}</span>
             </a>
-            <button type="button" wire:click="openManageLabels" class="mt-1 flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
+            <button type="button" wire:click="$dispatch('open-manage-labels')" class="mt-1 flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
                 <flux:icon.tag class="size-4 shrink-0" /><span class="flex-1">{{ __('Manage labels') }}</span>
             </button>
             <div class="mt-4 border-t border-slate-200 px-3 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800" aria-live="polite">
@@ -1182,37 +1117,6 @@ new class extends Component
             @if ($projectSettingsError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $projectSettingsError }}</p>@endif
             <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit" wire:loading.attr="disabled" wire:target="saveProjectSettings"><span wire:loading.remove wire:target="saveProjectSettings">{{ __('Save project') }}</span><span wire:loading wire:target="saveProjectSettings">{{ __('Saving…') }}</span></flux:button></div>
         </form>
-    </flux:modal>
-    <flux:modal wire:model="manageLabelsOpen" name="manage-labels" scroll="body" class="w-full max-w-md">
-        <div class="space-y-5">
-            <div>
-                <flux:heading size="lg">{{ __('Manage labels') }}</flux:heading>
-                <flux:text class="mt-1">{{ __('Rename or delete a label. New labels are lowercased by default.') }}</flux:text>
-            </div>
-            <form wire:submit="createManageLabel" class="flex items-center gap-2">
-                <flux:input wire:model="newManageLabelName" placeholder="{{ __('New label name') }}" class="flex-1" />
-                <flux:button type="submit" size="sm">{{ __('Add') }}</flux:button>
-            </form>
-            <div class="space-y-2">
-                @forelse ($manageLabelsList as $labelOption)
-                    <div class="flex items-center gap-2" wire:key="manage-label-{{ $labelOption->id }}">
-                        @if ($managingLabelId === $labelOption->id)
-                            <flux:input wire:model="managingLabelName" class="flex-1" autofocus wire:keydown.enter.prevent="saveLabelRename" />
-                            <button type="button" wire:click="saveLabelRename" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950" aria-label="{{ __('Save') }}"><flux:icon.check class="size-4" /></button>
-                            <button type="button" wire:click="cancelRenameLabel" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="{{ __('Cancel') }}"><flux:icon.x-mark class="size-4" /></button>
-                        @else
-                            <span class="min-w-0 flex-1 truncate text-sm">{{ $labelOption->name }}</span>
-                            <button type="button" wire:click="beginRenameLabel({{ $labelOption->id }})" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="{{ __('Rename :name', ['name' => $labelOption->name]) }}"><flux:icon.pencil-square class="size-4" /></button>
-                            <button type="button" wire:click="deleteLabelOption({{ $labelOption->id }})" wire:confirm="{{ __('Delete the \":name\" label? It will be removed from every task.', ['name' => $labelOption->name]) }}" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40" aria-label="{{ __('Delete :name', ['name' => $labelOption->name]) }}"><flux:icon.trash class="size-4" /></button>
-                        @endif
-                    </div>
-                @empty
-                    <p class="text-xs text-slate-500">{{ __('No labels yet.') }}</p>
-                @endforelse
-            </div>
-            @if ($manageLabelsError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $manageLabelsError }}</p>@endif
-            <div class="flex justify-end"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Close') }}</flux:button></flux:modal.close></div>
-        </div>
     </flux:modal>
     <flux:modal wire:model="bulkGroupOpen" name="bulk-group" class="w-full max-w-md">
         <form wire:submit="applyBulkGroup" class="space-y-5">
