@@ -93,6 +93,10 @@ capability token never reaches the page. Changes are recorded by the write paths
 Entries older than `DIBS_ACTIVITY_MCP_RETENTION_DAYS` / `DIBS_ACTIVITY_CHANGE_RETENTION_DAYS` (default
 30 days each; `0` keeps that log forever) are pruned daily by `php artisan activity:prune`.
 
+If the browser loses contact with the server (a dropped connection, or a request still pending after
+`DIBS_LIVEWIRE_REQUEST_TIMEOUT` seconds, default 20, `0` = no timeout), a banner at the bottom of the
+page says so and offers a Reload, instead of the page silently ignoring taps.
+
 ## Running checks
 
 ```bash
