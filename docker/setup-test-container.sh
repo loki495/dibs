@@ -16,5 +16,5 @@ rm -rf /var/lib/apt/lists/*
 # under /root/.cache/ms-playwright, outside the bind-mounted /var/www/html, so it
 # survives even though the project directory itself gets shadowed by the volume mount
 # at container start.
-npx -y playwright@1.59.1 install --with-deps chromium
+npx -y playwright@1.63.0 install --with-deps chromium
 chown -R www-data:www-data "$PLAYWRIGHT_BROWSERS_PATH"

@@ -282,3 +282,16 @@ it('sorts by Priority as a flat list, unprioritized last, with an inline parent 
         ->and(collect($ranked['rows'])->firstWhere('id', $child->id)['parentTitle'])->toBe('Later task')
         ->and(array_column($filtered['rows'], 'title'))->toBe(['First task']);
 });
+
+it('gives each row a modified date, and a closed date only for closed issues, in the configured timezone', function (): void {
+    config(['dibs.timezone' => 'America/Los_Angeles']);
+    $open = Issue::factory()->create(['state' => 'OPEN', 'remote_updated_at' => '2026-09-10 03:00:00']);
+    $closed = Issue::factory()->create(['state' => 'CLOSED', 'closed_at' => '2026-09-12 20:00:00', 'remote_updated_at' => '2026-09-13 01:00:00']);
+    $legacyClosed = Issue::factory()->create(['state' => 'CLOSED', 'closed_at' => null, 'remote_updated_at' => '2026-09-14 12:00:00']);
+
+    $rows = collect(app(BuildIssueTree::class)->handle(state: 'ALL')['rows']);
+
+    expect($rows->firstWhere('id', $open->id))->modifiedAt->toBe('Sep 9, 2026')->closedAt->toBeNull()
+        ->and($rows->firstWhere('id', $closed->id))->modifiedAt->toBe('Sep 12, 2026')->closedAt->toBe('Sep 12, 2026')
+        ->and($rows->firstWhere('id', $legacyClosed->id))->closedAt->toBe('Sep 14, 2026');
+});

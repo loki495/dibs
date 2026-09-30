@@ -16,6 +16,7 @@ use App\Actions\GetIssueDetails;
 use App\Actions\ReleaseAbandonedTaskClaim;
 use App\Actions\RenameGroupOption;
 use App\Actions\RenameLabel;
+use App\Actions\ReopenTodoIssue;
 use App\Actions\RestoreTodoIssue;
 use App\Actions\ReviseTodoComment;
 use App\Actions\UpdateProjectSettings;
@@ -148,16 +149,6 @@ new class extends Component
     public int $managingGroupId = 0;
 
     public string $managingGroupName = '';
-
-    public bool $manageLabelsOpen = false;
-
-    public int $managingLabelId = 0;
-
-    public string $managingLabelName = '';
-
-    public ?string $manageLabelsError = null;
-
-    public string $newManageLabelName = '';
 
     public bool $bulkMode = false;
 
@@ -346,72 +337,17 @@ new class extends Component
         }
     }
 
-    #[On('open-manage-labels')]
-    public function openManageLabels(): void
+    #[On('label-deleted')]
+    public function forgetDeletedLabel(int $id, string $name): void
     {
-        $this->reset('manageLabelsError', 'managingLabelId', 'managingLabelName', 'newManageLabelName');
-        $this->manageLabelsOpen = true;
-    }
-
-    public function createManageLabel(): void
-    {
-        $this->reset('manageLabelsError');
-        try {
-            app(CreateLabel::class)->handle($this->newManageLabelName);
-        } catch (TodoValidationException $exception) {
-            $this->manageLabelsError = $exception->getMessage();
-
-            return;
-        }
-        $this->reset('newManageLabelName', 'manageLabelsError');
-    }
-
-    public function beginRenameLabel(int $id): void
-    {
-        $label = Label::query()->where('is_available', true)->find($id);
-        if (! $label instanceof Label) {
-            return;
-        }
-        $this->reset('manageLabelsError');
-        $this->managingLabelId = $id;
-        $this->managingLabelName = $label->name;
-    }
-
-    public function cancelRenameLabel(): void
-    {
-        $this->reset('managingLabelId', 'managingLabelName');
-    }
-
-    public function saveLabelRename(): void
-    {
-        $label = Label::query()->where('is_available', true)->find($this->managingLabelId);
-        if (! $label instanceof Label) {
-            $this->reset('managingLabelId', 'managingLabelName');
-
-            return;
-        }
-        try {
-            app(RenameLabel::class)->handle($label, $this->managingLabelName);
-        } catch (TodoValidationException $exception) {
-            $this->manageLabelsError = $exception->getMessage();
-
-            return;
-        }
-        $this->reset('managingLabelId', 'managingLabelName', 'manageLabelsError');
-    }
-
-    public function deleteLabelOption(int $id): void
-    {
-        $label = Label::query()->where('is_available', true)->find($id);
-        if (! $label instanceof Label) {
-            return;
-        }
-        $name = $label->name;
-        app(DeleteLabel::class)->handle($label);
         $this->labels = array_values(array_diff($this->labels, [$name]));
         $this->captureLabels = array_values(array_diff($this->captureLabels, [$id]));
         $this->editLabels = array_values(array_diff($this->editLabels, [$id]));
     }
+
+    /** Re-renders the list after the Manage labels popup created or renamed a label; nothing else to do. */
+    #[On('labels-changed')]
+    public function refreshAfterLabelsChanged(): void {}
 
     public function toggleBulkMode(): void
     {
@@ -686,6 +622,18 @@ new class extends Component
         app(CloseTodoIssue::class)->handle($issue);
     }
 
+    public function reopenIssue(): void
+    {
+        $this->reset('editError');
+        $issue = Issue::query()->where('is_available', true)->find($this->selected);
+        if (! $issue instanceof Issue) {
+            $this->selected = 0;
+
+            return;
+        }
+        app(ReopenTodoIssue::class)->handle($issue);
+    }
+
     public function openDeleteConfirm(): void
     {
         $this->reset('deleteError');
@@ -881,40 +829,40 @@ new class extends Component
             'deletedRows' => $deletedRows,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $captureLabelOptions,
             'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions,
-            'projectSettingsGroups' => $projectSettingsGroups, 'manageLabelsList' => $labelOptions,
+            'projectSettingsGroups' => $projectSettingsGroups,
             'bulkGroups' => $bulkGroups, 'bulkParents' => $bulkParents, 'bulkLabelOptions' => $bulkLabelOptions];
     }
 }; ?>
 
 <div class="pb-8 pt-3" @keydown.escape.window="$wire.set('selected', 0)" x-effect="
-        let locked = $wire.captureOpen || $wire.projectSettingsOpen || $wire.manageLabelsOpen || $wire.bulkGroupOpen || $wire.bulkParentOpen || $wire.bulkLabelsOpen || $wire.deleteConfirmOpen || $wire.selected > 0;
+        let locked = $wire.captureOpen || $wire.projectSettingsOpen || $wire.bulkGroupOpen || $wire.bulkParentOpen || $wire.bulkLabelsOpen || $wire.deleteConfirmOpen || $wire.selected > 0;
         document.documentElement.classList.toggle('overflow-hidden', locked);
         if (! locked) { document.documentElement.style.removeProperty('overflow'); document.documentElement.style.removeProperty('padding-right'); }
     ">
     <div class="grid items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-10">
-            <div class="mb-4 flex gap-1.5 overflow-x-auto pb-0.5 md:hidden" aria-label="{{ __('Workspace area') }}">
-                <button type="button" wire:click="daily" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $view === 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $view !== 'daily']) aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}">{{ __('Daily') }} · {{ $dailyCount }}</button>
-                <button type="button" wire:click="chooseArea(0)" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === 0 && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $area !== 0 || $view === 'daily']) aria-pressed="{{ $area === 0 && $view !== 'daily' ? 'true' : 'false' }}">{{ __('All') }} · {{ $taskCount }}</button>
+            <div class="mb-4 flex gap-1.5 overflow-x-auto pb-0.5 md:hidden" aria-label="{{ __('Workspace area') }}" data-optimistic-group>
+                <button type="button" wire:click="daily" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $view === 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $view !== 'daily']) aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}" data-optimistic="teal">{{ __('Daily') }} · {{ $dailyCount }}</button>
+                <button type="button" wire:click="chooseArea(0)" @class(['shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === 0 && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => $area !== 0 || $view === 'daily']) aria-pressed="{{ $area === 0 && $view !== 'daily' ? 'true' : 'false' }}" data-optimistic="teal">{{ __('All') }} · {{ $taskCount }}</button>
                 @foreach ($projects as $project)
-                    <button type="button" wire:click="chooseArea({{ $project->id }})" @class(['flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === $project->id && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! ($area === $project->id && $view !== 'daily')]) aria-pressed="{{ $area === $project->id && $view !== 'daily' ? 'true' : 'false' }}">
+                    <button type="button" wire:click="chooseArea({{ $project->id }})" @class(['flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => $area === $project->id && $view !== 'daily', 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! ($area === $project->id && $view !== 'daily')]) data-optimistic="teal" aria-pressed="{{ $area === $project->id && $view !== 'daily' ? 'true' : 'false' }}">
                         <span class="size-1.5 shrink-0 rounded-full" style="background-color: #{{ $project->color }}"></span>{{ $project->title }} · {{ $areaCounts[$project->id] ?? 0 }}
                     </button>
                 @endforeach
             </div>
         <aside class="hidden lg:sticky lg:top-6 md:block">
-            <nav aria-label="{{ __('Workspace navigation') }}" class="space-y-1">
+            <nav aria-label="{{ __('Workspace navigation') }}" class="space-y-1" data-optimistic-group>
                 <div class="flex gap-1">
-                    <button wire:click="daily" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200' => $view === 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $view !== 'daily'])>
+                    <button wire:click="daily" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200' => $view === 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $view !== 'daily']) data-optimistic="tealfill" aria-pressed="{{ $view === 'daily' ? 'true' : 'false' }}">
                         <flux:icon.sun class="size-4" /><span>{{ __('Daily') }}</span><span class="text-xs tabular-nums">{{ $dailyCount }}</span>
                     </button>
-                    <button wire:click="chooseArea(0)" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-slate-200/70 dark:bg-slate-800' => $area === 0 && $view !== 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== 0 || $view === 'daily'])>
+                    <button wire:click="chooseArea(0)" @class(['flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-sm', 'bg-slate-200/70 dark:bg-slate-800' => $area === 0 && $view !== 'daily', 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== 0 || $view === 'daily']) data-optimistic="slate" aria-pressed="{{ $area === 0 && $view !== 'daily' ? 'true' : 'false' }}">
                         <flux:icon.squares-2x2 class="size-4" /><span>{{ __('All') }}</span><span class="text-xs tabular-nums">{{ $taskCount }}</span>
                     </button>
                 </div>
                 <p class="px-3 pb-2 pt-5 text-xs font-medium uppercase tracking-widest text-slate-500">{{ __('Areas') }}</p>
                 <div class="grid grid-cols-2 gap-1 lg:grid-cols-1">
                     @foreach ($projects as $project)
-                        <button wire:click="chooseArea({{ $project->id }})" @class(['flex min-h-9 items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm', 'bg-slate-200/70 font-medium dark:bg-slate-800' => $area === $project->id, 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== $project->id]) aria-pressed="{{ $area === $project->id ? 'true' : 'false' }}">
+                        <button wire:click="chooseArea({{ $project->id }})" @class(['flex min-h-9 items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm', 'bg-slate-200/70 font-medium dark:bg-slate-800' => $area === $project->id, 'hover:bg-slate-100 dark:hover:bg-slate-900' => $area !== $project->id]) data-optimistic="slate" aria-pressed="{{ $area === $project->id ? 'true' : 'false' }}">
                             <span class="size-1.5 shrink-0 rounded-full" style="background-color: #{{ $project->color }}"></span><span class="flex-1">{{ $project->title }}</span><span class="text-xs tabular-nums text-slate-500">{{ $areaCounts[$project->id] ?? 0 }}</span>
                         </button>
                     @endforeach
@@ -934,7 +882,7 @@ new class extends Component
             <a href="{{ route('activity') }}" class="mt-1 flex min-h-9 cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
                 <flux:icon.clipboard-document-list class="size-4 shrink-0" /><span class="flex-1">{{ __('Activity') }}</span>
             </a>
-            <button type="button" wire:click="openManageLabels" class="mt-1 flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
+            <button type="button" wire:click="$dispatch('open-manage-labels')" class="mt-1 flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
                 <flux:icon.tag class="size-4 shrink-0" /><span class="flex-1">{{ __('Manage labels') }}</span>
             </button>
             <div class="mt-4 border-t border-slate-200 px-3 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800" aria-live="polite">
@@ -959,9 +907,9 @@ new class extends Component
             @endif
             <div class="mb-5">
                 <div class="flex items-center justify-between gap-2">
-                    <div class="flex rounded-lg border border-slate-200 p-1 dark:border-slate-800" aria-label="{{ __('Content type') }}">
+                    <div class="flex rounded-lg border border-slate-200 p-1 dark:border-slate-800" aria-label="{{ __('Content type') }}" data-optimistic-group>
                         @foreach (['tasks' => __('Tasks'), 'knowledge' => __('Knowledge'), 'deleted' => __('Deleted')] as $mode => $title)
-                            <button wire:click="$set('view', '{{ $mode }}')" @class(['min-h-9 rounded-md px-3 text-sm sm:px-4', 'bg-white font-medium shadow-sm dark:bg-slate-800' => $view === $mode, 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100' => $view !== $mode]) aria-pressed="{{ $view === $mode ? 'true' : 'false' }}">{{ $title }}</button>
+                            <button wire:click="$set('view', '{{ $mode }}')" @class(['min-h-9 rounded-md px-3 text-sm sm:px-4', 'bg-white font-medium shadow-sm dark:bg-slate-800' => $view === $mode, 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100' => $view !== $mode]) aria-pressed="{{ $view === $mode ? 'true' : 'false' }}" data-optimistic="segment">{{ $title }}</button>
                         @endforeach
                     </div>
                     <div class="flex items-center gap-2">
@@ -1005,7 +953,7 @@ new class extends Component
                     <div x-data="{ open: false }" class="flex items-start gap-1.5" aria-label="{{ __('Labels') }}">
                         <div class="flex max-h-8 flex-1 flex-nowrap gap-1.5 overflow-auto md:max-h-none md:flex-wrap md:overflow-visible" :class="open ? 'max-h-40 flex-wrap' : ''">
                             @foreach ($labelOptions as $name)
-                                <button wire:click="toggleLabel(@js($name))" @class(['shrink-0 rounded-full border px-2 py-1 text-xs transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => in_array($name, $labels, true), 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! in_array($name, $labels, true)]) aria-pressed="{{ in_array($name, $labels, true) ? 'true' : 'false' }}">{{ $name }}</button>
+                                <button wire:click="toggleLabel(@js($name))" @class(['shrink-0 rounded-full border px-2 py-1 text-xs transition', 'border-teal-600 bg-teal-100 text-teal-900 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-100' => in_array($name, $labels, true), 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800' => ! in_array($name, $labels, true)]) aria-pressed="{{ in_array($name, $labels, true) ? 'true' : 'false' }}" data-optimistic="teal" data-optimistic-mode="toggle">{{ $name }}</button>
                             @endforeach
                         </div>
                         <button type="button" @click="open = ! open" class="flex size-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-900/5 md:hidden dark:hover:bg-white/10" :aria-expanded="open.toString()" aria-label="{{ __('Show all labels') }}"><flux:icon.chevron-right class="size-4 transition-transform" ::class="open ? 'rotate-90' : ''" /></button>
@@ -1018,12 +966,12 @@ new class extends Component
                     <div class="flex min-h-14 items-center px-4 text-xs text-slate-500 dark:border-slate-800">
                         <span aria-live="polite">{{ trans_choice(':count deleted task|:count deleted tasks', $deletedRows->count(), ['count' => $deletedRows->count()]) }}</span>
                     </div>
-                    <div role="list" aria-label="{{ __('Deleted tasks') }}">
+                    <div role="list" data-busy aria-label="{{ __('Deleted tasks') }}">
                         @forelse ($deletedRows as $row)
                             <div wire:key="deleted-row-{{ $row->id }}" role="listitem" class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 last:border-0 dark:border-slate-800/70">
                                 <div class="min-w-0">
                                     <span class="block truncate text-sm text-slate-500 line-through dark:text-slate-400">{{ $row->title }}</span>
-                                    <span class="text-[11px] text-slate-500">#{{ $row->github_number }} · {{ __('Deleted :time', ['time' => $row->updated_at->diffForHumans()]) }}</span>
+                                    <span class="text-[11px] text-slate-500" title="{{ $row->updated_at->diffForHumans() }}">#{{ $row->github_number }} · {{ __('Deleted :date', ['date' => $row->updated_at->copy()->timezone((string) config('dibs.timezone'))->format('M j, Y')]) }}</span>
                                 </div>
                                 <flux:button type="button" wire:click="restoreIssue({{ $row->id }})" size="sm">{{ __('Restore') }}</flux:button>
                             </div>
@@ -1048,7 +996,7 @@ new class extends Component
                     @endif
                 </div>
             @endif
-            <div wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$sortBy.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <div data-busy wire:key="tree-{{ md5($area.$view.$search.$state.$group.$priority.$sortBy.implode(', ', $labels)) }}" x-data="todoTree(@js($filtered))" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 text-xs text-slate-500 dark:border-slate-800">
                     <span class="flex items-center gap-3">
                         <span aria-live="polite">{{ trans_choice(':count result|:count results', $matchCount, ['count' => $matchCount]) }}{{ $filtered ? ' · '.__('with parent context') : '' }}</span>
@@ -1095,6 +1043,7 @@ new class extends Component
                                                 @if ($membership['due'])<span @class(['text-amber-700 dark:text-amber-400' => $membership['due'] <= $today])>{{ __('Due :date', ['date' => $membership['due']]) }}</span>@endif
                                                 @if ($membership['planned'])<span>{{ __('Planned :date', ['date' => $membership['planned']]) }}</span>@endif
                                             @endforeach
+                                            @if ($row['closedAt'] ?? null)<span>{{ __('Closed :date', ['date' => $row['closedAt']]) }}</span>@elseif ($row['modifiedAt'] ?? null)<span>{{ __('Modified :date', ['date' => $row['modifiedAt']]) }}</span>@endif
                                             @foreach ($row['labelData'] as $badge)<button type="button" wire:click.stop="toggleLabel(@js($badge['name']))" data-label="{{ $badge['name'] }}" class="rounded border px-1.5 hover:brightness-95" @if ($badge['color']) style="border-color: {{ $badge['color'] }}; background-color: color-mix(in srgb, {{ $badge['color'] }} 16%, transparent); color: {{ $badge['color'] }}" @endif>{{ $badge['name'] }}</button>@endforeach
                                         </span>
                                     </div>
@@ -1168,37 +1117,6 @@ new class extends Component
             @if ($projectSettingsError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $projectSettingsError }}</p>@endif
             <div class="flex justify-end gap-2"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close><flux:button type="submit" wire:loading.attr="disabled" wire:target="saveProjectSettings"><span wire:loading.remove wire:target="saveProjectSettings">{{ __('Save project') }}</span><span wire:loading wire:target="saveProjectSettings">{{ __('Saving…') }}</span></flux:button></div>
         </form>
-    </flux:modal>
-    <flux:modal wire:model="manageLabelsOpen" name="manage-labels" scroll="body" class="w-full max-w-md">
-        <div class="space-y-5">
-            <div>
-                <flux:heading size="lg">{{ __('Manage labels') }}</flux:heading>
-                <flux:text class="mt-1">{{ __('Rename or delete a label. New labels are lowercased by default.') }}</flux:text>
-            </div>
-            <form wire:submit="createManageLabel" class="flex items-center gap-2">
-                <flux:input wire:model="newManageLabelName" placeholder="{{ __('New label name') }}" class="flex-1" />
-                <flux:button type="submit" size="sm">{{ __('Add') }}</flux:button>
-            </form>
-            <div class="space-y-2">
-                @forelse ($manageLabelsList as $labelOption)
-                    <div class="flex items-center gap-2" wire:key="manage-label-{{ $labelOption->id }}">
-                        @if ($managingLabelId === $labelOption->id)
-                            <flux:input wire:model="managingLabelName" class="flex-1" autofocus wire:keydown.enter.prevent="saveLabelRename" />
-                            <button type="button" wire:click="saveLabelRename" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950" aria-label="{{ __('Save') }}"><flux:icon.check class="size-4" /></button>
-                            <button type="button" wire:click="cancelRenameLabel" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="{{ __('Cancel') }}"><flux:icon.x-mark class="size-4" /></button>
-                        @else
-                            <span class="min-w-0 flex-1 truncate text-sm">{{ $labelOption->name }}</span>
-                            <button type="button" wire:click="beginRenameLabel({{ $labelOption->id }})" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="{{ __('Rename :name', ['name' => $labelOption->name]) }}"><flux:icon.pencil-square class="size-4" /></button>
-                            <button type="button" wire:click="deleteLabelOption({{ $labelOption->id }})" wire:confirm="{{ __('Delete the \":name\" label? It will be removed from every task.', ['name' => $labelOption->name]) }}" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40" aria-label="{{ __('Delete :name', ['name' => $labelOption->name]) }}"><flux:icon.trash class="size-4" /></button>
-                        @endif
-                    </div>
-                @empty
-                    <p class="text-xs text-slate-500">{{ __('No labels yet.') }}</p>
-                @endforelse
-            </div>
-            @if ($manageLabelsError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $manageLabelsError }}</p>@endif
-            <div class="flex justify-end"><flux:modal.close><flux:button type="button" variant="ghost">{{ __('Close') }}</flux:button></flux:modal.close></div>
-        </div>
     </flux:modal>
     <flux:modal wire:model="bulkGroupOpen" name="bulk-group" class="w-full max-w-md">
         <form wire:submit="applyBulkGroup" class="space-y-5">
