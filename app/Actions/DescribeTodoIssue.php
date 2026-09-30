@@ -17,7 +17,7 @@ class DescribeTodoIssue
     public const DEFAULT_COMMENTS_PER_PAGE = 20;
 
     /** @return array<string, mixed> */
-    public function handle(int $id, bool $withComments = false, int $commentsPage = 1, int $commentsPerPage = self::DEFAULT_COMMENTS_PER_PAGE): array
+    public function handle(int $id, bool $withComments = false, int $commentsPage = 1, int $commentsPerPage = self::DEFAULT_COMMENTS_PER_PAGE, ?int $maxBodyLength = null): array
     {
         $issue = Issue::query()->withCount(['children' => fn ($query) => $query->where('is_available', true)])
             ->with([
@@ -38,9 +38,16 @@ class DescribeTodoIssue
             throw new TodoRecordUnavailableException("Issue #{$issue->github_number} (local id {$id}) is no longer available; it was removed or lost GitHub access.");
         }
 
+        $body = $issue->body;
+        $bodyTruncated = $maxBodyLength !== null && $body !== null && mb_strlen($body) > $maxBodyLength;
+        if ($bodyTruncated) {
+            $body = mb_substr($body, 0, $maxBodyLength).'…';
+        }
+
         $result = [
             ...IssueSummary::from($issue),
-            'body' => $issue->body,
+            'body' => $body,
+            'bodyTruncated' => $bodyTruncated,
             'parent' => $issue->parent instanceof Issue ? IssueSummary::from($issue->parent) : null,
             'children' => $issue->children->map(IssueSummary::from(...))->all(),
             'memberships' => $issue->projectItems->map(fn ($item): array => [

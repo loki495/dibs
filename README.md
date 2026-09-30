@@ -120,6 +120,10 @@ Codex, etc.) can connect to for:
 - **Finding related material** — `todo_search` searches titles and bodies across tasks, plans,
   and knowledge, including closed records. Ranked results include short excerpts so agents can
   choose what to read in full without opening every match.
+- **Checking before re-reading** — `todo_peek` reports id/title/revision/state for a batch of ids
+  in one cheap call, no body, so a cached record can be checked for change without paying for a
+  full `todo_show`; `todo_show`'s `maxBodyLength` gives a cheap truncated preview for the same
+  reason.
 - **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
   plan up front and keep it current as work progresses, so the plan itself — not a chat transcript
   — is the durable record.
