@@ -18,6 +18,7 @@ use App\Mcp\Tools\DescribeTodoQueueStatus;
 use App\Mcp\Tools\DescribeTodoServer;
 use App\Mcp\Tools\HeartbeatTodoTask;
 use App\Mcp\Tools\ListTodoTasks;
+use App\Mcp\Tools\PeekTodoTasks;
 use App\Mcp\Tools\ReleaseTodoTask;
 use App\Mcp\Tools\ReopenTodoTask;
 use App\Mcp\Tools\ReportBugTool;
@@ -41,6 +42,7 @@ class TodoServer extends Server
         ListTodoTasks::class,
         SearchTodoIssues::class,
         DescribeTodoIssue::class,
+        PeekTodoTasks::class,
         DescribeTodoQueueStatus::class,
         CreateTodoTask::class,
         ScaffoldTodoPlan::class,
