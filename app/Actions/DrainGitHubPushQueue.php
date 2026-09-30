@@ -37,7 +37,7 @@ class DrainGitHubPushQueue
         'create_issue', 'create_label', 'rename_label', 'create_group_option', 'rename_group_option',
         'add_project_membership', 'set_project_item_group', 'set_project_item_priority',
         'add_issue_labels', 'set_issue_parent',
-        'update_issue_body', 'close_issue', 'delete_issue', 'delete_label',
+        'update_issue_body', 'close_issue', 'reopen_issue', 'delete_issue', 'delete_label',
         'delete_project_item', 'clear_project_item_group', 'clear_project_item_priority', 'delete_group_option',
         'set_issue_labels', 'remove_issue_parent',
         'create_comment', 'update_comment',
@@ -64,6 +64,7 @@ class DrainGitHubPushQueue
                     'set_issue_parent' => $this->pushSetIssueParent($token, $item),
                     'update_issue_body' => $this->pushUpdateIssueBody($token, $item),
                     'close_issue' => $this->pushCloseIssue($token, $item),
+                    'reopen_issue' => $this->pushReopenIssue($token, $item),
                     'delete_issue' => $this->pushDeleteIssue($token, $item),
                     'delete_label' => $this->pushDeleteLabel($token, $item),
                     'delete_project_item' => $this->pushDeleteProjectItem($token, $item),
@@ -647,7 +648,7 @@ class DrainGitHubPushQueue
 
         try {
             $data = (new GitHubClient($token))->query(
-                'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason url updatedAt } } }',
+                'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason closedAt url updatedAt } } }',
                 ['issueId' => $issue->github_node_id, 'title' => $title, 'body' => $body],
             );
             $remote = $data['updateIssue']['issue'] ?? null;
@@ -661,7 +662,7 @@ class DrainGitHubPushQueue
         DB::transaction(function () use ($issue, $item, $remote): void {
             $issue->update([
                 'title' => $remote['title'], 'body' => $remote['body'] ?? null, 'state' => $remote['state'] ?? $issue->state,
-                'state_reason' => $remote['stateReason'] ?? null, 'url' => $remote['url'] ?? $issue->url,
+                'state_reason' => $remote['stateReason'] ?? null, 'closed_at' => $remote['closedAt'] ?? $issue->closed_at, 'url' => $remote['url'] ?? $issue->url,
                 'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
             ]);
             $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
@@ -679,15 +680,15 @@ class DrainGitHubPushQueue
         if ($issue->github_node_id === null) {
             return 'waiting';
         }
-        if ($issue->state === 'CLOSED') {
-            $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
 
-            return 'pushed';
-        }
-
+        // No "already CLOSED locally, skip" short-circuit here: CloseTodoIssue always sets local
+        // state to CLOSED *before* enqueueing this push, so local state is CLOSED on every real
+        // attempt regardless of whether GitHub has actually been told yet. GitHub's own closeIssue
+        // mutation is idempotent (closing an already-closed issue is a harmless no-op), so it's the
+        // only reliable signal of whether this specific push has actually reached GitHub.
         try {
             $data = (new GitHubClient($token))->query(
-                'mutation($issueId: ID!, $stateReason: IssueClosedStateReason) { closeIssue(input: {issueId: $issueId, stateReason: $stateReason}) { issue { id state stateReason updatedAt } } }',
+                'mutation($issueId: ID!, $stateReason: IssueClosedStateReason) { closeIssue(input: {issueId: $issueId, stateReason: $stateReason}) { issue { id state stateReason closedAt updatedAt } } }',
                 ['issueId' => $issue->github_node_id, 'stateReason' => $item->payload['stateReason'] ?? null],
             );
             $remote = $data['closeIssue']['issue'] ?? null;
@@ -700,7 +701,42 @@ class DrainGitHubPushQueue
 
         DB::transaction(function () use ($issue, $item, $remote): void {
             $issue->update([
-                'state' => 'CLOSED', 'state_reason' => $remote['stateReason'] ?? null,
+                'state' => 'CLOSED', 'state_reason' => $remote['stateReason'] ?? null, 'closed_at' => $remote['closedAt'] ?? $issue->closed_at ?? now(),
+                'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
+            ]);
+            $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
+        });
+
+        return 'pushed';
+    }
+
+    private function pushReopenIssue(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
+    {
+        $issue = Issue::query()->find($item->target_id);
+        if (! $issue instanceof Issue) {
+            return $this->giveUp($item, 'Target issue no longer exists locally.');
+        }
+        if ($issue->github_node_id === null) {
+            return 'waiting';
+        }
+
+        // No "already OPEN locally, skip" short-circuit — see the note on pushCloseIssue above.
+        try {
+            $data = (new GitHubClient($token))->query(
+                'mutation($issueId: ID!) { reopenIssue(input: {issueId: $issueId}) { issue { id state stateReason updatedAt } } }',
+                ['issueId' => $issue->github_node_id],
+            );
+            $remote = $data['reopenIssue']['issue'] ?? null;
+            if (! is_array($remote) || $remote['state'] !== 'OPEN') {
+                throw new GitHubSyncException('GitHub did not confirm the issue was reopened.');
+            }
+        } catch (GitHubSyncException $exception) {
+            return $this->deferOrFail($item, $exception);
+        }
+
+        DB::transaction(function () use ($issue, $item, $remote): void {
+            $issue->update([
+                'state' => 'OPEN', 'state_reason' => $remote['stateReason'] ?? null, 'closed_at' => null,
                 'remote_updated_at' => $remote['updatedAt'] ?? null, 'last_synced_at' => now(), 'last_seen_at' => now(),
             ]);
             $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
@@ -793,43 +829,47 @@ class DrainGitHubPushQueue
 
     private function pushClearProjectItemGroup(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
     {
-        return $this->pushClearProjectItemField($token, $item, 'group', 'groupOption.field', 'group_option_id');
+        return $this->pushClearProjectItemField($token, $item, 'group', 'group_option_id');
     }
 
     private function pushClearProjectItemPriority(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
     {
-        return $this->pushClearProjectItemField($token, $item, 'priority', 'priorityOption.field', 'priority_option_id');
+        return $this->pushClearProjectItemField($token, $item, 'priority', 'priority_option_id');
     }
 
-    private function pushClearProjectItemField(#[SensitiveParameter] string $token, GitHubPushQueueItem $item, string $semanticKey, string $relationName, string $columnName): string
+    private function pushClearProjectItemField(#[SensitiveParameter] string $token, GitHubPushQueueItem $item, string $semanticKey, string $columnName): string
     {
         $projectItem = ProjectItem::query()->find($item->target_id);
         if (! $projectItem instanceof ProjectItem) {
             return $this->giveUp($item, 'Target project membership no longer exists locally.');
         }
-        if ($projectItem->{$columnName} === null) {
-            $item->update(['status' => 'pushed', 'pushed_at' => now(), 'last_error' => null]);
-
-            return 'pushed';
-        }
         if ($projectItem->github_node_id === null) {
             return 'waiting';
         }
 
-        $projectItem->loadMissing('project', $relationName);
+        // No "already null locally, skip" short-circuit here: ApplyProjectItemFields/BulkMoveIssuesToGroup
+        // always null this column locally *before* enqueueing this push, so it's already null on every
+        // real attempt regardless of whether GitHub has actually been told yet. GitHub's own
+        // clearProjectV2ItemFieldValue mutation is idempotent (clearing an already-empty field is a
+        // harmless no-op), so it's the only reliable signal of whether this push has actually landed.
+        //
+        // The field is looked up by (project, semantic_key) rather than via the projectItem's own
+        // group/priority option relation, because that relation is exactly what's already null by the
+        // time this runs -- it can no longer tell us which field was cleared.
+        $projectItem->loadMissing('project');
         if ($projectItem->project === null) {
             return $this->giveUp($item, 'The associated project is not available.');
         }
 
-        $option = $relationName === 'groupOption.field' ? $projectItem->groupOption : $projectItem->priorityOption;
-        if (! $option instanceof ProjectFieldOption || $option->field === null) {
-            return $this->giveUp($item, "The $semanticKey option is not available.");
+        $field = ProjectField::query()->where('project_id', $projectItem->project_id)->where('semantic_key', $semanticKey)->where('is_available', true)->first();
+        if (! $field instanceof ProjectField) {
+            return $this->giveUp($item, "The $semanticKey field is not available.");
         }
 
         try {
             $data = (new GitHubClient($token))->query(
                 'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) { clearProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId}) { projectV2Item { id updatedAt } } }',
-                ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id, 'fieldId' => $option->field->github_node_id],
+                ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id, 'fieldId' => $field->github_node_id],
             );
             $remote = $data['clearProjectV2ItemFieldValue']['projectV2Item'] ?? null;
             if (! is_array($remote) || ! is_string($remote['id'] ?? null)) {

@@ -7,6 +7,12 @@ $optionalId = static fn (?string $value): ?int => $value === null || $value === 
 return [
     'timezone' => env('DIBS_TIMEZONE', 'America/Los_Angeles'),
     'trusted_proxies' => array_filter(explode(',', env('TRUSTED_PROXIES', ''))),
+    // Seconds a Livewire request may run before the browser gives up on it, shows the reconnect banner and
+    // frees the request queue. 0 disables the timeout (failed requests still show the banner).
+    'livewire_request_timeout_seconds' => (int) env('DIBS_LIVEWIRE_REQUEST_TIMEOUT', 20),
+    // Milliseconds a request or page navigation must take before the loading bar shows and the lists dim,
+    // so quick ones don't flicker.
+    'loading_indicator_delay_ms' => (int) env('DIBS_LOADING_INDICATOR_DELAY_MS', 150),
     'push_queue_ui_enabled' => (bool) env('DIBS_PUSH_QUEUE_UI_ENABLED', true),
 
     // Where todo_report_bug files its issues. Unset (the default) leaves them unparented,

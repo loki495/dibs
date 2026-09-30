@@ -1,3 +1,7 @@
+import './connection-watchdog';
+import './loading-indicator';
+import './optimistic';
+
 window.todoTree = (defaultOpen = false) => ({
     expanded: {},
     overrides: {},

@@ -795,48 +795,6 @@ it('deletes a Group from Project settings, clearing the active filter and any pe
     expect(ProjectFieldOption::query()->find($group->id))->toBeNull();
 });
 
-it('opens Manage labels via the cross-component event the gear menu dispatches, and renames a label', function (): void {
-    Http::fake();
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    $label = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->dispatch('open-manage-labels')
-        ->assertSet('manageLabelsOpen', true)->assertSee('urgent')
-        ->call('beginRenameLabel', $label->id)->assertSet('managingLabelName', 'urgent')
-        ->set('managingLabelName', 'Blocked')->call('saveLabelRename')
-        ->assertSet('managingLabelId', 0)->assertSee('blocked');
-
-    expect($label->refresh()->name)->toBe('blocked');
-});
-
-it('shows a validation error inline instead of closing Manage labels when a label rename collides', function (): void {
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
-    $blocked = Label::factory()->for($repository, 'repository')->create(['name' => 'blocked']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')
-        ->call('beginRenameLabel', $blocked->id)->set('managingLabelName', 'Urgent')->call('saveLabelRename')
-        ->assertSet('manageLabelsOpen', true)->assertSee('Another label already has this name.');
-
-    expect($blocked->refresh()->name)->toBe('blocked');
-});
-
-it('deletes a label from Manage labels, clearing it from the active filter and any pending selections', function (): void {
-    Http::fake();
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    $label = Label::factory()->for($repository, 'repository')->create(['name' => 'urgent']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('toggleLabel', 'urgent')->assertSet('labels', ['urgent'])
-        ->call('openManageLabels')->assertSee('urgent')
-        ->call('deleteLabelOption', $label->id)
-        ->assertSet('labels', [])->assertDontSee('urgent');
-
-    expect($label->refresh()->is_available)->toBeFalse();
-});
-
 it('switches between Daily and an area via the navigation actions the mobile pill row uses', function (): void {
     $project = GitHubProject::factory()->create(['title' => 'Personal Projects']);
 
@@ -947,11 +905,11 @@ it('loads the same contextual fields in task editing as task creation', function
         ->call('selectNewEditGroup', 'Freelance')->assertSee('New: Freelance');
 });
 
-it('closes with a comment and a reason via Close with comment', function (): void {
+it('closes via the single Close button, saving whatever is in the comment box as the note', function (): void {
     $issue = Issue::factory()->create(['state' => 'OPEN']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
-        ->assertSee('Close with comment')->assertSee('Close as not planned')
+        ->assertSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")
         ->set('newCommentBody', 'Shipped it.')->call('closeWithComment', CloseTodoIssue::REASON_COMPLETED)
         ->assertSet('newCommentBody', '')->assertSee('Shipped it.');
 
@@ -959,14 +917,23 @@ it('closes with a comment and a reason via Close with comment', function (): voi
         ->and(Comment::query()->where('issue_id', $issue->id)->sole()->kind)->toBe(Comment::KIND_CLOSING);
 });
 
-it('closes as not planned with a reason and no comment', function (): void {
+it('closes via the single Close button with an empty comment box, leaving no closing note', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('closeWithComment', CloseTodoIssue::REASON_COMPLETED);
+
+    expect($issue->refresh())->state->toBe('CLOSED')->state_reason->toBe('COMPLETED');
+    expect(Comment::query()->where('issue_id', $issue->id)->count())->toBe(0);
+});
+
+it('still supports closing as not planned at the method level, even though no button currently reaches it', function (): void {
     $issue = Issue::factory()->create(['state' => 'OPEN']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
         ->call('closeWithComment', CloseTodoIssue::REASON_NOT_PLANNED);
 
     expect($issue->refresh())->state->toBe('CLOSED')->state_reason->toBe('NOT_PLANNED');
-    expect(Comment::query()->where('issue_id', $issue->id)->count())->toBe(0);
 });
 
 it('rejects a tampered close reason without closing the issue', function (): void {
@@ -978,11 +945,17 @@ it('rejects a tampered close reason without closing the issue', function (): voi
     expect($issue->refresh())->state->toBe('OPEN');
 });
 
-it('hides the close-with-comment buttons once the issue is closed', function (): void {
-    $issue = Issue::factory()->create(['state' => 'CLOSED']);
+it('puts Close and Add comment on the same row, styles Close red, and hides it once the issue is closed', function (): void {
+    $open = Issue::factory()->create(['state' => 'OPEN']);
+    $closed = Issue::factory()->create(['state' => 'CLOSED']);
 
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
-        ->assertDontSee('Close with comment')->assertDontSee('Close as not planned')->assertSee('Add comment');
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $open->id)
+        ->assertSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")->assertSeeHtml('wire:submit="addComment"')
+        ->assertSeeHtml('text-red-600')
+        ->assertSeeHtml('wire:confirm=')
+        ->set('selected', $closed->id)
+        ->assertDontSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")->assertSee('Add comment');
 });
 
 it('shows the closing note as a highlighted block for a closed issue, and not for an open one', function (): void {
@@ -1002,41 +975,6 @@ it('does not show a highlighted closing block for a closed issue with no closing
         ->set('selected', $issue->id)->assertDontSee('Not planned');
 });
 
-it('creates a label from the Manage labels popup and shows it in the list', function (): void {
-    Http::fake();
-    GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')
-        ->set('newManageLabelName', 'Waiting on Vendor')->call('createManageLabel')
-        ->assertSet('newManageLabelName', '')->assertSee('waiting on vendor');
-
-    expect(Label::query()->where('name', 'waiting on vendor')->exists())->toBeTrue();
-});
-
-it('shows a validation error inline instead of closing Manage labels when creating a duplicate label', function (): void {
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    Label::factory()->for($repository, 'repository')->create(['name' => 'bug']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')
-        ->set('newManageLabelName', 'Bug')->call('createManageLabel')
-        ->assertSet('manageLabelsOpen', true)->assertSee('A label with this name already exists.');
-
-    expect(Label::query()->where('name', 'bug')->count())->toBe(1);
-});
-
-it('clears the new-label field and any error each time Manage labels is opened', function (): void {
-    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
-    Label::factory()->for($repository, 'repository')->create(['name' => 'bug']);
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')->set('newManageLabelName', 'Bug')->call('createManageLabel')
-        ->assertSee('A label with this name already exists.')
-        ->call('openManageLabels')
-        ->assertSet('newManageLabelName', '')->assertDontSee('A label with this name already exists.');
-});
-
 it('hides Manage labels from the labeled top-bar\'s settings popup, since the sidebar has its own link', function (): void {
     Livewire::actingAs(User::factory()->create())->test('top-bar', ['variant' => 'labeled'])
         ->assertDontSee('Manage labels');
@@ -1047,16 +985,93 @@ it('keeps Manage labels in the icon top-bar\'s settings popup for mobile, which 
         ->assertSee('Manage labels');
 });
 
-it('opens Manage labels from the sidebar link', function (): void {
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->assertSet('manageLabelsOpen', false)
-        ->call('openManageLabels')
-        ->assertSet('manageLabelsOpen', true);
+it('asks for confirmation before Refresh from GitHub, the same way other consequential actions do', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('top-bar')
+        ->assertSeeHtml('wire:click="refreshFromGitHub"')
+        ->assertSeeHtml('wire:confirm=');
 });
 
-it('lets the Manage labels popup scroll internally so a long label list never hides the Close button off-screen', function (): void {
+it('reopens a closed task via the header icon, with confirmation, clearing the reason and closing block', function (): void {
+    // The note itself isn't expected to vanish -- it moves from the highlighted closing block into
+    // the ordinary thread once reopened (see the next test); "Completed" is what should disappear,
+    // since state_reason is cleared and there's no longer a current close to highlight.
+    $issue = Issue::factory()->create(['state' => 'CLOSED', 'state_reason' => 'COMPLETED']);
+    Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'Turned out fine.']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertSeeHtml('wire:click="reopenIssue"')->assertSeeHtml('wire:confirm=')
+        ->assertSee('Turned out fine.')->assertSee('Completed')
+        ->call('reopenIssue')
+        ->assertDontSee('Completed');
+
+    expect($issue->refresh())->state->toBe('OPEN')->state_reason->toBeNull();
+});
+
+it('shows the old closing note back in the ordinary thread once reopened', function (): void {
+    $issue = Issue::factory()->create(['state' => 'CLOSED']);
+    Comment::factory()->for($issue, 'issue')->closing()->create(['body' => 'First close note.']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->call('reopenIssue')
+        ->assertSee('First close note.');
+});
+
+it('hides the Reopen icon for an open task and the Mark done icon for a closed one', function (): void {
+    $open = Issue::factory()->create(['state' => 'OPEN']);
+    $closed = Issue::factory()->create(['state' => 'CLOSED']);
+
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
-        ->call('openManageLabels')
-        ->assertSeeHtml('data-modal="manage-labels"')
-        ->assertSeeHtml('data-flux-modal-overflow');
+        ->set('selected', $open->id)->assertSeeHtml('wire:click="closeIssue"')->assertDontSeeHtml('wire:click="reopenIssue"')
+        ->set('selected', $closed->id)->assertSeeHtml('wire:click="reopenIssue"')->assertDontSeeHtml('wire:click="closeIssue"');
+});
+
+it('offers a Reopen button beside Add comment at the bottom of a closed task, and Close instead for an open one', function (): void {
+    $open = Issue::factory()->create(['state' => 'OPEN']);
+    $closed = Issue::factory()->create(['state' => 'CLOSED']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('selected', $closed->id)->assertSeeHtml('wire:submit="addComment"')->assertSeeInOrder(['Add a comment', 'Reopen', 'Add comment'])
+        ->assertDontSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")
+        ->call('reopenIssue')->assertDontSeeHtml('wire:click="reopenIssue"')->assertSeeHtml("closeWithComment('".CloseTodoIssue::REASON_COMPLETED."')")
+        ->set('selected', $open->id)->assertDontSeeHtml('wire:click="reopenIssue"');
+});
+
+it('shows Closed for a closed row and Modified for an open one in the task list', function (): void {
+    config(['dibs.timezone' => 'America/Los_Angeles']);
+    Issue::factory()->create(['title' => 'Open one', 'state' => 'OPEN', 'remote_updated_at' => '2026-09-10 03:00:00']);
+    Issue::factory()->create(['title' => 'Closed one', 'state' => 'CLOSED', 'closed_at' => '2026-09-12 20:00:00']);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('state', 'ALL')
+        ->assertSee('Modified Sep 9, 2026')->assertSee('Closed Sep 12, 2026');
+});
+
+it('shows the deletion date on a deleted task in the Deleted view, in the configured timezone', function (): void {
+    config(['dibs.timezone' => 'America/Los_Angeles']);
+    $issue = Issue::factory()->create(['title' => 'Gone task', 'is_available' => false]);
+    $issue->forceFill(['updated_at' => '2026-09-12 03:00:00'])->saveQuietly();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('view', 'deleted')
+        ->assertSee('Gone task')->assertSee('Deleted Sep 11, 2026');
+});
+
+it('forgets a deleted label from the active filter and any pending selections when the Manage labels popup deletes it', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->call('toggleLabel', 'urgent')->assertSet('labels', ['urgent'])
+        ->set('captureLabels', [5, 9])->set('editLabels', [9])
+        ->dispatch('label-deleted', id: 9, name: 'urgent')
+        ->assertSet('labels', [])->assertSet('captureLabels', [5])->assertSet('editLabels', []);
+});
+
+it('re-renders with a freshly created label when the Manage labels popup announces a change', function (): void {
+    $repository = GitHubRepository::factory()->create(['full_name' => config('github.owner').'/'.config('github.repository')]);
+
+    $workspace = Livewire::actingAs(User::factory()->create())->test('pages::workspace')->assertDontSee('fresh label');
+    Label::factory()->for($repository, 'repository')->create(['name' => 'fresh label']);
+
+    $workspace->dispatch('labels-changed')->assertSee('fresh label');
+});
+
+it('opens Manage labels from the sidebar link through the shared event', function (): void {
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->assertSeeHtml("wire:click=\"\$dispatch('open-manage-labels')\"");
 });

@@ -312,7 +312,7 @@ new class extends Component
 
     <p class="mt-4 text-sm text-slate-500 dark:text-slate-400" aria-live="polite">{{ trans_choice(':count entry|:count entries', $entries->total(), ['count' => $entries->total()]) }} · {{ __('Page :page of :last', ['page' => $entries->currentPage(), 'last' => max(1, $entries->lastPage())]) }}</p>
 
-    <ul class="mt-2 border-t border-slate-100 dark:border-slate-900">
+    <ul data-busy class="mt-2 border-t border-slate-100 dark:border-slate-900">
         @forelse ($entries as $row)
             @php($at = $row->created_at?->timezone($timezone))
             <li wire:key="entry-{{ $row->id }}" class="border-b border-slate-100 dark:border-slate-900">

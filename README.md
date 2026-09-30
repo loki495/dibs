@@ -93,6 +93,12 @@ capability token never reaches the page. Changes are recorded by the write paths
 Entries older than `DIBS_ACTIVITY_MCP_RETENTION_DAYS` / `DIBS_ACTIVITY_CHANGE_RETENTION_DAYS` (default
 30 days each; `0` keeps that log forever) are pruned daily by `php artisan activity:prune`.
 
+If the browser loses contact with the server (a dropped connection, or a request still pending after
+`DIBS_LIVEWIRE_REQUEST_TIMEOUT` seconds, default 20, `0` = no timeout), a banner at the bottom of the
+page says so and offers a Reload, instead of the page silently ignoring taps. While a request or page load
+is in flight, a thin bar shows at the top and the lists dim (after `DIBS_LOADING_INDICATOR_DELAY_MS`
+milliseconds, default 150, so quick requests don't flicker).
+
 ## Running checks
 
 ```bash
@@ -136,7 +142,7 @@ covers keywords in titles and bodies, not comments or semantic similarity.
 Claim/heartbeat/release/complete keeps multiple agents (or the same agent across sessions) from
 duplicating or colliding on the same task, all without ever handling your GitHub token — every
 write goes through the same Actions the web UI uses. Completing a task can carry a closing note,
-a reason (`COMPLETED`/`NOT_PLANNED`), and references, all visible afterward via `todo_show`. See
+a reason (`COMPLETED`/`NOT_PLANNED`), and references, all visible afterward via `todo_show`; `todo_reopen` puts a closed task back to open. See
 [`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a JSON CLI
 fallback (`php artisan todo:agent:*`) for scripting or recovery.
 

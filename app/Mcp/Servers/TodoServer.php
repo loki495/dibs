@@ -19,6 +19,7 @@ use App\Mcp\Tools\DescribeTodoServer;
 use App\Mcp\Tools\HeartbeatTodoTask;
 use App\Mcp\Tools\ListTodoTasks;
 use App\Mcp\Tools\ReleaseTodoTask;
+use App\Mcp\Tools\ReopenTodoTask;
 use App\Mcp\Tools\ReportBugTool;
 use App\Mcp\Tools\ReviseTodoTask;
 use App\Mcp\Tools\ScaffoldTodoPlan;
@@ -49,6 +50,7 @@ class TodoServer extends Server
         HeartbeatTodoTask::class,
         ReleaseTodoTask::class,
         CompleteTodoTaskTool::class,
+        ReopenTodoTask::class,
         DescribeTodoClaimTool::class,
         ReportBugTool::class,
     ];
