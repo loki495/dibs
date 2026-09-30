@@ -57,17 +57,32 @@ render next to the note — it is not folded into the GitHub-pushed comment body
 `stateReason` mutation variable; GitHub's echoed value then overwrites it, same as every other push
 confirmation.
 
+`issues.closed_at` is stamped by `CloseTodoIssue` (kept if closed again), cleared on reopen, and
+overwritten by GitHub's own `closedAt` from the close confirmation and from every sync (the snapshot
+query fetches it). The task list shows "Closed <date>" for a closed row (`closed_at`, falling back to
+`remote_updated_at` for issues closed before the column existed) and "Modified <date>"
+(`remote_updated_at`, falling back to `updated_at`) for an open one, in `config('dibs.timezone')`;
+`updated_at` alone isn't used because every sync bumps it. The Deleted view shows when each task was
+deleted.
+
+Reopening (`ReopenTodoIssue`, the workspace detail panel's Reopen icon and the Reopen button beside Add comment, `todo_reopen`) sets `state` back to
+`OPEN` and clears `state_reason`, and enqueues a `reopen_issue` push (GitHub's `reopenIssue` mutation).
+Nothing is deleted: earlier closing comments stay in the thread, and the highlighted closing block
+disappears because `closing` is only derived while the issue is `CLOSED`.
+
 The workspace detail panel (`resources/views/partials/issue-detail.blade.php`) surfaces the current
 close as a highlighted block above the comment thread — reason, rendered note, and reference chips —
 built by `GetIssueDetails`'s own `closing` derivation (the same shape as `DescribeTodoIssue`'s, kept
 separate since one renders markdown/formats dates for the UI and the other returns raw ISO8601 for
-MCP). The comment box's "Close with comment"/"Close as not planned" buttons (open issues only) call a
-new `closeWithComment(reason)` on the workspace component, using the same textarea as an ordinary
-comment for the note; the existing header "Mark done" icon still closes with no reason or note. The
+MCP). The comment box's red "Close" button (open issues only, with a confirm) calls
+`closeWithComment(reason)` on the workspace component with reason `COMPLETED`, using the same
+textarea as an ordinary comment for the note (`NOT_PLANNED` remains supported by the method and by
+`todo_complete`, but no button offers it); the header "Mark done" icon still closes with no reason
+or note. On a closed task the same spot shows "Reopen". The
 current closing comment is excluded from the plain thread list so it isn't shown twice; an earlier
 closing comment from a prior close/reopen cycle still appears there as ordinary history.
 
-Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals. `CreateLabel` is the standalone "new label, not attached to any task" write the workspace's Manage labels popup uses — unlike `ResolveLabels` (which reuses an existing same-named label when resolving an issue's own labels), a duplicate name here is a validation error, since the point of this one is a brand new label.
+Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals. `CreateLabel` is the standalone "new label, not attached to any task" write the Manage labels popup uses — unlike `ResolveLabels` (which reuses an existing same-named label when resolving an issue's own labels), a duplicate name here is a validation error, since the point of this one is a brand new label.
 
 **`sync_states`** — one row per mirrored resource, tracking last successful/attempted sync and
 the last error, read by the manual-pull path only (no longer drives any scheduled behavior).
@@ -119,6 +134,19 @@ any DB transaction (a network call never holds a SQLite write lock). Operations 
 dependency order (`OPERATION_ORDER`), not insertion order — an issue must exist on GitHub
 before its Project membership can, for example — and a handler whose dependency hasn't pushed
 yet returns `waiting` and is retried on the next pass rather than failing.
+
+**A push handler must never treat "the local field already matches the target value" as proof
+the mutation already reached GitHub.** Because the originating write Action always applies its
+target state locally *before* enqueueing the push, that local state is the target value on
+every single real attempt, including the very first — it can never distinguish "already pushed"
+from "just applied locally, not yet pushed." Two handlers did this wrong until 2026-09-22
+(`pushCloseIssue` checking local `state === 'CLOSED'`, `pushClearProjectItemField` checking the
+local group/priority column `=== null`) and, as a result, silently never called their mutation
+for any real close or Group/Priority clear performed through the app. The only reliable signal
+a push handler may use is a value the mutation's own response sets (`github_node_id`, etc.) —
+GitHub's own mutations are idempotent, so calling one again for a state GitHub already has is a
+harmless no-op, which is the correct way to handle "maybe already pushed" rather than guessing
+from local state.
 
 `php artisan todo:push:drain` runs a single pass and exits, registered
 `Schedule::command(...)->everyTenSeconds()->withoutOverlapping(1)` in `routes/console.php` (run
@@ -183,6 +211,57 @@ validation error, and the active log name is a locked Livewire property so a tam
 which log Clear empties. Following a request link pushes the current log, filters, page and open row onto a
 locked history, which the Back button pops, so a drill-down across both logs can be walked back one hop at a time.
 
+The Manage labels popup is its own Livewire component (`resources/views/livewire/manage-labels.blade.php`)
+rendered once by the layout for signed-in users, so the gear menu's link works on every page (push queue,
+activity), not only the workspace. It listens for `open-manage-labels` (dispatched by the gear menu and
+the workspace sidebar link) and announces `labels-changed` and `label-deleted`; the workspace listens for
+those to re-render and to drop a deleted label from its filter and pending selections.
+
+Popups (Flux `<dialog>`s) stay inside the visible area on a notched phone: `resources/css/app.css` exposes
+the safe-area insets as `--safe-top`/`--safe-bottom` and bounds plain dialogs to the viewport minus them,
+scrolling inside, while `scroll="body"` dialogs are padded by them. Without it a tall popup started under
+the iOS status bar (the app runs edge-to-edge with `viewport-fit=cover`). Overriding the two variables
+simulates a notch in a desktop browser; `tests/Browser/ModalSafeAreaTest.php` does exactly that.
+
+## Loading indicator
+
+`resources/js/loading-indicator.js` gives one indicator for every Livewire request and every full-page
+link navigation (which the installed iOS app otherwise shows no progress for): after
+`dibs.loading_indicator_delay_ms` (`DIBS_LOADING_INDICATOR_DELAY_MS`, default 150, so fast requests never
+flicker) a thin teal bar shows at the top and the lists marked `data-busy` (the task list, deleted list,
+push queue table, activity list) dim and get `aria-busy`. The bar is a `popover="manual"` element so it
+renders in the top layer above open popups, and sits below the status bar via `--safe-top`. It counts
+requests in flight, clears when the last one finishes, fails or is cancelled, and resets when a page is
+restored from the back/forward cache. Covered by `tests/Feature/Workspace/LoadingIndicatorMarkupTest.php`
+and `tests/Browser/RequestFeedbackTest.php` (slow, quick and failing requests).
+
+Filter chips, area pills, the sidebar area buttons and the Tasks/Knowledge/Deleted tabs look selected the
+instant they are tapped instead of after the round trip. An element opts in with `data-optimistic`
+(`teal`, `tealfill`, `slate` or `segment`, matching the classes it already uses for its real state) plus
+`aria-pressed` for that real state, `data-optimistic-mode="toggle"` for a chip that flips on and off, and
+`data-optimistic-group` on the container of an exclusive set. `resources/js/optimistic.js` only marks the
+tapped element `data-pending`; `app.css` restyles it (and un-highlights the previously selected one in the
+group) with `!important` rules, so the normal `wire:click` and the server stay the source of truth. The marks
+clear on the `dibs:idle` event the loading indicator fires when the last request finishes, so a failed request
+leaves the real unchanged state showing. Native selects and the search box are already immediate. Covered by
+the browser tests in `tests/Browser/RequestFeedbackTest.php` (toggle on and off, failure, phone pills).
+
+## Client-side request failures
+
+Livewire 4 shows nothing when a request fails at the network level (only HTTP errors get its modal)
+and has no request timeout, so one lost or hung response left taps changing the URL while the page
+never re-rendered, and every later action queued silently behind the stuck request. It looked like a
+frozen page that "fixed itself" on refresh, typically on a phone whose connection dropped or took the
+Cloudflare path. `resources/js/connection-watchdog.js` hooks `Livewire.interceptRequest`: a failed
+request, or one still pending after `dibs.livewire_request_timeout_seconds` (`DIBS_LIVEWIRE_REQUEST_TIMEOUT`,
+default 20, `0` disables only the timeout), shows the `[data-connection-banner]` in
+`layouts/app.blade.php` ("Lost contact with the server, so your last change may not have been saved"
+with a Reload button); a timed-out request is cancelled so the queue drains. The next successful
+request hides the banner again. Requests Livewire cancels itself, and failures while the page is
+unloading, don't show it. The timeout reaches the script through a `dibs-request-timeout` meta tag.
+Covered by `tests/Feature/Workspace/ConnectionBannerMarkupTest.php` and the real-browser
+`tests/Browser/ConnectionBannerTest.php`, which replace `fetch` to simulate a lost and a hung response.
+
 ## Testing
 
 Pest, run through `composer pint` → `composer phpstan` → `composer rector` (dry-run) →
@@ -196,6 +275,11 @@ under test a *nested* transaction, and Laravel deliberately refuses to retry a n
 transaction (see `ManagesTransactions::handleTransactionException`), converting it straight to
 a `DeadlockException` instead. That class of behavior is verified by reasoning about the code
 and Laravel's own upstream test coverage, not by a Dibs-level regression test.
+
+Browser tests (`composer pest:browser`, `tests/Browser/`) run in the `app-test` container, whose image
+bakes Chromium for the Playwright version pinned in `docker/setup-test-container.sh`; that pin must move
+together with `package.json` (a Dependabot bump that skipped it broke every browser test with "Playwright
+is outdated" until the image was rebuilt).
 
 Cover sad paths explicitly: validation failures, stale-revision conflicts, claim conflicts,
 dead-process claim cleanup, and push-queue failures — not just the happy path.
