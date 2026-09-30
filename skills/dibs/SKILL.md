@@ -17,6 +17,7 @@ Pass `noop: true` to both. It is ignored, but some MCP clients (Claude Code's pe
 3. Call `todo_list` to see what is outstanding. Scope it with `areas`/`areaNames`, `groups`/`groupNames` or `parentId` (add `descendants: true` for the whole tree beneath it), and with `labels` (all), `anyLabels` or `excludeLabels`; names are accepted wherever ids are, so you need not look ids up. Filter `label: "agent task"` (with a space, no hyphen; matching ignores case) to see only work an agent can finish unattended. That label is a convention, not something every install has: if `todo_context` does not list it, the filter returns nothing and the response lists the name under `unresolved`, so list without a label filter instead. A task without the label is not forbidden, but tasks that need a person (errands, purchases, judgment calls) are not yours to pick up.
 4. Use `todo_search` when you know a topic; it takes the same filters as `todo_list` and needs no keywords if a filter is given. Every keyword must appear in a title or body, and closed records are included by default, so look here before researching something that may already be written down.
 5. Use `todo_show` only for the records you actually need in full.
+6. Once you have read a record's body this session, keep it — don't call `todo_show` on the same id again without a concrete reason. A concrete reason is your own `todo_revise`/`todo_comment` landing on it, a write that returned `{conflict: true}`, or resuming cold in a new session. Elapsed time is not a reason: never assume a record is still current just because little time has passed or nothing you did touched it — something else (Andres, another agent, a GitHub-side edit) may have. To check without paying for the full body again, call `todo_peek` with the id(s) — it returns `{id, title, revision, state}` for a batch in one cheap call, no body. `revision` only bumps on `todo_revise` (title/body/Group), so also compare `state` if closing/reopening matters to you; neither covers a label, comment, claim, or Priority change, so re-fetch in full if one of those is what you need to know about. `todo_list`/`todo_search` summaries carry the same `revision`/`state` fields too, if you are already calling one of those for another reason.
 
 Before starting work that may already have a plan, look for an open issue labeled `plan` (`todo_list` with `label: "plan"`) and ask which to resume rather than starting a duplicate.
 
@@ -72,7 +73,8 @@ When you find something durable, file it as a knowledge issue instead of leaving
 | Areas, Groups, labels, live claims | `todo_context` |
 | Browse tasks | `todo_list` |
 | Find by topic | `todo_search` |
-| One record in full | `todo_show` |
+| One record in full | `todo_show` (`maxBodyLength` for a cheap preview) |
+| Check if cached records changed | `todo_peek` |
 | Sync backlog | `todo_queue_status` |
 | Create a task or knowledge record | `todo_create` |
 | Create a plan with children | `todo_scaffold_plan` |

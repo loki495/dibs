@@ -16,7 +16,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Retrieves full detail for one Todo issue by its local id: raw body, labels, parent and direct-children summaries, and Project memberships (area/group/priority/status/planned/due). This also serves as the plan bundle for a plan-labeled issue — its body is the maintained objective/status/decisions/acceptance-criteria document, and its children are the plan\'s task summaries. Comments are not included unless withComments is true, and are paginated when they are.')]
+#[Description('Retrieves full detail for one Todo issue by its local id: raw body, labels, parent and direct-children summaries, and Project memberships (area/group/priority/status/planned/due). This also serves as the plan bundle for a plan-labeled issue — its body is the maintained objective/status/decisions/acceptance-criteria document, and its children are the plan\'s task summaries. Comments are not included unless withComments is true, and are paginated when they are. Pass maxBodyLength to truncate a long body server-side (bodyTruncated in the response says whether it did) for a cheap "what is this about" scan before deciding to re-read it in full — todo_peek is cheaper still if you only need to know whether it changed at all.')]
 class DescribeTodoIssue extends Tool implements Errable
 {
     protected string $name = 'todo_show';
@@ -28,6 +28,7 @@ class DescribeTodoIssue extends Tool implements Errable
             'withComments' => ['sometimes', 'boolean'],
             'commentsPage' => ['sometimes', 'integer', 'min:1'],
             'commentsPerPage' => ['sometimes', 'integer', 'min:1', 'max:'.DescribeTodoIssueAction::MAX_COMMENTS_PER_PAGE],
+            'maxBodyLength' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ]);
 
         try {
@@ -36,6 +37,7 @@ class DescribeTodoIssue extends Tool implements Errable
                 withComments: $arguments['withComments'] ?? false,
                 commentsPage: $arguments['commentsPage'] ?? 1,
                 commentsPerPage: $arguments['commentsPerPage'] ?? DescribeTodoIssueAction::DEFAULT_COMMENTS_PER_PAGE,
+                maxBodyLength: $arguments['maxBodyLength'] ?? null,
             );
         } catch (TodoRecordNotFoundException|TodoRecordUnavailableException $exception) {
             return Response::error($exception->getMessage());
@@ -52,6 +54,7 @@ class DescribeTodoIssue extends Tool implements Errable
             'withComments' => $schema->boolean()->default(false)->description('Include a paginated page of comments.'),
             'commentsPage' => $schema->integer()->min(1)->default(1),
             'commentsPerPage' => $schema->integer()->min(1)->max(DescribeTodoIssueAction::MAX_COMMENTS_PER_PAGE)->default(DescribeTodoIssueAction::DEFAULT_COMMENTS_PER_PAGE),
+            'maxBodyLength' => $schema->integer()->min(1)->description('Truncate the body to this many characters server-side; the response\'s bodyTruncated says whether it was cut.'),
         ];
     }
 }

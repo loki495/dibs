@@ -113,3 +113,35 @@ it('ignores an ordinary, non-closing comment when reporting the closing note', f
 
     expect(app(DescribeTodoIssue::class)->handle($issue->id)['closing']['note'])->toBeNull();
 });
+
+it('truncates a long body to maxBodyLength and reports bodyTruncated', function (): void {
+    $issue = Issue::factory()->create(['body' => str_repeat('a', 500)]);
+
+    $result = app(DescribeTodoIssue::class)->handle($issue->id, maxBodyLength: 100);
+
+    expect($result['body'])->toBe(str_repeat('a', 100).'…')->and($result['bodyTruncated'])->toBeTrue();
+});
+
+it('leaves a body under maxBodyLength untouched and reports bodyTruncated as false', function (): void {
+    $issue = Issue::factory()->create(['body' => 'short body']);
+
+    $result = app(DescribeTodoIssue::class)->handle($issue->id, maxBodyLength: 100);
+
+    expect($result['body'])->toBe('short body')->and($result['bodyTruncated'])->toBeFalse();
+});
+
+it('reports bodyTruncated as false when maxBodyLength is not given at all', function (): void {
+    $issue = Issue::factory()->create(['body' => str_repeat('a', 500)]);
+
+    $result = app(DescribeTodoIssue::class)->handle($issue->id);
+
+    expect($result['body'])->toHaveLength(500)->and($result['bodyTruncated'])->toBeFalse();
+});
+
+it('leaves a null body as null and untruncated regardless of maxBodyLength', function (): void {
+    $issue = Issue::factory()->create(['body' => null]);
+
+    $result = app(DescribeTodoIssue::class)->handle($issue->id, maxBodyLength: 10);
+
+    expect($result['body'])->toBeNull()->and($result['bodyTruncated'])->toBeFalse();
+});
