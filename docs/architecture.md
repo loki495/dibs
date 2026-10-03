@@ -132,7 +132,13 @@ as weaker assurance rather than silently trusted. Full contract in `agent-interf
 
 **`mcp_write_receipts`** — backs the idempotency-key mechanism every MCP write tool can use
 (`ResolveIdempotentWrite`): a repeated call with the same key returns the original result
-instead of repeating the write.
+instead of repeating the write. The receipt lookup, the write and the receipt insert run in one
+`DB::transaction` (the write Action's own transaction becomes a savepoint), so a write never
+commits without its receipt and a failure leaves neither. Two concurrent calls with the same key
+can't both commit: the loser hits the unique `idempotency_key` (or SQLite's "database is locked",
+which the transaction retries), rolls back its write and returns the winner's result. A key
+already used for a different kind of write (`subject_type`, e.g. a comment key reused for a
+create) is rejected with a `TodoValidationException`.
 
 **`todo_capture_requests` / `capture_settings`** — schema for the natural-language capture
 feature (an LLM structures free text into a draft task via the host capture bridge, see

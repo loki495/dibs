@@ -35,7 +35,7 @@ Before starting work that may already have a plan, look for an open issue labele
 - Name any label you create with spaces, not hyphens (`needs research`, not `needs-research`); labels accept spaces. Labels are always stored lowercase and a label filter ignores case, so any casing resolves to the same label.
 - Apply the `agent task` label to a task an agent could complete on its own. Include `"agent task"` in `labelNames`; it is attached, and created on first use.
 - Multi-step work: use `todo_scaffold_plan` to create the plan and its initial child tasks in one atomic call, and add more with `todo_create(parentId: <plan id>)` as scope grows. Break the plan into child tasks as soon as its scope is known, even if you will do it all yourself. Open children are what is left; closed ones are done.
-- Pass an `idempotencyKey` on any create or revise so a retry returns the original result instead of duplicating it.
+- Pass an `idempotencyKey` on any create or revise so a retry returns the original result instead of duplicating it. The write and its receipt commit together, so a failed call leaves nothing behind and is safe to retry with the same key. Use a fresh key per intended write: reusing one for a different kind of write (a comment key on a create) is rejected.
 - If you notice a follow-up while busy with something else, file it as a task right then instead of mentioning it only in chat.
 
 ## Claim, work, finish
