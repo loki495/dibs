@@ -10,6 +10,7 @@ use App\Models\Label;
 use App\Models\SyncState;
 use App\Models\TaskClaim;
 use App\Services\Process\LinuxProcessLiveness;
+use App\Support\GitHubMirror;
 use App\Support\ProjectColor;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
@@ -123,7 +124,7 @@ class BuildIssueTree
             'areaCounts' => $areaCounts, 'taskCount' => $taskCount, 'dailyCount' => $dailyCount,
             'matchCount' => count(array_filter($matches)), 'groups' => $groups, 'labelOptions' => $labelOptions,
             'filtered' => $search !== '' || $group !== 0 || $labels !== [] || $priority !== 0 || $view !== 'tasks', 'today' => $today,
-            'sync' => SyncState::query()->where('resource_key', 'github:'.config('github.owner').'/'.config('github.repository'))->first()];
+            'sync' => SyncState::query()->where('resource_key', 'github:'.GitHubMirror::fullName())->first()];
     }
 
     /** @param array<int, array<string, mixed>> $nodes

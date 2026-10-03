@@ -64,7 +64,9 @@ but your tunnel and your LAN can reach the app, since that is what makes "no Clo
   on disk, whichever image tag is "running".
 - **Isolated env**: the demo's `.env` is a completely separate file from any real
   instance's `.env`, so a real `GITHUB_TOKEN`/`DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`
-  can never leak into the demo.
+  can never leak into the demo. With those left blank the demo runs local-only: `DemoSeeder` seeds
+  into the local repository record, a visitor's new tasks and labels land there too, and nothing is
+  ever queued for GitHub (the push-queue page shows only the seeder's own showcase rows).
 - **Unambiguous names**: containers and the compose project are `dibs-demo-*`, so
   the demo can't be confused with a real instance in `docker ps` on a shared host.
 

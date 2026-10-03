@@ -8,18 +8,20 @@ use App\Models\GitHubProject;
 use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
+use App\Support\GitHubMirror;
 
 class DescribeTodoServer
 {
     /** @return array<string, mixed> */
     public function handle(): array
     {
-        $repository = GitHubRepository::query()->where('is_available', true)->first();
+        $repository = GitHubRepository::query()->where('is_available', true)->where('is_local', false)->first();
 
         return [
             'app' => (string) config('app.name'),
             'environment' => (string) config('app.env'),
             'repository' => [
+                'mode' => GitHubMirror::enabled() ? 'github' : 'local',
                 'owner' => (string) config('github.owner'),
                 'name' => (string) config('github.repository'),
                 'imported' => $repository instanceof GitHubRepository,

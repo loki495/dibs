@@ -3,7 +3,7 @@
     <section class="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col bg-white shadow-2xl dark:bg-slate-900">
         <header class="shrink-0 border-b border-slate-200 bg-white px-5 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] dark:border-slate-800 dark:bg-slate-900">
             <div class="flex items-center justify-between gap-3">
-                <span class="text-xs text-slate-500">{{ $detail['issue']->repository->full_name }} · #{{ $detail['issue']->github_number }}</span>
+                <span class="text-xs text-slate-500">{{ $detail['issue']->repository->is_local ? __('Local only') : $detail['issue']->repository->full_name }}@if ($detail['issue']->github_number !== null) · #{{ $detail['issue']->github_number }}@endif</span>
                 <div class="flex items-center gap-1">
                     @if (! $editingIssue)
                         @if ($detail['issue']->state === 'OPEN')<button type="button" wire:click="closeIssue" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Mark done') }}"><flux:icon.check class="size-4" /></button>

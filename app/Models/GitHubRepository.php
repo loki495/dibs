@@ -14,6 +14,12 @@ class GitHubRepository extends Model
     /** @use HasFactory<GitHubRepositoryFactory> */
     use HasFactory;
 
+    /**
+     * The local-only repository row's github_node_id and full_name. Neither can collide with GitHub:
+     * real node ids are opaque prefixed strings (R_...) and a real full_name always contains a slash.
+     */
+    public const string LOCAL_IDENTITY = 'local';
+
     protected $table = 'repositories';
 
     protected $guarded = [];
@@ -21,7 +27,7 @@ class GitHubRepository extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['is_private' => 'boolean', 'remote_updated_at' => 'datetime', 'last_synced_at' => 'datetime', 'is_available' => 'boolean', 'last_seen_at' => 'datetime'];
+        return ['is_private' => 'boolean', 'is_local' => 'boolean', 'remote_updated_at' => 'datetime', 'last_synced_at' => 'datetime', 'is_available' => 'boolean', 'last_seen_at' => 'datetime'];
     }
 
     /** @return HasMany<Issue, $this> */

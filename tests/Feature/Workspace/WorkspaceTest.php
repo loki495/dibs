@@ -298,15 +298,33 @@ it('quickly captures a task locally without calling GitHub', function (): void {
     Http::assertNothingSent();
 });
 
-it('keeps a quick-capture draft when the repository is not available locally', function (): void {
+it('keeps a quick-capture draft when the configured GitHub repository has not been imported', function (): void {
     Http::fake();
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->set('newTitle', 'Capture this')
         ->call('capture')
         ->assertSet('newTitle', 'Capture this')
-        ->assertSet('captureError', 'The repository is not configured or not available locally. Refresh and try again.')
-        ->assertSee('The repository is not configured or not available locally.');
+        ->assertSet('captureError', fn (?string $error): bool => str_starts_with((string) $error, 'GitHub mirroring is configured for example-owner/example-tasks, but that repository has not been imported yet.'))
+        ->assertSee('has not been imported yet');
+
+    expect(Issue::count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+it('quickly captures a task in local-only mode without queueing a push or calling GitHub', function (): void {
+    config(['github.owner' => '', 'github.repository' => '']);
+    Http::fake();
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('newTitle', 'Capture locally')
+        ->call('capture')
+        ->assertSet('newTitle', '')
+        ->assertSet('captureError', null);
+
+    expect(Issue::query()->sole()->repository->is_local)->toBeTrue()
+        ->and(GitHubPushQueueItem::query()->count())->toBe(0);
+    Http::assertNothingSent();
 });
 
 it('requires a title before quick capture', function (): void {

@@ -51,10 +51,10 @@ it('rejects a name matching a label GitHub no longer has, since a create would s
         ->toThrow(TodoValidationException::class, 'A label with this name already exists.');
 });
 
-it('refuses to create a label when the repository is not configured locally', function (): void {
+it('refuses to create a label when the configured GitHub repository has not been imported yet', function (): void {
     GitHubRepository::query()->delete();
 
     expect(fn () => app(CreateLabel::class)->handle('bug'))
-        ->toThrow(TodoValidationException::class, 'The repository is not configured or not available locally. Refresh and try again.');
+        ->toThrow(TodoValidationException::class, 'GitHub mirroring is configured for example-owner/example-tasks, but that repository has not been imported yet.');
     expect(Label::query()->count())->toBe(0);
 });

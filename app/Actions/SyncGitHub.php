@@ -8,6 +8,7 @@ use App\Models\SyncState;
 use App\Services\GitHub\FetchGitHubSnapshot;
 use App\Services\GitHub\GitHubClient;
 use App\Services\GitHub\GitHubSyncException;
+use App\Support\GitHubMirror;
 use Illuminate\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
 use SensitiveParameter;
@@ -19,7 +20,10 @@ class SyncGitHub
 
     public function handle(#[SensitiveParameter] string $token, bool $comments = false): void
     {
-        $key = 'github:'.config('github.owner').'/'.config('github.repository');
+        if (! GitHubMirror::enabled()) {
+            throw new GitHubSyncException('GitHub mirroring is not configured. Set DIBS_GITHUB_OWNER and DIBS_GITHUB_REPO to import from GitHub.');
+        }
+        $key = 'github:'.GitHubMirror::fullName();
         $lock = Cache::lock($key, 900);
         if (! $lock->get()) {
             throw new GitHubSyncException('A GitHub sync is already running.');

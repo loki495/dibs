@@ -25,6 +25,34 @@ design and were removed. The only path for GitHub → local data is a manual pul
 (`scripts/github-pull`, `php artisan todo:sync`), used for initial import, disaster recovery,
 and bringing a second instance in sync. It never overwrites unpushed local changes.
 
+**Local-only mode.** Mirroring is optional: it is on only when both `DIBS_GITHUB_OWNER` and
+`DIBS_GITHUB_REPO` are set (`App\Support\GitHubMirror::enabled()`). With either blank, the instance
+is local-only. `ResolveActiveRepository` (the one place `CreateTodoIssue`, `UpdateTodoIssue` and
+`CreateLabel` get "the repository" from) returns a single local `repositories` row
+(`is_local = true`, `github_node_id`/`full_name` set to the sentinel `GitHubRepository::LOCAL_IDENTITY`,
+`local`, which no real GitHub node id or `owner/name` can equal). It creates the row on first use with
+`createOrFirst`, so repeated or concurrent calls always yield one row. `EnqueueGitHubPush` queues
+nothing and returns `null`, `todo:push:drain` exits successfully without draining, `SyncGitHub` refuses
+with a `GitHubSyncException`, and the UI hides **Refresh from GitHub**. With mirroring configured,
+`ResolveActiveRepository` returns the imported row whose `full_name` matches, and refuses with a
+`TodoValidationException` until the first import has created it. It also refuses to create a local
+row on an instance that already has an imported one (configuration blanked after an import), so
+tasks are never split across two repositories.
+
+**Switching to GitHub.** The first `ApplyGitHubSnapshot` on an instance with a local row and no row
+for the remote repository's node id adopts the local row: it is updated in place to the remote
+identity (`is_local = false`), so every local issue, label and comment stays attached to the same
+`repository_id`. Local labels whose names match remote ones are reconciled onto them by the
+existing name match. Inside the same transaction, `QueueLocalRecordsForGitHub` then queues, for every
+still-unpushed available record, the same pushes the original writes would have queued:
+`create_label`, `create_issue`, `add_issue_labels`, `set_issue_parent` (only to a parent that is
+itself queued), `close_issue` with its `stateReason`, and `create_comment`. A failed import rolls
+back with the rest of the snapshot, so the instance stays local-only. Later imports find the row by
+node id and never requeue anything. The import's "retire records GitHub no longer has" updates skip
+rows with a null `github_node_id`, because a `whereNotIn` over an empty list would otherwise match
+every row, including unpushed local-first records, when the remote repository has none of that kind
+yet.
+
 Identity: local integer primary keys plus a unique GitHub node ID on every mirrored entity.
 Issue numbers are only unique within a repository; titles and field names are mutable and are
 never used as identity.
@@ -38,7 +66,10 @@ more often than this document should try to track.
 `project_field_options`, `project_items`, `labels`, `issue_label`, `comments`) — the read model
 described above. `github_node_id` is nullable on `issues`, `labels`, `project_items`, and
 `comments` specifically to allow local-first creation before a row has been pushed to GitHub
-and gotten a real node ID back. An issue can belong to multiple GitHub Projects even though the
+and gotten a real node ID back. `repositories.is_local` marks the local-only repository row (see
+"Local-only mode" above). It is a plain added column rather than a nullable `github_node_id`,
+because changing a column makes SQLite rebuild `repositories`, which `issues` and `labels`
+reference with `ON DELETE CASCADE`. An issue can belong to multiple GitHub Projects even though the
 normal convention is one primary Project; unexpected multiple memberships are preserved, not
 collapsed. Status/Group/Priority/Planned/Due/Repeat live on `project_items`, not `issues`,
 because those fields are Project-specific. `project_fields.semantic_key` maps a Project's own
@@ -125,8 +156,8 @@ parents — these are ordinary issues classified by label (`research`, `lesson`,
 Every write Action (`CreateTodoIssue`, `ReviseTodoIssue`, `ReviseTodoComment`,
 `CreateTodoComment`, `CompleteTodoTask`, `ClaimTaskForAgent`, and their UI-facing equivalents)
 follows the same shape: one short `DB::transaction()` per intent that writes SQLite as the
-confirmed result, then calls `EnqueueGitHubPush` to durably record the outbound operation. No
-Action calls the GitHub API inline.
+confirmed result, then calls `EnqueueGitHubPush` to durably record the outbound operation (a
+no-op on a local-only instance). No Action calls the GitHub API inline.
 
 `DrainGitHubPushQueue` (`app/Actions/DrainGitHubPushQueue.php`) delivers queued rows to GitHub
 independently of the write that created them, one GraphQL/REST call per row, always *outside*
@@ -292,4 +323,6 @@ dead-process claim cleanup, and push-queue failures — not just the happy path.
   Action to record or be allowlisted (see the activity-log plan in Dibs)
 - Scheduling fields beyond Planned/Due, recurrence, and any calendar/notification integration
 - Multiple configurable workspaces (repo + user) per Dibs instance — currently one instance
-  targets one configured `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`
+  targets one configured `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`, or none (local-only)
+- Areas, Groups and Priority on a local-only instance (they come only from GitHub Projects), and
+  returning an imported instance to local-only

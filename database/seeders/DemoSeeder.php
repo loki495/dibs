@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Actions\ResolveActiveRepository;
 use App\Models\AgentSession;
 use App\Models\Comment;
 use App\Models\GitHubProject;
@@ -39,9 +40,9 @@ class DemoSeeder extends Seeder
             'password' => bcrypt('demo-password-please-change'),
         ]);
 
-        $this->repository = GitHubRepository::factory()->create([
-            'owner' => 'demo-user', 'name' => 'dibs-demo', 'full_name' => 'demo-user/dibs-demo', 'is_private' => true,
-        ]);
+        // The demo runs local-only (no DIBS_GITHUB_OWNER/DIBS_GITHUB_REPO), so its data lives in the
+        // same local repository row a visitor's own new tasks and labels are created in.
+        $this->repository = app(ResolveActiveRepository::class)->local();
 
         foreach (['bug', 'feature', 'documentation', 'research', 'decision', 'lesson', 'guide', 'plan', 'today', 'next', 'waiting', 'someday', 'needs research', 'parent'] as $name) {
             $this->labels[$name] = Label::factory()->for($this->repository, 'repository')->create(['name' => $name]);

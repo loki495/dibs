@@ -6,7 +6,7 @@ compatibility: Requires the Dibs MCP server (php artisan mcp:start todo). The ph
 
 # Working with Dibs
 
-Dibs is a task and knowledge tracker built for agents. Local SQLite is authoritative; GitHub is an asynchronous mirror, so a write succeeds locally at once and is pushed later. The tools are the hand-off between sessions: nothing needs to be remembered in chat, and anything worth keeping between sessions belongs in Dibs, not in the conversation.
+Dibs is a task and knowledge tracker built for agents. Local SQLite is authoritative; GitHub is an optional asynchronous mirror, so a write succeeds locally at once and is pushed later, or never on a local-only instance (`todo_status` reports `mode: local`). The tools are the hand-off between sessions: nothing needs to be remembered in chat, and anything worth keeping between sessions belongs in Dibs, not in the conversation.
 
 ## Start of a session
 

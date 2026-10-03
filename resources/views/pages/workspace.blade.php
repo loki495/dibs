@@ -594,10 +594,6 @@ new class extends Component
             $this->selected = 0;
 
             return;
-        } catch (TodoRecordNotFoundException) {
-            $this->cancelEdit();
-
-            return;
         } catch (TodoStaleRevisionException) {
             $this->editError = 'This task was changed elsewhere since you started editing. Cancel, reopen it to see the latest, and apply your edit again.';
 

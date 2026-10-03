@@ -54,8 +54,14 @@ fresh database — don't run it against one you care about.
 
 ### Connecting to GitHub (optional)
 
-Dibs works as a local-only task tracker out of the box. To sync with GitHub Issues/Projects,
-set these in `.env`:
+Dibs works as a local-only task tracker out of the box. With `DIBS_GITHUB_OWNER` and
+`DIBS_GITHUB_REPO` left blank, tasks, labels, comments, claims and plans live in one local
+repository record that Dibs creates the first time it needs it. Nothing is queued for GitHub and
+nothing contacts it: the push-queue drain skips itself and **Refresh from GitHub** is hidden. Areas,
+Groups and Priority come from GitHub Projects, so a local-only instance has none. It organizes
+work with labels and parent tasks instead.
+
+To mirror to GitHub Issues/Projects, set these in `.env`:
 
 - `DIBS_GITHUB_OWNER` / `DIBS_GITHUB_REPO` — the repository to mirror issues to/from
 - `GITHUB_TOKEN` — a personal access token (see scopes below)
@@ -79,6 +85,17 @@ a fine-grained token to nothing beyond what's listed above.
 
 Local edits queue automatically and push to GitHub in the background; a manual
 **Refresh from GitHub** button pulls the latest.
+
+**Switching a local-only instance to GitHub.** Set the variables above, then run the first import
+(`scripts/github-pull`, or `php artisan todo:sync`). Until that import succeeds, creating or
+editing a task is refused with a message telling you to run it, and your local data is left
+untouched. The first import adopts the local repository record as the GitHub repository. Local
+labels whose names match GitHub's labels merge with them. Every task, label, parent link, closed
+state and comment created while local-only is then queued and pushed like any new write: each local
+task becomes a new GitHub issue. A failed import changes nothing, so the instance stays local-only
+and you can retry. Going the other way is not supported. Once an instance has been imported,
+blanking the two variables makes writes fail with a message to set them again, rather than
+starting a second, unmirrored repository.
 
 ## Activity log
 

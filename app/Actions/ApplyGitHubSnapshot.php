@@ -25,11 +25,18 @@ class ApplyGitHubSnapshot
         DB::transaction(function () use ($snapshot): void {
             $remote = $snapshot['repository'];
             $stamp = ['last_seen_at' => now(), 'last_synced_at' => now(), 'is_available' => true];
-            $repo = GitHubRepository::query()->updateOrCreate(['github_node_id' => $remote['id']], [
+            // The first import into an instance that started local-only adopts its local repository row,
+            // so every local task, label and comment stays attached and is queued for GitHub below.
+            $repo = GitHubRepository::query()->where('github_node_id', $remote['id'])->first()
+                ?? GitHubRepository::query()->where('is_local', true)->first()
+                ?? new GitHubRepository;
+            $adopting = $repo->is_local === true;
+            $repo->fill([
+                'github_node_id' => $remote['id'], 'is_local' => false,
                 'owner' => $remote['owner']['login'], 'name' => $remote['name'], 'full_name' => $remote['nameWithOwner'],
                 'url' => $remote['url'], 'is_private' => $remote['isPrivate'], 'visibility' => $remote['visibility'],
                 'remote_updated_at' => $remote['updatedAt'], ...$stamp,
-            ]);
+            ])->save();
             $labels = [];
             foreach ($snapshot['labels'] as $remoteLabel) {
                 if (! is_string($remoteLabel['id'] ?? null) || $remoteLabel['id'] === '') {
@@ -55,7 +62,7 @@ class ApplyGitHubSnapshot
                 }
                 $labels[$remoteLabel['id']] = $label->id;
             }
-            Label::query()->where('repository_id', $repo->id)->whereNotIn('github_node_id', array_keys($labels))->update(['is_available' => false]);
+            Label::query()->where('repository_id', $repo->id)->whereNotNull('github_node_id')->whereNotIn('github_node_id', array_keys($labels))->update(['is_available' => false]);
             $issues = [];
             foreach ($snapshot['issues'] as $remoteIssue) {
                 $issue = Issue::query()->updateOrCreate(['github_node_id' => $remoteIssue['id']], [
@@ -85,7 +92,7 @@ class ApplyGitHubSnapshot
                             'url' => $comment['url'], 'remote_created_at' => $comment['createdAt'], 'remote_updated_at' => $comment['updatedAt'], ...$stamp,
                         ]);
                     }
-                    $issue->comments()->whereNotIn('github_node_id', array_column($remoteIssue['comments'], 'id'))->update(['is_available' => false]);
+                    $issue->comments()->whereNotNull('github_node_id')->whereNotIn('github_node_id', array_column($remoteIssue['comments'], 'id'))->update(['is_available' => false]);
                 }
             }
             foreach ($snapshot['issues'] as $remoteIssue) {
@@ -98,9 +105,12 @@ class ApplyGitHubSnapshot
                     }
                 }
             }
-            Issue::query()->where('repository_id', $repo->id)->whereNotIn('github_node_id', array_keys($issues))->update(['is_available' => false]);
+            Issue::query()->where('repository_id', $repo->id)->whereNotNull('github_node_id')->whereNotIn('github_node_id', array_keys($issues))->update(['is_available' => false]);
             foreach ($snapshot['projects'] as $project) {
                 $this->project($project, $issues, $stamp);
+            }
+            if ($adopting) {
+                app(QueueLocalRecordsForGitHub::class)->handle($repo);
             }
         });
     }
@@ -171,6 +181,6 @@ class ApplyGitHubSnapshot
                 'remote_updated_at' => $item['updatedAt'], ...$values, ...$stamp,
             ]);
         }
-        $project->items()->whereNotIn('github_node_id', array_column($remote['items'], 'id'))->update(['is_available' => false]);
+        $project->items()->whereNotNull('github_node_id')->whereNotIn('github_node_id', array_column($remote['items'], 'id'))->update(['is_available' => false]);
     }
 }
