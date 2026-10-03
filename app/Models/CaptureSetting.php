@@ -7,9 +7,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A singleton settings row for the natural-language capture feature (plan #53).
+ * A singleton settings row for the natural-language capture feature.
  * Opt-in by default (`enabled` starts false) -- capture never runs an agent CLI
- * on Andres's behalf until this is explicitly turned on.
+ * on the user's behalf until this is explicitly turned on.
  *
  * @property array<int, string> $enabled_agents
  */

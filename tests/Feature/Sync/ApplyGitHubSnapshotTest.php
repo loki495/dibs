@@ -13,14 +13,14 @@ use App\Services\GitHub\GitHubSyncException;
 function githubSnapshotFixture(): array
 {
     return [
-        'repository' => ['id' => 'R1', 'owner' => ['login' => 'loki495'], 'name' => 'Todo', 'nameWithOwner' => 'example-owner/example-tasks', 'url' => 'https://github.com/example-owner/example-tasks', 'isPrivate' => true, 'visibility' => 'PRIVATE', 'updatedAt' => '2026-09-08T12:00:00Z'],
+        'repository' => ['id' => 'R1', 'owner' => ['login' => 'example-owner'], 'name' => 'example-tasks', 'nameWithOwner' => 'example-owner/example-tasks', 'url' => 'https://github.com/example-owner/example-tasks', 'isPrivate' => true, 'visibility' => 'PRIVATE', 'updatedAt' => '2026-09-08T12:00:00Z'],
         'labels' => [['id' => 'L1', 'name' => 'parent', 'color' => 'abcdef', 'description' => 'Container']],
         'issues' => [
             ['id' => 'I1', 'number' => 1, 'title' => 'Website', 'body' => '', 'state' => 'OPEN', 'stateReason' => null, 'url' => 'https://github.com/example-owner/example-tasks/issues/1', 'updatedAt' => '2026-09-08T12:00:00Z', 'parent' => null, 'children' => [['id' => 'I2']], 'labels' => [['id' => 'L1']]],
             ['id' => 'I2', 'number' => 2, 'title' => 'Task', 'body' => 'Details', 'state' => 'OPEN', 'stateReason' => null, 'url' => 'https://github.com/example-owner/example-tasks/issues/2', 'updatedAt' => '2026-09-08T12:00:00Z', 'parent' => ['id' => 'I1'], 'children' => [], 'labels' => []],
         ],
         'projects' => [[
-            'id' => 'P1', 'owner' => 'loki495', 'number' => 3, 'title' => 'Personal Projects', 'url' => 'https://github.com/users/example-owner/projects/3', 'closed' => false, 'public' => false, 'updatedAt' => '2026-09-08T12:00:00Z',
+            'id' => 'P1', 'owner' => 'example-owner', 'number' => 3, 'title' => 'Personal Projects', 'url' => 'https://github.com/users/example-owner/projects/3', 'closed' => false, 'public' => false, 'updatedAt' => '2026-09-08T12:00:00Z',
             'fields' => [['id' => 'F1', 'name' => 'Planned', 'dataType' => 'DATE'], ['id' => 'F2', 'name' => 'Priority', 'dataType' => 'SINGLE_SELECT', 'options' => [['id' => 'PO1', 'name' => '1', 'color' => 'ff0000']]]],
             'items' => [['id' => 'PI1', 'type' => 'ISSUE', 'isArchived' => false, 'updatedAt' => '2026-09-08T12:00:00Z', 'content' => ['id' => 'I2'], 'values' => [['field' => ['id' => 'F1'], 'date' => '2026-09-09'], ['field' => ['id' => 'F2'], 'optionId' => 'PO1']]]],
         ]],
@@ -103,7 +103,7 @@ it('applies a repeat rule from a text-type Project field', function (): void {
 
 it('rejects a comment with no id instead of silently accepting it', function (): void {
     $snapshot = githubSnapshotFixture();
-    $snapshot['issues'][0]['comments'] = [['id' => null, 'body' => 'Hello', 'author' => ['login' => 'loki495'], 'url' => null, 'createdAt' => '2026-09-08T12:00:00Z', 'updatedAt' => '2026-09-08T12:00:00Z']];
+    $snapshot['issues'][0]['comments'] = [['id' => null, 'body' => 'Hello', 'author' => ['login' => 'example-owner'], 'url' => null, 'createdAt' => '2026-09-08T12:00:00Z', 'updatedAt' => '2026-09-08T12:00:00Z']];
 
     expect(fn () => app(ApplyGitHubSnapshot::class)->handle($snapshot))->toThrow(GitHubSyncException::class, 'comment without an id');
     expect(Issue::query()->count())->toBe(0);

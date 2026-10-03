@@ -108,11 +108,9 @@ jobs:
             ghcr.io/loki495/dibs:demo
             ghcr.io/loki495/dibs:sha-${{ steps.vars.outputs.short_sha }}
 
-      # Fires Watchtower's own update check on the demo host instead of waiting on its 24h poll
-      # interval -- see the redeploy webhook service for the endpoint itself (token-gated,
-      # fire-and-forget). continue-on-error: a missed trigger just means Watchtower catches
-      # this image on its next scheduled poll -- never worth failing an otherwise-successful
-      # publish over.
-      - name: Trigger Watchtower on the demo host
+      # Optional: ping a redeploy webhook (repository secret CD_TRIGGER_URL) so the demo host
+      # pulls this image right away. continue-on-error: a missed trigger only delays the
+      # redeploy -- never worth failing an otherwise-successful publish over.
+      - name: Ping redeploy webhook
         continue-on-error: true
         run: curl -sS -m 15 "${{ secrets.CD_TRIGGER_URL }}"

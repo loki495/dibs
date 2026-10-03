@@ -44,7 +44,7 @@ A live claim binds to the caller's real OS process (host, pid, process start tim
 
 ## Public demo hosting
 
-A public demo instance runs at `dibs-demo.ac495.net` (per-visitor SQLite database isolation, not shared state) — see `docs/demo-hosting.md` for the full architecture, deploy steps, and CD pipeline (push to `main` → GHCR publish → Watchtower redeploy on the demo host). `config('dibs.demo_mode')` defaults to `false` and every piece of this is a no-op on a normal install; `database/seeders/DemoSeeder.php` is what the public demo actually shows visitors.
+A public demo instance runs at `dibs-demo.ac495.net` (per-visitor SQLite database isolation, not shared state) — see `docs/demo-hosting.md` for the full architecture, deploy steps, and CD pipeline (push to `main` → GHCR publish → optional redeploy webhook). `config('dibs.demo_mode')` defaults to `false` and every piece of this is a no-op on a normal install; `database/seeders/DemoSeeder.php` is what the public demo actually shows visitors.
 
 ## Testing and tooling
 

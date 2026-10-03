@@ -10,8 +10,8 @@ use App\Models\Label;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function (): void {
-    config(['github.owner' => 'loki495', 'github.repository' => 'Todo']);
-    GitHubRepository::factory()->create(['owner' => 'loki495', 'name' => 'Todo', 'full_name' => 'example-owner/example-tasks']);
+    config(['github.owner' => 'example-owner', 'github.repository' => 'example-tasks']);
+    GitHubRepository::factory()->create(['owner' => 'example-owner', 'name' => 'example-tasks', 'full_name' => 'example-owner/example-tasks']);
 });
 
 it('creates a lowercased label and enqueues its GitHub creation', function (): void {

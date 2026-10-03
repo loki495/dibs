@@ -22,13 +22,16 @@ const ALLOWED_AGENTS = ['claude', 'codex', 'agy', 'opencode'];
 /**
  * Absolute paths, not bare names: a forced-command SSH session doesn't source the interactive
  * shell's profile, so PATH here is minimal and won't find these under ~/.local/bin or similar.
+ * Each one can be overridden with a DIBS_CAPTURE_<AGENT>_BIN environment variable.
  */
-const AGENT_BINARIES = [
-    'claude' => '/home/<user>/.local/bin/claude',
-    'codex' => '/home/<user>/.local/bin/codex',
-    'agy' => '/home/<user>/.local/bin/agy',
-    'opencode' => '/home/<user>/.opencode/bin/opencode',
-];
+$home = rtrim((string) getenv('HOME'), '/');
+
+define('AGENT_BINARIES', [
+    'claude' => getenv('DIBS_CAPTURE_CLAUDE_BIN') ?: $home.'/.local/bin/claude',
+    'codex' => getenv('DIBS_CAPTURE_CODEX_BIN') ?: $home.'/.local/bin/codex',
+    'agy' => getenv('DIBS_CAPTURE_AGY_BIN') ?: $home.'/.local/bin/agy',
+    'opencode' => getenv('DIBS_CAPTURE_OPENCODE_BIN') ?: $home.'/.opencode/bin/opencode',
+]);
 
 function fail(string $message): never
 {

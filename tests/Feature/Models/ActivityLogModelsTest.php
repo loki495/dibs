@@ -46,7 +46,7 @@ it('casts a change log diff as an array and stamps created_at', function (): voi
         'summary' => 'Renamed the issue',
         'changes' => ['title' => ['from' => 'Fix sink', 'to' => 'Fix the sink']],
         'actor_type' => ChangeLog::ACTOR_USER,
-        'actor_label' => 'andres',
+        'actor_label' => 'alice',
     ]);
 
     $fresh = $log->fresh();

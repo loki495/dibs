@@ -9,6 +9,7 @@ services:
       - "traefik.http.routers.dibs.entrypoints=websecure"
       - "traefik.http.routers.dibs.tls=true"
       - "traefik.http.routers.dibs.middlewares=dibs-lan"
+      # Example ranges: replace with your own LAN subnet and Docker gateway.
       - "traefik.http.middlewares.dibs-lan.ipallowlist.sourcerange=192.168.1.0/24,127.0.0.1/32,172.18.0.1/32"
       - "traefik.http.routers.dibs-http.rule=Host(`dibs.example.com`)"
       - "traefik.http.routers.dibs-http.entrypoints=web"
