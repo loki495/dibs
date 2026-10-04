@@ -33,7 +33,10 @@ to sign in as (the demo defaults to `demo@example.com`). `AUTO_LOGIN_LAN=true` s
 no Cloudflare edge header (`CF-Connecting-IP`/`CF-Ray`) and come from a private address; only enable it when nothing
 but your tunnel and your LAN can reach the app, since that is what makes "no Cloudflare header" mean "on the LAN".
 `AUTO_LOGIN_OWNER_EMAIL=you@example.com` does the same when Cloudflare Access itself asserts that email
-(`Cf-Access-Authenticated-User-Email`). Neither trusts `X-Forwarded-For`. See `AutoLoginForTrustedRequests`.
+(`Cf-Access-Authenticated-User-Email`). The private-address check uses Laravel's client IP. Behind a reverse proxy
+that is the proxy's own Docker address unless `TRUSTED_PROXIES` lists it, so set `TRUSTED_PROXIES` (below) before
+enabling `AUTO_LOGIN_LAN`, and never set it to `*`. The README's "Owner auto-login" section has the full conditions.
+See `AutoLoginForTrustedRequests`.
 
 ## Architecture
 
