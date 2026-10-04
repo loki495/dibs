@@ -90,6 +90,7 @@ new class extends Component
             'last_error' => $row->last_error,
             'queued_at' => $row->created_at?->diffForHumans(),
             'attempted_at' => $row->attempted_at?->diffForHumans(),
+            'retrying_at' => $row->status === 'pending' && $row->next_attempt_at?->isFuture() ? $row->next_attempt_at->timezone(config('dibs.timezone'))->format('M j, g:i A') : null,
         ])->all();
         $counts = app(DescribeGitHubPushQueue::class)->counts();
         $this->pendingCount = $counts['pending'];
@@ -147,6 +148,9 @@ new class extends Component
                                 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-300' => $item['status'] === 'failed',
                                 'bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-300' => $item['status'] === 'needs_attention',
                             ])>{{ $item['status'] }}</span>
+                            @if ($item['retrying_at'])
+                                <span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">{{ __('retrying at :time', ['time' => $item['retrying_at']]) }}</span>
+                            @endif
                         </td>
                         <td class="py-2 pr-4">{{ $item['attempts'] }}</td>
                         <td class="max-w-xs truncate py-2 pr-4" title="{{ $item['last_error'] }}">{{ $item['last_error'] }}</td>

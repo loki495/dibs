@@ -15,6 +15,16 @@ return [
     'loading_indicator_delay_ms' => (int) env('DIBS_LOADING_INDICATOR_DELAY_MS', 150),
     'push_queue_ui_enabled' => (bool) env('DIBS_PUSH_QUEUE_UI_ENABLED', true),
 
+    // Retry budget for a push-queue row whose GitHub call failed transiently (network, 5xx, rate
+    // limit). Each failure waits base * 2^(failures - 1) seconds, capped at backoff_cap_seconds, or
+    // until the time GitHub gives for a rate limit; the row needs attention once max_attempts
+    // calls have failed. The defaults spread 8 attempts over about two hours.
+    'push_queue' => [
+        'max_attempts' => (int) env('DIBS_PUSH_MAX_ATTEMPTS', 8),
+        'backoff_base_seconds' => (int) env('DIBS_PUSH_BACKOFF_BASE_SECONDS', 30),
+        'backoff_cap_seconds' => (int) env('DIBS_PUSH_BACKOFF_CAP_SECONDS', 3600),
+    ],
+
     // Where todo_report_bug files its issues. Unset (the default) leaves them unparented,
     // same as before this existed. See docs/agent-interface.md for the todo_report_bug tool.
     'agent_report_area_id' => $optionalId(env('DIBS_AGENT_REPORT_AREA_ID')),

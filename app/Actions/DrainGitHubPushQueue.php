@@ -13,6 +13,7 @@ use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubClient;
 use App\Services\GitHub\GitHubSyncException;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
@@ -30,7 +31,8 @@ use SensitiveParameter;
  */
 class DrainGitHubPushQueue
 {
-    private const int MAX_ATTEMPTS = 3;
+    /** Set when GitHub rate-limits a call; the token's limit applies to every remaining row. */
+    private ?CarbonImmutable $rateLimitedUntil = null;
 
     /** @var list<string> */
     private const array OPERATION_ORDER = [
@@ -48,8 +50,12 @@ class DrainGitHubPushQueue
     {
         $result = ['pushed' => 0, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0];
 
+        $this->forgetRateLimit();
+
         foreach (self::OPERATION_ORDER as $operation) {
-            $items = GitHubPushQueueItem::query()->whereIn('status', ['pending', 'failed'])->where('operation', $operation)->orderBy('id')->limit($limit)->get();
+            $items = GitHubPushQueueItem::query()->whereIn('status', ['pending', 'failed'])->where('operation', $operation)
+                ->where(fn ($query) => $query->whereNull('next_attempt_at')->orWhere('next_attempt_at', '<=', now()))
+                ->orderBy('id')->limit($limit)->get();
             foreach ($items as $item) {
                 $state = match ($operation) {
                     'create_issue' => $this->pushCreateIssue($token, $item),
@@ -80,6 +86,11 @@ class DrainGitHubPushQueue
                     default => $this->pushUpdateComment($token, $item),
                 };
                 $result[$state] = ($result[$state] ?? 0) + 1;
+                if ($this->rateLimitedUntil instanceof CarbonImmutable) {
+                    $this->pauseQueueUntil($this->rateLimitedUntil);
+
+                    return $result;
+                }
             }
         }
 
@@ -624,13 +635,47 @@ class DrainGitHubPushQueue
         return 'needs_attention';
     }
 
+    /**
+     * A transient failure waits and retries: until the time GitHub gave for a rate limit,
+     * otherwise for an exponential backoff. The row needs attention once the retry budget is
+     * spent, or straight away when retrying the same call cannot help.
+     */
     private function deferOrFail(GitHubPushQueueItem $item, GitHubSyncException $exception): string
     {
         $attempts = $item->attempts + 1;
-        $status = $attempts >= self::MAX_ATTEMPTS ? 'needs_attention' : 'pending';
-        $item->update(['attempts' => $attempts, 'last_error' => $exception->getMessage(), 'attempted_at' => now(), 'status' => $status]);
+        if ($exception->retryAt instanceof CarbonImmutable) {
+            $this->rateLimitedUntil = $exception->retryAt;
+        }
+        if (! $exception->transient || $attempts >= (int) config('dibs.push_queue.max_attempts')) {
+            $item->update(['attempts' => $attempts, 'last_error' => $exception->getMessage(), 'attempted_at' => now(), 'status' => 'needs_attention', 'next_attempt_at' => null]);
 
-        return $status === 'needs_attention' ? 'needs_attention' : 'deferred';
+            return 'needs_attention';
+        }
+
+        $item->update(['attempts' => $attempts, 'last_error' => $exception->getMessage(), 'attempted_at' => now(), 'status' => 'pending', 'next_attempt_at' => $exception->retryAt ?? now()->addSeconds($this->backoffSeconds($attempts))]);
+
+        return 'deferred';
+    }
+
+    private function backoffSeconds(int $failures): int
+    {
+        $base = max(1, (int) config('dibs.push_queue.backoff_base_seconds'));
+        $cap = max($base, (int) config('dibs.push_queue.backoff_cap_seconds'));
+
+        return min($cap, $base * 2 ** min($failures - 1, 30));
+    }
+
+    private function forgetRateLimit(): void
+    {
+        $this->rateLimitedUntil = null;
+    }
+
+    /** Holds every other due row until the rate limit resets, without spending their attempts. */
+    private function pauseQueueUntil(CarbonImmutable $until): void
+    {
+        GitHubPushQueueItem::query()->whereIn('status', ['pending', 'failed'])
+            ->where(fn ($query) => $query->whereNull('next_attempt_at')->orWhere('next_attempt_at', '<', $until))
+            ->update(['next_attempt_at' => $until]);
     }
 
     private function pushUpdateIssueBody(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string

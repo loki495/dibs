@@ -123,3 +123,26 @@ it('is hidden entirely when the feature flag is off', function (): void {
 
     $this->actingAs($user)->get('/push-queue')->assertNotFound();
 });
+
+it('shows when a backing-off row will be retried, and a manual retry clears the wait', function (): void {
+    $this->freezeTime();
+    config(['dibs.timezone' => 'UTC']);
+    $user = User::factory()->create();
+    $waiting = GitHubPushQueueItem::factory()->create(['status' => 'pending', 'attempts' => 2, 'next_attempt_at' => now()->addMinutes(5)]);
+    $due = GitHubPushQueueItem::factory()->create(['status' => 'pending', 'next_attempt_at' => now()->subMinute()]);
+    $stuck = GitHubPushQueueItem::factory()->create(['status' => 'needs_attention', 'attempts' => 8, 'next_attempt_at' => now()->addMinutes(5)]);
+
+    Livewire::actingAs($user)->test('pages::push-queue')
+        ->assertSee('retrying at '.now()->addMinutes(5)->format('M j, g:i A'))
+        ->call('retry', $stuck->id);
+
+    expect($stuck->refresh())->status->toBe('pending')->next_attempt_at->toBeNull()
+        ->and($due->refresh()->next_attempt_at)->not->toBeNull();
+});
+
+it('does not show a retry time for a row that is already due', function (): void {
+    $user = User::factory()->create();
+    GitHubPushQueueItem::factory()->create(['status' => 'pending', 'next_attempt_at' => now()->subMinute()]);
+
+    Livewire::actingAs($user)->test('pages::push-queue')->assertDontSee('retrying at');
+});

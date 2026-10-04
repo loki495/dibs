@@ -120,7 +120,7 @@ the last error, read by the manual-pull path only (no longer drives any schedule
 
 **`github_push_queue`** — the durable outbound queue described below: `operation`, `target_type`
 + `target_id`, a JSON `payload`, `status` (pending/failed/needs_attention/pushed), `attempts`,
-`last_error`, and a unique `idempotency_key`.
+`last_error`, `next_attempt_at` (when a backing-off row is next due), and a unique `idempotency_key`.
 
 **`agent_sessions` / `task_claims`** — local worker identity and expiring task claims. A claim
 binds to the caller's real OS process (host, pid, process start time verified via
@@ -207,6 +207,21 @@ was last pushed) does not block or roll back the local write — it marks the ro
 `config('dibs.push_queue_ui_enabled')`) shows pending/failed/needs-attention/pushed counts and
 per-item detail; `DescribeGitHubPushQueue::counts()['actionable']` is `failed + needs_attention`
 — the count that actually needs a human, as opposed to `pending`, which is just queue depth.
+
+A failed push is retried only when a later attempt could succeed. `GitHubClient` classifies each
+failure on the `GitHubSyncException` it throws: a rate limit carries the `retryAt` GitHub gave
+(`Retry-After`, else `X-RateLimit-Reset` when `X-RateLimit-Remaining` is `0`, else a minute for a
+secondary limit with no time), for a 403/429 or a GraphQL `RATE_LIMITED` error; network failures,
+5xx, unconfirmed responses and untyped GraphQL errors are transient; other 4xx and GraphQL
+`NOT_FOUND`/`FORBIDDEN`/`INSUFFICIENT_SCOPES`/`UNPROCESSABLE` errors are permanent. The drain
+sends a permanent failure straight to `needs_attention`. A transient one stays `pending` with
+`next_attempt_at` set to GitHub's `retryAt` or an exponential backoff (`backoff_base_seconds *
+2^(failures - 1)`, capped at `backoff_cap_seconds`), and the drain skips rows that aren't due. A
+rate limit also ends the pass and holds every other queued row until the same time without
+spending their attempts, since the limit is per token. A row needs attention once
+`max_attempts` calls have failed (`config('dibs.push_queue')`, defaults 8 / 30 s / 1 h, about two
+hours in all). The push-queue page shows "retrying at …" under a backing-off row's status, and a
+manual Retry clears the wait.
 
 Six MCP write Actions with a single-attempt `DB::transaction()` were found racing the
 scheduler's own writes to the same SQLite file (2026-09-14): `CompleteTodoTask`,

@@ -16,6 +16,6 @@ class RetryAllRetriableGitHubPushQueueItems
     public function handle(): int
     {
         return GitHubPushQueueItem::query()->whereIn('status', ['failed', 'needs_attention'])
-            ->update(['status' => 'pending', 'attempts' => 0, 'last_error' => null]);
+            ->update(['status' => 'pending', 'attempts' => 0, 'last_error' => null, 'next_attempt_at' => null]);
     }
 }
