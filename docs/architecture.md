@@ -15,13 +15,11 @@ queue handler.
 ## Sync authority
 
 **Local SQLite is authoritative. GitHub Issues/Projects are an asynchronous, mostly-read-only
-mirror**, decided 2026-09-11 after starting from the opposite (GitHub-authoritative,
-webhook/polling-driven) design. A write commits to SQLite immediately as the confirmed result
+mirror**. A write commits to SQLite immediately as the confirmed result
 and enqueues a GitHub push rather than calling the GitHub API inline; the browser and every MCP
 tool read SQLite only and never call GitHub directly.
 
-There are no inbound webhooks and no scheduled freshness polling — both existed in the earlier
-design and were removed. The only path for GitHub → local data is a manual pull
+There are no inbound webhooks and no scheduled freshness polling. The only path for GitHub → local data is a manual pull
 (`scripts/github-pull`, `php artisan todo:sync`), used for initial import, disaster recovery,
 and bringing a second instance in sync. It never overwrites unpushed local changes.
 
@@ -116,7 +114,7 @@ closing comment from a prior close/reopen cycle still appears there as ordinary 
 Label names are stored lowercase with single spaces (`App\Support\LabelName`). The import lowercases a remote label and queues a `rename_label` push so GitHub converges on the local spelling; `php artisan labels:normalize` (dry run unless `--apply`) does the same for labels already stored with capitals. `CreateLabel` is the standalone "new label, not attached to any task" write the Manage labels popup uses — unlike `ResolveLabels` (which reuses an existing same-named label when resolving an issue's own labels), a duplicate name here is a validation error, since the point of this one is a brand new label.
 
 **`sync_states`** — one row per mirrored resource, tracking last successful/attempted sync and
-the last error, read by the manual-pull path only (no longer drives any scheduled behavior).
+the last error, read by the manual-pull path only; it drives no scheduled behavior.
 
 **`github_push_queue`** — the durable outbound queue described below: `operation`, `target_type`
 + `target_id`, a JSON `payload`, `status` (pending/failed/needs_attention/pushed), `attempts`,
@@ -151,14 +149,6 @@ feature (an LLM structures free text into a draft task via the host capture brid
 `capture-bridge.md`). The bridge mechanism is built and verified; the Dibs-side feature that
 uses these tables (capture UI, settings/opt-in) is not yet built.
 
-**`github_mutations`** (`app/Models/GitHubMutation.php`, written only by
-`app/Actions/TrackGitHubMutation.php`) — predates the push queue: a synchronous-write tracking
-table from the earlier GitHub-authoritative design ("record intent, confirm, or mark for
-reconciliation on an ambiguous network outcome"). Nothing in the app currently calls
-`TrackGitHubMutation`; it's dead code kept alive only by its own test coverage. Candidate for
-removal — flagged here rather than silently deleted since removing a table/model is a
-deliberate call, not a documentation change.
-
 Not built as separate tables: `research`/`lesson`/`decision` records, or organizational
 parents — these are ordinary issues classified by label (`research`, `lesson`, `decision`,
 `parent`), not distinct schema.
@@ -179,17 +169,13 @@ before its Project membership can, for example — and a handler whose dependenc
 yet returns `waiting` and is retried on the next pass rather than failing.
 
 **A push handler must never treat "the local field already matches the target value" as proof
-the mutation already reached GitHub.** Because the originating write Action always applies its
-target state locally *before* enqueueing the push, that local state is the target value on
-every single real attempt, including the very first — it can never distinguish "already pushed"
-from "just applied locally, not yet pushed." Two handlers did this wrong until 2026-09-22
-(`pushCloseIssue` checking local `state === 'CLOSED'`, `pushClearProjectItemField` checking the
-local group/priority column `=== null`) and, as a result, silently never called their mutation
-for any real close or Group/Priority clear performed through the app. The only reliable signal
-a push handler may use is a value the mutation's own response sets (`github_node_id`, etc.) —
-GitHub's own mutations are idempotent, so calling one again for a state GitHub already has is a
-harmless no-op, which is the correct way to handle "maybe already pushed" rather than guessing
-from local state.
+the mutation already reached GitHub.** The originating write Action always applies its target state
+locally *before* enqueueing the push, so that local state is the target value on every real attempt,
+including the first, and can't distinguish "already pushed" from "just applied locally". A handler that
+skipped its mutation on that basis would silently never call GitHub (`pushCloseIssue` checking
+`state === 'CLOSED'` is the typical trap). The only reliable signal is a value the mutation's own response
+sets (`github_node_id`, etc.). GitHub's mutations are idempotent, so calling one again for a state
+GitHub already has is a harmless no-op, which is the correct way to handle "maybe already pushed".
 
 `php artisan todo:push:drain` runs a single pass and exits, registered
 `Schedule::command(...)->everyTenSeconds()->withoutOverlapping(1)` in `routes/console.php` (run
@@ -199,10 +185,10 @@ delivery without the bookkeeping a long-lived internal loop would need, and keep
 container restart could catch mid-run down to however long one pass's GitHub calls take rather
 than up to a minute.
 
-**Operational note:** the long-lived `schedule:work` process can silently stop matching its own
-`everyMinute()` schedule (observed 2026-09-14 — its internal due-check disagreed with a fresh
-process's for ~2.5 hours; root cause not yet identified). Symptom: the
-push-queue page shows items stuck `pending` with 0 attempts well past a minute. `docker compose
+**Operational note:** the long-lived `schedule:work` process has been seen to stop matching its own
+`everyTenSeconds()` schedule, with its internal due-check disagreeing with a fresh process's for hours
+(root cause not identified). Symptom: the push-queue page shows items stuck `pending` with 0 attempts
+well past a minute. `docker compose
 logs scheduler` showing repeated "No scheduled commands are ready to run" while `php artisan
 schedule:list`/`schedule:run` correctly see the job as due confirms it; `docker compose restart
 scheduler` is the known recovery.
@@ -229,11 +215,10 @@ spending their attempts, since the limit is per token. A row needs attention onc
 hours in all). The push-queue page shows "retrying at …" under a backing-off row's status, and a
 manual Retry clears the wait.
 
-Six MCP write Actions with a single-attempt `DB::transaction()` were found racing the
-scheduler's own writes to the same SQLite file (2026-09-14): `CompleteTodoTask`,
-`ClaimTaskForAgent`, `ReviseTodoIssue`, `ReviseTodoComment`, `CreateTodoComment`, and
-`CreateTodoIssue` now all pass `attempts: 3`, since Laravel's `DB::transaction()` already
-retries automatically on a `"database is locked"` SQLSTATE and just wasn't configured to.
+The MCP write Actions `CompleteTodoTask`, `ClaimTaskForAgent`, `ReviseTodoIssue`, `ReviseTodoComment`,
+`CreateTodoComment` and `CreateTodoIssue` run their transaction with `attempts: 3`, because they can race
+the scheduler's own writes to the same SQLite file and Laravel's `DB::transaction()` retries on a
+`"database is locked"` SQLSTATE only when told to.
 
 ## Agents and claims
 
@@ -337,8 +322,8 @@ and Laravel's own upstream test coverage, not by a Dibs-level regression test.
 Browser tests (`composer pest:browser`, `tests/Browser/`) run locally in the `app-test` container (CI runs them
 as a separate step of the `quality` job, since `phpunit.xml` doesn't include them), whose image
 bakes Chromium for the Playwright version pinned in `docker/setup-test-container.sh`; that pin must move
-together with `package.json` (a Dependabot bump that skipped it broke every browser test with "Playwright
-is outdated" until the image was rebuilt).
+together with `package.json` (a mismatch fails every browser test with "Playwright
+is outdated" until the image is rebuilt).
 
 Cover sad paths explicitly: validation failures, stale-revision conflicts, claim conflicts,
 dead-process claim cleanup, and push-queue failures — not just the happy path.
@@ -347,8 +332,8 @@ dead-process claim cleanup, and push-queue failures — not just the happy path.
 
 - The natural-language capture UI itself (bridge mechanism only — see `capture-bridge.md`)
 - The rest of the activity log: change recording for the remaining write Actions, sign-in /
-  GitHub pull / push-queue drain events, and the architecture guard that requires every write
-  Action to record or be allowlisted (see the activity-log plan in Dibs)
+  GitHub pull / push-queue drain events, and an architecture guard that requires every write
+  Action to record or be allowlisted
 - Scheduling fields beyond Planned/Due, recurrence, and any calendar/notification integration
 - Multiple configurable workspaces (repo + user) per Dibs instance — currently one instance
   targets one configured `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`, or none (local-only)

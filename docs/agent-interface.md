@@ -1,24 +1,32 @@
 # MCP agent interface
 
-Status: the host-local stdio MCP server, its full read/write/claim tool surface, the workspace UI's claim/plan visibility, and end-to-end verification are complete. The documented Artisan CLI fallback is implemented. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records. GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue — there is no inbound webhook receiver and no scheduled freshness polling.
+This is the contract for the host-local stdio MCP server, its read/write/claim tool surface, and the Artisan CLI fallback. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records. GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue — there is no inbound webhook receiver and no scheduled freshness polling.
 
 ## Server foundation
 
-`laravel/mcp` is on the stable `^1.0` line (bumped from `1.0.0-beta.1` 2026-09-20). The beta was originally required because only it targeted the stateless 2026-07-28 revision this project's claim/capability-token design assumes — 1.0.0 stable now supports the same protocol, plus (per its own changelog, "Serve legacy initialize clients alongside the modern protocol") first-class native support for the dual-protocol backward-compatibility scenario described below, which used to be entirely bespoke Dibs code. Also confirmed while reading the package source: `laravel/mcp` has no dependency on the separate official `modelcontextprotocol/php-sdk` — it implements the protocol independently.
+Dibs uses `laravel/mcp` `^1.0` (locked at v1.0.0). It targets the stateless 2026-07-28 MCP revision this project's claim/capability-token design assumes, serves legacy `initialize` clients alongside it, and implements the protocol itself, with no dependency on the separate official `modelcontextprotocol/php-sdk`.
+
+## Registering the server
+
+An agent launches the server as a stdio child process through the `app` service (the one with the host PID namespace; `web` only serves HTTP):
+
+```bash
+docker compose -f <path-to-dibs>/docker-compose.yml exec -T -u www-data app php artisan mcp:start todo
+```
+
+The server name is `todo` (`Mcp::local('todo', TodoServer::class)` in `routes/ai.php`). `-T` is required because stdio carries the JSON-RPC stream. Copy-paste setups for Claude Code and opencode are in the README's "Connect an agent" section. A session must reconnect after the `app` container restarts, since the server is a process inside it. [`skills/dibs/SKILL.md`](../skills/dibs/SKILL.md) is the agent-side usage guide.
 
 - Server: `App\Mcp\Servers\TodoServer`, registered in `routes/ai.php` via `Mcp::local('todo', TodoServer::class)`. Start it with `php artisan mcp:start todo`.
 - `todo_status` (`App\Mcp\Tools\DescribeTodoServer`, backed by the `App\Actions\DescribeTodoServer` Action) is the health/metadata tool: app name/environment, the repository `mode` (`github` when `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO` are set, `local` when the instance runs local-only), configured GitHub owner/repository, whether a GitHub repository has been imported locally (`imported`, `full_name`; always `false`/`null` local-only), and issue/label/project counts. Never returns `GITHUB_TOKEN` or any other secret.
 - Verified end to end against the real stdio process (`php artisan mcp:start todo` piped raw JSON-RPC): a `tools/call` for `todo_status` returns real data in one clean JSON-RPC line with empty stderr; `tools/list` correctly lists it; an unknown method, a request missing the required `_meta` protocol-version member, and malformed JSON each return a structured JSON-RPC error (`-32601`, `-32602`, `-32700`) without crashing the process or corrupting the stream.
-- **Known gap:** `laravel/mcp` has no `notifications/cancelled` handling at all — a cancellation notification is silently dropped as an unrecognized notification (harmless, but not real cancellation). Acceptable for now since every current tool handler is a short synchronous DB read; revisit if a long-running tool is ever added.
-- **Backward compatibility:** real MCP clients (confirmed against Claude Code's and opencode's own clients) still use the pre-2026-07-28 `initialize`-based handshake rather than the newer stateless `_meta`-based one — not deprecated behavior on their part, just a protocol revision the spec itself documents servers as expected to keep supporting alongside the new one. `laravel/mcp` 1.0.0 now handles the core of this natively: `JsonRpcRequest::isLegacy()` skips `_meta` validation for any request lacking it, and a default `Initialize` method answers the old handshake. `TodoServer` only adds one thing on top — `App\Mcp\Methods\InitializeLegacyClient` extends the framework's `Initialize` to also remember the connecting client's name via `App\Mcp\ClientIdentity`, for use elsewhere in the app. See the "keep bespoke legacy-MCP handshake support" decision record (Dibs group) for why this stays until Claude Code/opencode themselves move to the new protocol. Covered by `tests/Feature/Mcp/TodoServerLegacyInitializeTest.php`.
+- **Known gap:** `laravel/mcp` has no `notifications/cancelled` handling: a cancellation notification is silently dropped as unrecognized. That is harmless while every tool handler is a short synchronous DB read; it matters only if a long-running tool is ever added.
+- **Backward compatibility:** real MCP clients (Claude Code and opencode among them) still use the `initialize`-based handshake that predates the stateless `_meta`-based revision, which the spec expects servers to keep supporting. `laravel/mcp` handles the core of this natively: `JsonRpcRequest::isLegacy()` skips `_meta` validation for requests lacking it, and a default `Initialize` method answers the old handshake. `TodoServer` adds one thing: `App\Mcp\Methods\InitializeLegacyClient` extends `Initialize` to remember the connecting client's name via `App\Mcp\ClientIdentity`. Covered by `tests/Feature/Mcp/TodoServerLegacyInitializeTest.php`.
 
 ## Boundary
 
 Agents run on the host and connect to a stdio MCP server. The server exposes Dibs tools and delegates to the same application Actions as the workspace. Those Actions write SQLite directly as the confirmed result and enqueue a GitHub push rather than calling the GitHub API inline. `php artisan todo:agent:*` is retained as a local recovery and smoke-test fallback. There is no unauthenticated HTTP API and no GitHub credential in an agent prompt, browser bundle, or command argument. The MCP server and CLI read the server-side `GITHUB_TOKEN` only when the push-queue worker needs it to reach GitHub.
 
-Implemented commands: `list`, `show`, `claim`, `heartbeat`, `release`, `create`, `update`, `comment`, and `complete` — all follow the same contract.
-
-The command surface is:
+Nine commands exist: `list`, `show`, `claim`, `heartbeat`, `release`, `create`, `update`, `comment` and `complete`. Several MCP tools have no CLI equivalent (`todo_status`, `todo_context`, `todo_metadata`, `todo_search`, `todo_peek`, `todo_queue_status`, `todo_scaffold_plan`, `todo_reopen`, `todo_claim_status`, `todo_report_bug`). The commands are:
 
 - `todo:agent:list` — read current tasks, parent context, Group, Project, labels, Priority, and local push-queue state from SQLite.
 - `todo:agent:show ISSUE` — read one task with description, comments, hierarchy, and relevant Project fields.
@@ -30,7 +38,7 @@ The command surface is:
 - `todo:agent:comment [ISSUE] --body= [--comment-id= --expected-revision=] [--idempotency-key=]` — add a comment (`ISSUE` required) or edit an existing one (`--comment-id`/`--expected-revision` required instead); same non-error stale-revision conflict payload as `update`. Writes SQLite and enqueues the corresponding GitHub push.
 - `todo:agent:complete ISSUE --pid=PID --token=TOKEN [--summary=TEXT]` — closes a claimed task, enqueues the GitHub push, optionally posts `--summary` as a result comment, and releases the claim. Claim-scoped like `release`/`heartbeat`: only the exact process holding the live claim can complete it.
 
-Machine-readable JSON is the default output. Human output is opt-in. Commands reject malformed IDs, unavailable local records, and wrong Project-field options before any write.
+Output is always machine-readable JSON. Commands reject malformed IDs, unavailable local records, and wrong Project-field options before any write.
 
 ## MCP tools
 
@@ -58,9 +66,9 @@ Registered on `App\Mcp\Servers\TodoServer`, in this order:
 | `todo_claim_status` | Read-only: whether a task has a live claim, and by whom — no capability token exposed. Includes a direct liveness check (`isCurrentlyAlive`) and the background watcher's last recording (`recordedLiveness`). |
 | `todo_report_bug` | Self-report a problem with the MCP/CLI tooling itself (not a product task) — creates an `agent report`-labeled issue; amend with `todo_comment`. |
 
-Every write tool implements `Laravel\Mcp\Server\Contracts\Errable` and validates its own arguments via `Request::validate()` — confirmed empirically that `laravel/mcp` `1.0.0-beta.1` does not enforce a tool's declared JSON Schema before calling `handle()`, so schema-shaped input alone is not a safety guarantee.
+Every write tool implements `Laravel\Mcp\Server\Contracts\Errable` and validates its own arguments via `Request::validate()` — `laravel/mcp` 1.0 does not enforce a tool's declared JSON Schema before calling `handle()`, so schema-shaped input alone is not a safety guarantee.
 
-Note on `noop`: `todo_status` and `todo_context` have nothing to configure, but Claude Code's `canUseTool` callback failed calls whose input was an empty object ("invalid permission result", reported as #336). Passing any argument avoided it, so both tools declare one boolean, `noop`, that the handler never reads (`App\Mcp\Tools\Concerns\DeclaresPlaceholderArgument`). It is `required` in the schema so a model always sends it — an optional one would just be omitted — but `laravel/mcp` does not enforce the schema, so callers that leave it out still succeed.
+Note on `noop`: `todo_status` and `todo_context` have nothing to configure, but Claude Code's `canUseTool` callback failed calls whose input was an empty object ("invalid permission result"). Passing any argument avoided it, so both tools declare one boolean, `noop`, that the handler never reads (`App\Mcp\Tools\Concerns\DeclaresPlaceholderArgument`). It is `required` in the schema so a model always sends it — an optional one would just be omitted — but `laravel/mcp` does not enforce the schema, so callers that leave it out still succeed.
 
 Note on `pid`: the MCP protocol itself has no session/process identity a server can read from a tool call — a stdio server's own parent process *is* the connecting client, so `todo_claim`/`todo_heartbeat`/`todo_release`/`todo_complete` read it directly via `posix_getppid()` and never accept it as a tool argument. The CLI fallback has no equivalent (each Artisan invocation is its own short-lived process, not the long-running agent), so it requires an explicit `--pid=` naming the calling agent's own process — the shared Actions underneath verify whichever PID they're given the same way regardless of which surface it came from.
 
@@ -99,7 +107,7 @@ The local-only `agent_sessions` and `task_claims` models bind a task to an expli
 
 **Recorded claim liveness:** the `app` container's main process is `php artisan dibs:claims:watch` (`WatchClaimLivenessCommand`), which every `DIBS_CLAIM_LIVENESS_INTERVAL` seconds (default 30, or `--interval=`) checks each live, unexpired, verified claim's process and stores the result on the claim (`task_claims.liveness_alive`, `liveness_checked_at`) through the `RecordClaimLiveness` Action. Expired, released and never-verified claims are skipped. It stops within about a second of SIGTERM, logs a SQLite "database is locked" pass as a warning and retries on the next one, and reports any other error through the normal exception handler without exiting, so the container agents exec into stays up. `ResolveClaimLiveness` combines the two sources for `todo_claim_status`, the detail panel and the task-list pill: `isCurrentlyAlive` is the direct check (null where it can't run), `recordedLiveness` is `{alive, checkedAt, isStale}` or null before the first check, with `isStale` true once the recording is older than `DIBS_CLAIM_LIVENESS_STALE_AFTER` seconds (default 90, three intervals), and `displayAlive` is the direct check, else a fresh recording, else null. The recording is display-only: claim takeover (`ClaimTaskForAgent`) and heartbeat (`HeartbeatTaskClaim`) act only on a definite `false` from their own direct check, never on a recorded value, which can be up to a stale interval old and could predate a PID reuse. A person who sees "process gone" in the UI can use "Release claim".
 
-Claims, session metadata, and explicit checkout bindings are local durable data. GitHub no longer holds the sole durable copy of anything, so these still need backup with SQLite same as before.
+Claims and session metadata are local durable data that GitHub never holds, so they are backed up with the SQLite database.
 
 ## Retry and conflict rules
 
@@ -109,8 +117,8 @@ Claims, session metadata, and explicit checkout bindings are local durable data.
 - A push-queue row that GitHub rejects (validation error, missing access, conflicting edit) is marked `needs_attention` for human review rather than retried into a duplicate or silently discarded. A transient failure (rate limit, network, 5xx) is retried with backoff, waiting for GitHub's own `Retry-After`/`X-RateLimit-Reset` on a rate limit, and only marked `needs_attention` once its retry budget is spent. Neither rolls back the local write. See `architecture.md` for the budget.
 - Updates patch only requested fields, locally and in the resulting push. A push rejection does not roll back the local write; it surfaces via the queue.
 - A command records the agent identity and intent in the local record before a multi-step write.
-- The first release has no unattended scheduler that creates, edits, completes, or comments through the MCP surface itself — an agent explicitly invoking a command is the triggering event. The push-queue worker draining to GitHub is a separate, already-authorized background process, not an "unattended agent write."
+- Nothing on a schedule creates, edits, completes or comments through the MCP surface; an agent explicitly invoking a tool or command is always the trigger. The push-queue drain to GitHub is a separate background process, not an agent write.
 
 ## Website convention
 
-A website is a Group inside a Project area. Its meaningful parent issue holds repository/path/context links. Work is child issues; granular work is nested children. Lessons, research, and decisions are labeled issues in that Group, with evidence and records in comments. A future `website_bindings` table must use explicit repository paths; names alone never select a checkout.
+A website is a Group inside a Project area. Its meaningful parent issue holds repository/path/context links. Work is child issues; granular work is nested children. Lessons, research, and decisions are labeled issues in that Group, with evidence and records in comments. Planned, not built: a `website_bindings` table that maps a website to explicit repository paths, so names alone never select a checkout.
