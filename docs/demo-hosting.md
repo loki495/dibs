@@ -26,6 +26,15 @@ that proxy's address is the `<lan-ip>` you must trust (see `TRUSTED_PROXIES` bel
 If the hostname sits behind an access-control layer that gates the rest of your
 domain, give `<demo-host>` an explicit bypass. The demo is meant to be open.
 
+## Owner convenience: skip the login form (opt-in)
+
+Off by default, and works on any Dibs deployment, not just the demo. `AUTO_LOGIN_EMAIL` names an existing account
+to sign in as (the demo defaults to `demo@example.com`). `AUTO_LOGIN_LAN=true` signs it in for requests that carry
+no Cloudflare edge header (`CF-Connecting-IP`/`CF-Ray`) and come from a private address; only enable it when nothing
+but your tunnel and your LAN can reach the app, since that is what makes "no Cloudflare header" mean "on the LAN".
+`AUTO_LOGIN_OWNER_EMAIL=you@example.com` does the same when Cloudflare Access itself asserts that email
+(`Cf-Access-Authenticated-User-Email`). Neither trusts `X-Forwarded-For`. See `AutoLoginForTrustedRequests`.
+
 ## Architecture
 
 - **Per-visitor database isolation**, not one shared database: `ResolveDemoDatabase`

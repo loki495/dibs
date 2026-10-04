@@ -38,4 +38,11 @@ return [
     'demo_mode' => (bool) env('DIBS_DEMO_MODE', false),
     'demo_db_template_path' => env('DEMO_DB_TEMPLATE_PATH', storage_path('demo-template.sqlite')),
     'demo_db_storage_path' => env('DEMO_DB_STORAGE_PATH', storage_path('demo-dbs')),
+
+    // Opt-in owner auto-login (any deployment), see AutoLoginForTrustedRequests. All off by default.
+    // Account to sign in as; defaults to the demo account in demo mode. Never created, must already exist.
+    'auto_login_email' => env('AUTO_LOGIN_EMAIL'),
+    'auto_login_lan' => (bool) env('AUTO_LOGIN_LAN', false),
+    'auto_login_owner_email' => env('AUTO_LOGIN_OWNER_EMAIL'),
+    'demo_login_email' => env('DEMO_LOGIN_EMAIL', 'demo@example.com'),
 ];
