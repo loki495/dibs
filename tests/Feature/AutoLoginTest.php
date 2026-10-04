@@ -50,14 +50,15 @@ it('does not sign in a public address or a Cloudflare-routed request', function 
         ->assertRedirect('/login');
 });
 
-it('signs in when Cloudflare Access asserts the owner email, not on a mismatch', function (): void {
+it('never signs in a request carrying Cloudflare headers naming the account, with LAN auto-login on or off', function (bool $lan): void {
     /** @var TestCase $this */
-    config(['dibs.auto_login_email' => 'owner@example.com', 'dibs.auto_login_owner_email' => 'me@example.com']);
+    config(['dibs.auto_login_lan' => $lan, 'dibs.auto_login_email' => 'owner@example.com']);
 
-    $this->withHeaders(['CF-Connecting-IP' => '1.2.3.4', 'Cf-Access-Authenticated-User-Email' => 'other@example.com'])
-        ->get('/')->assertRedirect('/login');
+    $this->call('GET', '/', server: [
+        'REMOTE_ADDR' => '192.168.1.50',
+        'HTTP_CF_RAY' => 'abc123',
+        'HTTP_CF_ACCESS_AUTHENTICATED_USER_EMAIL' => 'owner@example.com',
+    ])->assertRedirect('/login');
 
-    $this->withHeaders(['CF-Connecting-IP' => '1.2.3.4', 'Cf-Access-Authenticated-User-Email' => 'me@example.com'])
-        ->get('/')->assertOk();
-    $this->assertAuthenticated();
-});
+    $this->assertGuest();
+})->with([[true], [false]]);

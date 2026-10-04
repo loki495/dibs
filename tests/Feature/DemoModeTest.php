@@ -123,18 +123,3 @@ it('does not auto-login a non-private address or a Cloudflare-routed request', f
     $this->call('GET', '/', server: ['REMOTE_ADDR' => '192.168.1.50', 'HTTP_CF_CONNECTING_IP' => '1.2.3.4'])
         ->assertRedirect('/login');
 });
-
-it('auto-logs in when Cloudflare Access asserts the owner email, and not on a mismatch or unset owner', function (): void {
-    seedDemoUserInTemplate();
-    $headers = ['CF-Connecting-IP' => '1.2.3.4', 'Cf-Access-Authenticated-User-Email' => 'owner@example.com'];
-
-    config(['dibs.auto_login_owner_email' => null]);
-    $this->withHeaders($headers)->get('/')->assertRedirect('/login');
-
-    config(['dibs.auto_login_owner_email' => 'someone@example.com']);
-    $this->withHeaders($headers)->get('/')->assertRedirect('/login');
-
-    config(['dibs.auto_login_owner_email' => 'owner@example.com']);
-    $this->withHeaders($headers)->get('/')->assertOk();
-    $this->assertAuthenticated();
-});

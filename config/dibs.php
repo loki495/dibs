@@ -66,6 +66,5 @@ return [
     // Account to sign in as; defaults to the demo account in demo mode. Never created, must already exist.
     'auto_login_email' => env('AUTO_LOGIN_EMAIL'),
     'auto_login_lan' => (bool) env('AUTO_LOGIN_LAN', false),
-    'auto_login_owner_email' => env('AUTO_LOGIN_OWNER_EMAIL'),
     'demo_login_email' => env('DEMO_LOGIN_EMAIL', 'demo@example.com'),
 ];

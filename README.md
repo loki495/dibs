@@ -184,21 +184,19 @@ plans, claims, and recording research and lessons.
 
 ## Owner auto-login (optional)
 
-Off by default. For a single-owner deployment you can skip the login page for yourself with three `.env` settings:
+Off by default. For a single-owner deployment you can skip the login page for yourself with two `.env` settings:
 
 | Variable | Effect |
 |---|---|
 | `AUTO_LOGIN_EMAIL` | An existing account to sign in as. It is never created. In demo mode it defaults to the demo account. |
 | `AUTO_LOGIN_LAN=true` | Signs that account in for requests that carry no Cloudflare edge header (`CF-Connecting-IP`/`CF-Ray`) and come from a private address. |
-| `AUTO_LOGIN_OWNER_EMAIL` | Signs it in when Cloudflare Access itself reports that email (`Cf-Access-Authenticated-User-Email`). |
 
-Only enable `AUTO_LOGIN_LAN` when nothing but your tunnel and your LAN can reach the app (no public port-forward to Dibs or to a reverse proxy in front of it), since that is what makes "no Cloudflare header" mean "on the LAN". Conditions that matter:
+Requests that arrive through Cloudflare (tunnel or proxy) are never auto-logged-in and always use the normal login. LAN auto-login trusts the network position, so anyone on the trusted network is treated as the owner: only enable it on a network you control, and only when nothing but your tunnel and your LAN can reach the app (no public port-forward to Dibs or to a reverse proxy in front of it). Conditions that matter:
 
 - **The address checked is Laravel's client IP.** That is the direct peer, unless the peer is listed in `TRUSTED_PROXIES`; then it's the client address that proxy put in `X-Forwarded-For` (the rightmost entry not itself a trusted proxy, so a client can't add a fake one in front).
 - **Behind a reverse proxy (Traefik, nginx, Caddy), set `TRUSTED_PROXIES` to it.** Left blank, every request through the proxy arrives from its private Docker address and counts as LAN, whoever sent it. Requests through the Cloudflare tunnel carry Cloudflare's headers, so they aren't affected.
 - **Never combine `AUTO_LOGIN_LAN` with `TRUSTED_PROXIES=*`.** Any client that reaches Dibs directly could then claim a LAN address in `X-Forwarded-For`.
 - **Only RFC 1918 and IPv6 unique-local (`fc00::/7`) addresses count as LAN.** Loopback, link-local and CGNAT/Tailscale (`100.64.0.0/10`) addresses don't.
-- **`AUTO_LOGIN_OWNER_EMAIL` takes Cloudflare's headers as they arrive.** Anyone who reaches Dibs without going through Cloudflare (your LAN, or any other route in) can send them too. Use it only when the tunnel and your trusted LAN are the only ways in.
 
 Apply a change with `docker compose up -d`; a plain image pull keeps the old environment. See `AutoLoginForTrustedRequests`.
 
