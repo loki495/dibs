@@ -17,6 +17,11 @@ local SQLite is authoritative.
 
 **Stack:** Laravel 13, Livewire 4, PHP 8.5, SQLite, Tailwind 4, Flux UI.
 
+> **Status: experimental alpha** (`v0.1.0-alpha.1`). Dibs has run the author's own task list, driven
+> by coding agents over MCP, for about a month. It is suitable for personal, self-hosted use. Expect
+> rough edges, schema changes between alpha releases, and the [known limitations](#known-limitations)
+> below. A [public demo](https://dibs-demo.ac495.net) with throwaway data is the quickest way to look around.
+
 <p>
   <img src="docs/images/screenshot-light-desktop.png" alt="Dibs workspace, light theme" width="49%">
   <img src="docs/images/screenshot-dark-desktop.png" alt="Dibs workspace, dark theme" width="49%">
@@ -43,6 +48,14 @@ docker compose exec -u www-data app php artisan todo:user
 The last command creates your login (name, email, and a password of at least 12 characters —
 there's no public registration). Then visit `http://localhost:8095` (override the port with
 `APP_PORT` in `.env`).
+
+**Host UID.** On Linux the images assume your host user has UID 1000: `docker/setup-dev-container.sh`
+remaps the container's `www-data` to 1000, and the `app-test` and `node` services run as `1000:1000`.
+With any other UID the bind-mounted checkout isn't writable by the containers, so `setup.sh` fails
+(`composer install`, writing `database/database.sqlite`, `storage/`). Either change the `1000` values
+in `docker/setup-dev-container.sh` (`usermod`/`groupmod`) and the two `user:` lines in
+`docker-compose.yml` to your own UID and GID, then rebuild (`docker compose build`), or give UID 1000
+ownership of the checkout (`sudo chown -R 1000:1000 .`).
 
 `setup.sh` starts three containers: `web` serves the UI, `scheduler` drains the GitHub push queue
 and prunes the activity log, and `app` is where agents and Artisan commands run
@@ -126,19 +139,66 @@ page says so and offers a Reload, instead of the page silently ignoring taps. Wh
 is in flight, a thin bar shows at the top and the lists dim (after `DIBS_LOADING_INDICATOR_DELAY_MS`
 milliseconds, default 150, so quick requests don't flicker).
 
-## Running checks
-
-```bash
-composer pint      # code style (auto-fixes)
-composer phpstan    # static analysis
-composer rector      # modernization (dry-run only)
-composer pest        # tests
-```
-
 ## Agent integration
 
-Dibs exposes a host-local stdio MCP server (`php artisan mcp:start todo`) that any agent (Claude,
-Codex, etc.) can connect to for:
+### Connect an agent
+
+Dibs exposes a host-local stdio MCP server named `todo` (`php artisan mcp:start todo`). The agent
+launches it as a child process through the `app` service, which is the one that shares the host's PID
+namespace (claim liveness needs that; `web` only serves HTTP). The command is the same for every client:
+
+```bash
+docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data app php artisan mcp:start todo
+```
+
+Use an absolute path to your checkout, and make sure the containers are up (`docker compose up -d`).
+`-T` is required: stdio carries the JSON-RPC stream, so no TTY may be allocated.
+
+**Claude Code**
+
+```bash
+claude mcp add dibs -- docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data app php artisan mcp:start todo
+```
+
+Or commit/share it as a `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "dibs": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u", "www-data", "app", "php", "artisan", "mcp:start", "todo"]
+    }
+  }
+}
+```
+
+**opencode** (`opencode.json`)
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "dibs": {
+      "type": "local",
+      "command": ["docker", "compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u", "www-data", "app", "php", "artisan", "mcp:start", "todo"],
+      "enabled": true
+    }
+  }
+}
+```
+
+**Any other MCP client** that can launch a stdio server: give it that same command (executable
+`docker`, the rest as arguments). The `dibs` label is yours to choose; the tools are always `todo_*`.
+
+Agent sessions must reconnect after the `app` container restarts (a rebuild, `docker compose restart`,
+an upgrade): the MCP server is a process inside it, so a restart drops the connection. Call `todo_status`
+first in a session to confirm you reached the intended instance. Teach the agent how to use the tools
+with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
+
+### What agents can do
+
 
 - **Discovering what exists** — `todo_metadata` lists every area with its Groups and Priority options, and every label with its id, description and usage count, plus how to attach or create each; search it with `query` before inventing a new label or Group.
 - **Cold-start orientation** — `todo_context` and `todo_list` answer "what's open?" with no prior
@@ -174,8 +234,8 @@ Claim/heartbeat/release/complete keeps multiple agents (or the same agent across
 duplicating or colliding on the same task, all without ever handling your GitHub token — every
 write goes through the same Actions the web UI uses. Completing a task can carry a closing note,
 a reason (`COMPLETED`/`NOT_PLANNED`), and references, all visible afterward via `todo_show`; `todo_reopen` puts a closed task back to open. See
-[`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a JSON CLI
-fallback (`php artisan todo:agent:*`) for scripting or recovery.
+[`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a partial JSON CLI
+fallback (`php artisan todo:agent:*`, nine commands, not the full tool set) for scripting or recovery.
 
 To teach an agent how to use these tools well, drop [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md)
 into its skills directory (or paste it into its instructions). It's a short, generic guide in the
@@ -199,6 +259,85 @@ Requests that arrive through Cloudflare (tunnel or proxy) are never auto-logged-
 - **Only RFC 1918 and IPv6 unique-local (`fc00::/7`) addresses count as LAN.** Loopback, link-local and CGNAT/Tailscale (`100.64.0.0/10`) addresses don't.
 
 Apply a change with `docker compose up -d`; a plain image pull keeps the old environment. See `AutoLoginForTrustedRequests`.
+
+## Backup, restore and upgrade
+
+**What to keep:** `database/database.sqlite` (every task, comment, claim and queued GitHub push) and
+`.env` (settings, `APP_KEY` and your GitHub token). Dibs has no built-in backup tooling. The database
+runs in WAL mode, so don't copy the file by itself while the containers are busy. Take a consistent
+snapshot instead:
+
+```bash
+docker compose exec -T -u www-data app php -r '(new PDO("sqlite:database/database.sqlite"))->exec("VACUUM INTO \"storage/backup.sqlite\"");'
+mv storage/backup.sqlite ~/dibs-backup.sqlite   # the target file must not already exist
+cp .env ~/dibs-backup.env
+```
+
+**Restore:** `docker compose down`, put the snapshot back as `database/database.sqlite` (delete any
+`database.sqlite-wal` and `database.sqlite-shm` beside it), restore `.env`, then `docker compose up -d`.
+Without a GitHub mirror that is the whole job. With one, rows queued after the snapshot are gone, so run
+**Refresh from GitHub** and compare.
+
+**Upgrade:** back up first, then
+
+```bash
+git pull
+bash docker/setup.sh                # rebuilds images, installs dependencies, runs migrations, rebuilds assets
+docker compose restart app scheduler  # long-running processes still hold the old code
+```
+
+To run migrations alone: `composer artisan -- migrate`, or without Composer on the host,
+`docker compose exec -T -u www-data app php artisan migrate --force`. Reconnect any agent sessions
+afterwards.
+
+## Known limitations
+
+- **One repository per instance.** An instance mirrors the one `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`, or
+  none (local-only). Running several workspaces means running several instances.
+- **Single user.** Accounts are created from the command line (`todo:user`) and all of them see the same
+  workspace; there are no per-user permissions or ownership. Claims are scoped to one local database.
+- **Linux `/proc` is needed for claim liveness.** Verifying that a claiming agent's process is alive reads
+  `/proc/<pid>/stat` through the `app` container's host PID namespace. Elsewhere, claims still work but
+  are recorded as unverified and only expire with their lease.
+- **Natural-language capture isn't built.** Only the host bridge mechanism exists
+  ([`docs/capture-bridge.md`](docs/capture-bridge.md)); nothing in the app calls it.
+- **No built-in backup tooling.** Back up `database/database.sqlite` yourself (see above).
+- **Areas, Groups and Priority come only from GitHub Projects.** A local-only instance has none and
+  organizes work with labels and parent tasks.
+- **Auto-login is LAN-only.** Optional owner auto-login applies to private-network requests and never to
+  traffic that arrives through Cloudflare, which always uses the normal login.
+
+## Design notes
+
+- **One write path.** Typed Actions are shared by the web UI, the Artisan CLI and the MCP tools, and an
+  architecture test (`tests/Feature/Architecture/NoDirectWritesInUiOrMcpTest.php`) fails the build if the UI,
+  MCP or HTTP layers write to the database themselves. See [architecture](docs/architecture.md#push-queue-and-write-model).
+- **Claims bound to a process.** A claim records the agent's pid and the process start time from
+  `/proc/<pid>/stat` (so a reused pid can't keep it alive) plus a capability token stored only as a hash;
+  a background watcher records liveness for the UI. See [claims](docs/agent-interface.md#claims-and-checkpoints).
+- **Local-first writes, async mirror.** A write commits to SQLite and enqueues a GitHub push. The drain
+  retries transient failures with backoff that honours GitHub's rate-limit headers, and idempotent writes
+  commit atomically with their receipt. See [push queue](docs/architecture.md#push-queue-and-write-model).
+- **Local-only mode with adoption.** With no GitHub repository configured, everything works locally; the
+  first GitHub import adopts the local repository and queues what was created. See
+  [local-only mode](docs/architecture.md#sync-authority).
+- **Tools validate their own input.** `laravel/mcp` doesn't enforce a tool's declared JSON Schema, so every
+  write tool validates its arguments itself. See [MCP tools](docs/agent-interface.md#mcp-tools).
+
+## Running checks
+
+Pint, PHPStan, Rector (dry-run) and Pest run inside the `app` container. The `composer` scripts below are
+host-side wrappers around `docker compose exec`, so they need Composer on the host. Without it, run the
+raw form shown beside each.
+
+| Check | Composer wrapper | Raw form |
+|---|---|---|
+| Code style (auto-fixes) | `composer pint` | `docker compose exec -T -u www-data app vendor/bin/pint` |
+| Static analysis | `composer phpstan` | `docker compose exec -T -u www-data app vendor/bin/phpstan analyse --memory-limit=512M` |
+| Modernization (dry-run only) | `composer rector` | `docker compose exec -T -u www-data app vendor/bin/rector process --dry-run` |
+| Tests | `composer pest` | `docker compose exec -T -u www-data app vendor/bin/pest` |
+| Browser tests | `composer pest:browser` | `docker compose --profile test run --rm app-test vendor/bin/pest tests/Browser` |
+| Any Artisan command | `composer artisan -- <command>` | `docker compose exec -T -u www-data app php artisan <command>` |
 
 ## Learn more
 
