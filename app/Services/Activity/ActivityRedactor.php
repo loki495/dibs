@@ -52,13 +52,7 @@ final class ActivityRedactor
     {
         $key = mb_strtolower($key);
 
-        foreach ($patterns as $pattern) {
-            if (str_contains($key, $pattern)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($patterns, fn (string $pattern): bool => str_contains($key, $pattern));
     }
 
     /** @return list<string> */

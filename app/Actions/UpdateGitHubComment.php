@@ -22,7 +22,7 @@ class UpdateGitHubComment
             throw new GitHubSyncException('The selected comment is not available in the local snapshot. Refresh and try again.');
         }
 
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($commentId: ID!, $body: String!) { updateIssueComment(input: {id: $commentId, body: $body}) { issueComment { id body url createdAt updatedAt author { login } } } }',
             ['commentId' => $comment->github_node_id, 'body' => $body],
         );

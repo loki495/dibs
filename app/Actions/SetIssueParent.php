@@ -32,7 +32,7 @@ class SetIssueParent
         }
         $this->assertNoCycle($child, $parent);
 
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($parentId: ID!, $childId: ID!, $replaceParent: Boolean!) { addSubIssue(input: {issueId: $parentId, subIssueId: $childId, replaceParent: $replaceParent}) { subIssue { id updatedAt } } }',
             ['parentId' => $parent->github_node_id, 'childId' => $child->github_node_id, 'replaceParent' => true],
         );
@@ -66,7 +66,7 @@ class SetIssueParent
             throw new GitHubSyncException('The current parent is not available locally. Refresh before removing it.');
         }
 
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($parentId: ID!, $childId: ID!) { removeSubIssue(input: {issueId: $parentId, subIssueId: $childId}) { subIssue { id updatedAt } } }',
             ['parentId' => $parent->github_node_id, 'childId' => $child->github_node_id],
         );

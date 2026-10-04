@@ -122,7 +122,7 @@ class DrainGitHubPushQueue
         $body = $item->payload['body'] ?? null;
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($repositoryId: ID!, $title: String!, $body: String) { createIssue(input: {repositoryId: $repositoryId, title: $title, body: $body}) { issue { id number title body state stateReason url updatedAt } } }',
                 ['repositoryId' => $issue->repository->github_node_id, 'title' => $title, 'body' => $body],
             );
@@ -350,7 +350,7 @@ class DrainGitHubPushQueue
         $description = $item->payload['description'] ?? null;
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($repositoryId: ID!, $name: String!, $color: String!, $description: String) { createLabel(input: {repositoryId: $repositoryId, name: $name, color: $color, description: $description}) { label { id name color description url } } }',
                 ['repositoryId' => $label->repository->github_node_id, 'name' => $name, 'color' => $color, 'description' => $description],
             );
@@ -386,7 +386,7 @@ class DrainGitHubPushQueue
         $name = (string) ($item->payload['name'] ?? $label->name);
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($id: ID!, $name: String!) { updateLabel(input: {id: $id, name: $name}) { label { id name color description } } }',
                 ['id' => $label->github_node_id, 'name' => $name],
             );
@@ -414,7 +414,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            (new GitHubClient($token))->query(
+            new GitHubClient($token)->query(
                 'mutation($id: ID!) { deleteLabel(input: {id: $id}) { clientMutationId } }',
                 ['id' => $label->github_node_id],
             );
@@ -450,7 +450,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id updatedAt } } }',
                 ['projectId' => $projectItem->project->github_node_id, 'contentId' => $projectItem->issue->github_node_id],
             );
@@ -513,7 +513,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {singleSelectOptionId: $optionId}}) { projectV2Item { id updatedAt } } }',
                 ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id, 'fieldId' => $option->field->github_node_id, 'optionId' => $option->github_option_id],
             );
@@ -555,7 +555,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                 ['labelableId' => $issue->github_node_id, 'labelIds' => $labels->pluck('github_node_id')->all()],
             );
@@ -598,7 +598,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($parentId: ID!, $childId: ID!, $replaceParent: Boolean!) { addSubIssue(input: {issueId: $parentId, subIssueId: $childId, replaceParent: $replaceParent}) { subIssue { id updatedAt } } }',
                 ['parentId' => $parent->github_node_id, 'childId' => $child->github_node_id, 'replaceParent' => true],
             );
@@ -692,7 +692,7 @@ class DrainGitHubPushQueue
         $body = $item->payload['body'] ?? null;
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason closedAt url updatedAt } } }',
                 ['issueId' => $issue->github_node_id, 'title' => $title, 'body' => $body],
             );
@@ -732,7 +732,7 @@ class DrainGitHubPushQueue
         // mutation is idempotent (closing an already-closed issue is a harmless no-op), so it's the
         // only reliable signal of whether this specific push has actually reached GitHub.
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($issueId: ID!, $stateReason: IssueClosedStateReason) { closeIssue(input: {issueId: $issueId, stateReason: $stateReason}) { issue { id state stateReason closedAt updatedAt } } }',
                 ['issueId' => $issue->github_node_id, 'stateReason' => $item->payload['stateReason'] ?? null],
             );
@@ -767,7 +767,7 @@ class DrainGitHubPushQueue
 
         // No "already OPEN locally, skip" short-circuit — see the note on pushCloseIssue above.
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($issueId: ID!) { reopenIssue(input: {issueId: $issueId}) { issue { id state stateReason updatedAt } } }',
                 ['issueId' => $issue->github_node_id],
             );
@@ -812,7 +812,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            (new GitHubClient($token))->query(
+            new GitHubClient($token)->query(
                 'mutation($issueId: ID!) { deleteIssue(input: {issueId: $issueId}) { clientMutationId } }',
                 ['issueId' => $issue->github_node_id],
             );
@@ -853,7 +853,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($projectId: ID!, $itemId: ID!) { deleteProjectV2Item(input: {projectId: $projectId, itemId: $itemId}) { deletedItemId } }',
                 ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id],
             );
@@ -912,7 +912,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) { clearProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId}) { projectV2Item { id updatedAt } } }',
                 ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id, 'fieldId' => $field->github_node_id],
             );
@@ -967,7 +967,7 @@ class DrainGitHubPushQueue
 
         try {
             if ($addLabels->isNotEmpty()) {
-                $data = (new GitHubClient($token))->query(
+                $data = new GitHubClient($token)->query(
                     'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                     ['labelableId' => $issue->github_node_id, 'labelIds' => $addLabels->pluck('github_node_id')->all()],
                 );
@@ -977,7 +977,7 @@ class DrainGitHubPushQueue
                 }
             }
             if ($removeLabels->isNotEmpty()) {
-                $data = (new GitHubClient($token))->query(
+                $data = new GitHubClient($token)->query(
                     'mutation($labelableId: ID!, $labelIds: [ID!]!) { removeLabelsFromLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                     ['labelableId' => $issue->github_node_id, 'labelIds' => $removeLabels->pluck('github_node_id')->all()],
                 );
@@ -1014,7 +1014,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($parentId: ID!, $childId: ID!) { removeSubIssue(input: {issueId: $parentId, subIssueId: $childId}) { subIssue { id updatedAt } } }',
                 ['parentId' => $parentGithubNodeId, 'childId' => $child->github_node_id],
             );
@@ -1054,7 +1054,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($subjectId: ID!, $body: String!) { addComment(input: {subjectId: $subjectId, body: $body}) { commentEdge { node { id body url createdAt updatedAt author { login } } } } }',
                 ['subjectId' => $comment->issue->github_node_id, 'body' => $comment->body],
             );
@@ -1090,7 +1090,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($commentId: ID!, $body: String!) { updateIssueComment(input: {id: $commentId, body: $body}) { issueComment { id body url createdAt updatedAt author { login } } } }',
                 ['commentId' => $comment->github_node_id, 'body' => $comment->body],
             );

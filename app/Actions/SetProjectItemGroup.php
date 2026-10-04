@@ -28,7 +28,7 @@ class SetProjectItemGroup
             return $item;
         }
 
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {singleSelectOptionId: $optionId}}) { projectV2Item { id updatedAt } } }',
             ['projectId' => $item->project->github_node_id, 'itemId' => $item->github_node_id, 'fieldId' => $group->field->github_node_id, 'optionId' => $group->github_option_id],
         );

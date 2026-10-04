@@ -22,7 +22,7 @@ class UpdateGitHubProject
             throw new GitHubSyncException('The selected project is not available in the local snapshot. Refresh and try again.');
         }
 
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($projectId: ID!, $title: String!) { updateProjectV2(input: {projectId: $projectId, title: $title}) { projectV2 { id title updatedAt } } }',
             ['projectId' => $project->github_node_id, 'title' => $title],
         );

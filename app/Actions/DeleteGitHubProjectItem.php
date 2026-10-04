@@ -18,7 +18,7 @@ class DeleteGitHubProjectItem
         if (! $item->is_available || $item->github_node_id === '' || ! $item->project?->is_available || $item->project->github_node_id === '') {
             throw new GitHubSyncException('The selected Project membership is not available locally. Refresh and try again.');
         }
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($projectId: ID!, $itemId: ID!) { deleteProjectV2Item(input: {projectId: $projectId, itemId: $itemId}) { deletedItemId } }',
             ['projectId' => $item->project->github_node_id, 'itemId' => $item->github_node_id],
         );

@@ -21,7 +21,7 @@ class ClearProjectItemPriority
         if (! $item->is_available || $item->github_node_id === '' || ! $item->project?->is_available || ! $item->priorityOption?->field?->is_available) {
             throw new GitHubSyncException('The selected Priority assignment is not available locally. Refresh and try again.');
         }
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) { clearProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId}) { projectV2Item { id updatedAt } } }',
             ['projectId' => $item->project->github_node_id, 'itemId' => $item->github_node_id, 'fieldId' => $item->priorityOption->field->github_node_id],
         );
