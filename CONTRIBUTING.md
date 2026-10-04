@@ -58,6 +58,8 @@ The browser suite runs in its own `app-test` container (Node.js and Chromium), b
 Open a [GitHub issue](https://github.com/loki495/dibs/issues/new/choose) with enough detail to reproduce
 (for a bug) or the problem you're trying to solve (for a feature request). Screenshots help for UI issues.
 
+README screenshots: `scripts/readme-screenshots.mjs` (Playwright) re-shoots `docs/images/` from a throwaway, DemoSeeder-seeded local-only instance. Set `BASE_URL`, `OUT_DIR` and `DETAIL_TASK` (a task title with a live claim and comments, which the script opens for the detail panel).
+
 ## Security issues
 
 Don't open a public issue. Use GitHub's private vulnerability reporting, as described in

@@ -27,7 +27,7 @@ local SQLite is authoritative.
   <img src="docs/images/screenshot-dark-desktop.png" alt="Dibs workspace, dark theme" width="49%">
 </p>
 <p>
-  <img src="docs/images/screenshot-detail-panel.png" alt="Task detail panel with comments" width="49%">
+  <img src="docs/images/screenshot-detail-panel.png" alt="Task detail panel with a live claim, comments and Close button" width="49%">
   <img src="docs/images/screenshot-light-mobile.png" alt="Dibs on mobile" width="23.5%">
   <img src="docs/images/screenshot-dark-mobile.png" alt="Dibs on mobile, dark theme" width="23.5%">
 </p>
