@@ -18,6 +18,16 @@
         </include>
     </source>
     <php>
+        <!-- Auto-login is opt-in per deployment; a developer's own AUTO_LOGIN_* must not leak into tests.
+             <server> as well as <env>, since Laravel reads $_SERVER first and a container's real environment lands there. -->
+        <env name="AUTO_LOGIN_EMAIL" value="" force="true"/>
+        <env name="AUTO_LOGIN_LAN" value="false" force="true"/>
+        <env name="AUTO_LOGIN_OWNER_EMAIL" value="" force="true"/>
+        <env name="DEMO_LOGIN_EMAIL" value="demo@example.com" force="true"/>
+        <server name="AUTO_LOGIN_EMAIL" value="" force="true"/>
+        <server name="AUTO_LOGIN_LAN" value="false" force="true"/>
+        <server name="AUTO_LOGIN_OWNER_EMAIL" value="" force="true"/>
+        <server name="DEMO_LOGIN_EMAIL" value="demo@example.com" force="true"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
