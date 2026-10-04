@@ -109,7 +109,7 @@ git clone https://github.com/loki495/dibs.git ~/dibs-demo   # first time only
 cd ~/dibs-demo
 cp .env.example .env
 php -r "echo 'APP_KEY=base64:'.base64_encode(random_bytes(32)).PHP_EOL;" >> .env  # or generate after first boot instead
-# Edit .env: APP_ENV=demo, APP_URL=https://<demo-host>, APP_PORT=8112,
+# Edit .env: APP_ENV=demo, APP_URL=https://<demo-host>, SESSION_SECURE_COOKIE=true, APP_PORT=8112,
 # DIBS_DEMO_MODE=true, DEMO_DB_TEMPLATE_PATH=/var/www/html/storage/demo-template.sqlite,
 # DEMO_DB_STORAGE_PATH=/var/www/html/storage/demo-dbs, DB_DATABASE pointed at a harmless
 # dedicated fallback path (not database/database.sqlite), GITHUB_TOKEN/DIBS_GITHUB_OWNER/
@@ -123,8 +123,7 @@ No manual template-build step: `docker/entrypoint-prod.sh` runs
 
 ### TRUSTED_PROXIES: the mixed-content trap
 
-`TRUSTED_PROXIES` is not copy-pasteable from `.env.example`. Its default
-(`172.18.0.0/16`) is just one common Docker network range. It must list the
+`TRUSTED_PROXIES` is blank in `.env.example`. Behind a proxy it must list the
 demo's own Docker network subnet, plus `<lan-ip>/32` for any LAN reverse proxy
 that forwards to it:
 

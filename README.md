@@ -50,7 +50,9 @@ and prunes the activity log, and `app` is where agents and Artisan commands run
 claiming agent's process is still alive; see [SECURITY.md](SECURITY.md) for what that implies.
 
 Running behind a reverse proxy? See `docker/compose.traefik.example.yml` for a working
-label-based Traefik example; the labels go on the `web` service.
+label-based Traefik example; the labels go on the `web` service. Behind HTTPS, also set
+`APP_URL`, `SESSION_SECURE_COOKIE=true` and `TRUSTED_PROXIES` in `.env` (see the comments in
+`.env.example`).
 
 Want to look around with realistic sample data instead of an empty workspace?
 `docker compose exec -u www-data app php artisan db:seed --class="Database\Seeders\DemoSeeder"`
@@ -70,7 +72,8 @@ To mirror to GitHub Issues/Projects, set these in `.env`:
 
 - `DIBS_GITHUB_OWNER` / `DIBS_GITHUB_REPO` — the repository to mirror issues to/from
 - `GITHUB_TOKEN` — a personal access token (see scopes below)
-- `GITHUB_PROJECT_NUMBERS` — which GitHub Projects (v2) to show as areas
+- `GITHUB_PROJECT_NUMBERS` — comma-separated numbers of the GitHub Projects (v2) to show as areas
+  (blank syncs none)
 
 **Token scopes.** Dibs reads/writes Issues (title, body, labels, parent links, comments) and
 Projects v2 item fields (Status, Group, Priority, Planned, Due) on the one repo/owner

@@ -5,7 +5,7 @@ declare(strict_types=1);
 $optionalId = static fn (?string $value): ?int => $value === null || $value === '' ? null : (int) $value;
 
 return [
-    'timezone' => env('DIBS_TIMEZONE', 'America/Los_Angeles'),
+    'timezone' => env('DIBS_TIMEZONE', 'UTC'),
     'trusted_proxies' => array_filter(explode(',', env('TRUSTED_PROXIES', ''))),
     // Seconds a Livewire request may run before the browser gives up on it, shows the reconnect banner and
     // frees the request queue. 0 disables the timeout (failed requests still show the banner).

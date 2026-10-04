@@ -54,6 +54,19 @@ it('fetches the repository, labels, issues, and projects into one snapshot', fun
     Http::assertSentCount(6);
 });
 
+it('fetches no projects when none are configured', function (): void {
+    config(['github.projects' => []]);
+    Http::fakeSequence()
+        ->push(['data' => ['viewer' => ['login' => 'example-owner'], 'repository' => ['id' => 'R_1', 'name' => 'dibs', 'nameWithOwner' => 'example-owner/dibs', 'url' => null, 'isPrivate' => false, 'visibility' => 'PUBLIC', 'updatedAt' => null, 'owner' => ['login' => 'example-owner']]]])
+        ->push(['data' => ['node' => ['labels' => ['nodes' => [], 'pageInfo' => ['hasNextPage' => false, 'endCursor' => null]]]]])
+        ->push(['data' => ['node' => ['issues' => ['nodes' => [], 'pageInfo' => ['hasNextPage' => false, 'endCursor' => null]]]]]);
+
+    $snapshot = app(FetchGitHubSnapshot::class)->handle(new GitHubClient('test-token'));
+
+    expect($snapshot['projects'])->toBe([]);
+    Http::assertSentCount(3);
+});
+
 it('also fetches issue comments when requested', function (): void {
     Http::fakeSequence()
         ->push(['data' => ['viewer' => ['login' => 'example-owner'], 'repository' => ['id' => 'R_1', 'name' => 'dibs', 'nameWithOwner' => 'example-owner/dibs', 'url' => null, 'isPrivate' => false, 'visibility' => 'PUBLIC', 'updatedAt' => null, 'owner' => ['login' => 'example-owner']]]])

@@ -9,5 +9,9 @@ return [
     'owner' => env('DIBS_GITHUB_OWNER', ''),
     'repository' => env('DIBS_GITHUB_REPO', ''),
     'token' => env('GITHUB_TOKEN'),
-    'projects' => array_map(intval(...), explode(',', env('GITHUB_PROJECT_NUMBERS', '2,3,5,6'))),
+    // Comma-separated GitHub Projects (v2) numbers to sync as areas; blank syncs none.
+    'projects' => array_values(array_filter(
+        array_map(intval(...), explode(',', (string) env('GITHUB_PROJECT_NUMBERS', ''))),
+        static fn (int $number): bool => $number > 0,
+    )),
 ];
