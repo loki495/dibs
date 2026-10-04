@@ -6,9 +6,12 @@ This app accepts a GitHub personal access token and exposes write operations (cr
 
 Use GitHub's private vulnerability reporting:
 
-1. Go to the [Security tab](../../security) of this repository.
+1. Go to the [Security tab](https://github.com/loki495/dibs/security) of the repository, or open
+   [a new advisory](https://github.com/loki495/dibs/security/advisories/new) directly.
 2. Click **Report a vulnerability**.
 3. Include as much detail as you can: steps to reproduce, affected version/commit, and potential impact.
+
+If you can't use GitHub, email andres@ac495.net. Dibs is an alpha: only the latest commit on `main` is supported.
 
 You should receive an acknowledgement within a few days. Please don't disclose the issue publicly until it's been addressed.
 
