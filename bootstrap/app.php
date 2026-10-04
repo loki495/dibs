@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Middleware\AutoLoginForTrustedRequests;
 use App\Http\Middleware\BeginActivityContext;
 use App\Http\Middleware\ResolveDemoDatabase;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -23,9 +25,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // ResolveDemoDatabase's own docblock). appendToGroup only fixes the array position;
         // the priority list is what Laravel's router actually sorts by.
         $middleware->appendToGroup('web', ResolveDemoDatabase::class);
+        $middleware->appendToGroup('web', AutoLoginForTrustedRequests::class);
         $middleware->appendToGroup('web', BeginActivityContext::class);
         $middleware->prependToPriorityList(before: StartSession::class, prepend: ResolveDemoDatabase::class);
         $middleware->appendToPriorityList(after: EncryptCookies::class, append: ResolveDemoDatabase::class);
+        // Auto-login needs the session and the visitor's database, so it goes just before 'auth'.
+        $middleware->prependToPriorityList(before: AuthenticatesRequests::class, prepend: AutoLoginForTrustedRequests::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
