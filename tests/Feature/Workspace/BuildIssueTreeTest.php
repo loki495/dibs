@@ -38,6 +38,16 @@ it('reports null (not true or false) for isCurrentlyAlive when liveness could no
     expect($row['claim']['isCurrentlyAlive'])->toBeNull();
 });
 
+it('reports null for isCurrentlyAlive on a verified claim when this process cannot see host PIDs', function (): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    $row = collect(app(BuildIssueTree::class)->handle()['rows'])->firstWhere('id', $issue->id);
+
+    expect($row['claim']['isCurrentlyAlive'])->toBeNull();
+});
+
 it('omits claim data for an unclaimed issue', function (): void {
     $issue = Issue::factory()->create();
 

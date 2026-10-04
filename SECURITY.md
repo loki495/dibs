@@ -15,3 +15,15 @@ You should receive an acknowledgement within a few days. Please don't disclose t
 ## Scope
 
 This is a personal-use, self-hosted application. `GITHUB_TOKEN` is read server-side only and never appears in a tool argument, MCP response, or browser bundle — see the README's "Connecting to GitHub" section for the exact least-privilege scopes it needs. Reports involving GitHub token exposure, MCP tool authorization/claim identity spoofing, or push-queue conflict handling are especially appreciated.
+
+## Container trust model
+
+Know these trade-offs before you run Dibs:
+
+- **The `app` container shares the host's PID namespace** (`pid: "host"`). Claim liveness needs it: Dibs checks that a claiming agent's process still exists by reading `/proc/<pid>/stat`. The MCP server and the `todo:agent:*` CLI run there. The `web` container, which serves HTTP, doesn't get it, so a bug in the web tier can't see host processes. Code running in `app` can list every host process. The image remaps `www-data` to UID 1000 (`docker/setup-dev-container.sh`) so the bind-mounted checkout stays writable. If that UID is your login user, `app` can likely also read `/proc/<pid>/environ` of your processes, including secrets passed through environment variables. Command lines (`cmdline`) are readable by any local user on most systems.
+- **Anyone who can `docker exec` into these containers has full access to Dibs.** They can write to the database directly and read `GITHUB_TOKEN` from `.env`. Docker access is root-equivalent on the host anyway. Treat the containers as part of your own trusted account, not as a sandbox.
+
+Options if this matters to you:
+
+- Drop `pid: "host"` from `app`, and set `DIBS_PROCESS_LIVENESS=false` there. Claims still work, but are recorded as unverified (`is_verified_live: false`). They are only reclaimed once their lease expires, never because their process died.
+- Run the containers under a UID that isn't your login user. Give that user ownership of the checkout's `storage/`, `bootstrap/cache/` and `database/`, instead of remapping `www-data` to UID 1000. Your processes' `environ` is then out of reach; command lines stay visible, as they are to any local user.

@@ -128,7 +128,9 @@ binds to the caller's real OS process (host, pid, process start time verified vi
 token (`capability_token_hash`, SHA-256; the plaintext is returned once, at claim time, and
 never stored). `is_verified_live` is false when the PID/start-time couldn't be independently
 confirmed (cross-namespace caller, unreadable `/proc`) — the claim still succeeds but is flagged
-as weaker assurance rather than silently trusted. Full contract in `agent-interface.md`.
+as weaker assurance rather than silently trusted. Only the `app` container (MCP server and CLI) has
+the host PID namespace; the `web` container runs with `DIBS_PROCESS_LIVENESS=false`, where a
+liveness re-check reports unknown (null), never dead. Full contract in `agent-interface.md`.
 
 **`mcp_write_receipts`** — backs the idempotency-key mechanism every MCP write tool can use
 (`ResolveIdempotentWrite`): a repeated call with the same key returns the original result

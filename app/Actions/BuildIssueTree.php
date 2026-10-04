@@ -379,7 +379,7 @@ class BuildIssueTree
     {
         $session = $claim->agentSession;
         $isCurrentlyAlive = $session->is_verified_live && $session->pid !== null && $session->process_started_at !== null
-            ? $this->liveness->isAlive($session->pid, $session->process_started_at)
+            ? $this->liveness->currentlyAlive($session->pid, $session->process_started_at)
             : null;
 
         return [

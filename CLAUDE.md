@@ -6,7 +6,7 @@ Dibs is a self-hosted task and knowledge tracker built for AI agents as first-cl
 
 ## Stack
 
-Laravel 13, Livewire 4 class-based single-file components, PHP 8.5, SQLite, Tailwind 4, Flux UI. Docker Compose for local development — PHP/Composer commands run inside the app container; Node builds run in a separate service. See `README.md` for local setup and `docker/setup.sh`.
+Laravel 13, Livewire 4 class-based single-file components, PHP 8.5, SQLite, Tailwind 4, Flux UI. Docker Compose for local development — PHP/Composer commands run inside the app container; Node builds run in a separate service. `docker-compose.yml` splits the runtime in three: `app` (`dibs-app`, `pid: "host"`, no web server — the exec target for the MCP server, the `todo:agent:*` CLI and tooling, since claim liveness reads host `/proc`), `web` (`dibs-web`, Apache on `APP_PORT`, no host PID namespace, `DIBS_PROCESS_LIVENESS=false` so the UI shows live claims as "liveness unverifiable" instead of dead), and `scheduler` (`dibs-scheduler`, `schedule:work`). See `README.md` for local setup and `docker/setup.sh`.
 
 ## Architecture
 

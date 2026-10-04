@@ -6,6 +6,7 @@ use App\Actions\ClaimTaskForAgent;
 use App\Actions\DescribeTodoClaim;
 use App\Models\Issue;
 use App\Models\TaskClaim;
+use App\Services\Process\LinuxProcessLiveness;
 
 it('returns null when the task has no live claim', function (): void {
     $issue = Issue::factory()->create();
@@ -47,4 +48,15 @@ it('returns null once the claim is released', function (): void {
     $result['claim']->update(['released_at' => now()]);
 
     expect(app(DescribeTodoClaim::class)->handle($issue->id))->toBeNull();
+});
+
+it('reports a verified claim as liveness unknown, not dead, from a process that cannot see host PIDs', function (): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    $description = app(DescribeTodoClaim::class)->handle($issue->id);
+
+    expect($description['isVerifiedLive'])->toBeTrue()
+        ->and($description['isCurrentlyAlive'])->toBeNull();
 });

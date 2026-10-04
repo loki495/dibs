@@ -1,5 +1,9 @@
 name: dibs
 services:
+  # Agents' exec target for the MCP server and the todo:agent:* CLI
+  # (`docker compose exec -T -u www-data app php artisan mcp:start todo`). It needs the host PID
+  # namespace to verify claim liveness through /proc (LinuxProcessLiveness), so it serves no HTTP:
+  # it only idles until something is exec'd into it.
   app:
     container_name: dibs-app
     build:
@@ -8,6 +12,22 @@ services:
       target: base
     restart: unless-stopped
     pid: "host"
+    command: ["bash", "-c", "trap 'exit 0' TERM INT; sleep infinity & wait"]
+    # The php:apache image's own stop signal is SIGWINCH (Apache's graceful stop), which bash ignores.
+    stop_signal: SIGTERM
+    volumes:
+      - ./:/var/www/html
+  # Apache serving the workspace UI. No pid: host, so it can't see host processes; it shows live
+  # claims as "liveness unverifiable" instead of checking them.
+  web:
+    container_name: dibs-web
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: base
+    restart: unless-stopped
+    environment:
+      DIBS_PROCESS_LIVENESS: "false"
     volumes:
       - ./:/var/www/html
     ports:
@@ -23,8 +43,8 @@ services:
     volumes:
       - ./:/var/www/html
   # Browser (Pest + Playwright) tests only — never started by a plain `docker compose
-  # up`. Adds Node.js + Chromium on top of the same `base` image `app` uses, kept out of
-  # `app` itself since that image also serves the public demo (see CLAUDE.md) and
+  # up`. Adds Node.js + Chromium on top of the same `base` image `app`/`web` use, kept out of
+  # `base` itself since that image also serves the public demo (see CLAUDE.md) and
   # shouldn't carry a JS runtime + browser binary just for dev-time tests.
   # Run with: composer pest:browser
   app-test:

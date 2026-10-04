@@ -44,8 +44,13 @@ The last command creates your login (name, email, and a password of at least 12 
 there's no public registration). Then visit `http://localhost:8095` (override the port with
 `APP_PORT` in `.env`).
 
+`setup.sh` starts three containers: `web` serves the UI, `scheduler` drains the GitHub push queue
+and prunes the activity log, and `app` is where agents and Artisan commands run
+(`docker compose exec … app …`). `app` shares the host's PID namespace so it can check that a
+claiming agent's process is still alive; see [SECURITY.md](SECURITY.md) for what that implies.
+
 Running behind a reverse proxy? See `docker/compose.traefik.example.yml` for a working
-label-based Traefik example.
+label-based Traefik example; the labels go on the `web` service.
 
 Want to look around with realistic sample data instead of an empty workspace?
 `docker compose exec -u www-data app php artisan db:seed --class="Database\Seeders\DemoSeeder"`

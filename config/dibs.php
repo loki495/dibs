@@ -15,6 +15,11 @@ return [
     'loading_indicator_delay_ms' => (int) env('DIBS_LOADING_INDICATOR_DELAY_MS', 150),
     'push_queue_ui_enabled' => (bool) env('DIBS_PUSH_QUEUE_UI_ENABLED', true),
 
+    // Whether this process can see the agents' PIDs (/proc of the host PID namespace) to verify claim
+    // liveness. docker-compose.yml sets it false for the web service, which runs without pid: host;
+    // there, claims show "liveness unverifiable" instead of being judged dead. See LinuxProcessLiveness.
+    'process_liveness' => (bool) env('DIBS_PROCESS_LIVENESS', true),
+
     // Retry budget for a push-queue row whose GitHub call failed transiently (network, 5xx, rate
     // limit). Each failure waits base * 2^(failures - 1) seconds, capped at backoff_cap_seconds, or
     // until the time GitHub gives for a rate limit; the row needs attention once max_attempts

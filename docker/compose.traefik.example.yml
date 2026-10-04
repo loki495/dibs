@@ -1,5 +1,6 @@
+# Labels go on `web` (Apache); `app` serves no HTTP. See docker-compose.yml.
 services:
-  app:
+  web:
     networks: [default, web]
     labels:
       - "traefik.enable=true"
