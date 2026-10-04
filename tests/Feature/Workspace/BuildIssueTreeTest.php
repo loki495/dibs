@@ -10,6 +10,7 @@ use App\Models\Label;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
+use App\Models\TaskClaim;
 use App\Services\Process\LinuxProcessLiveness;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -47,6 +48,23 @@ it('reports null for isCurrentlyAlive on a verified claim when this process cann
 
     expect($row['claim']['isCurrentlyAlive'])->toBeNull();
 });
+
+it('falls back to the recorded liveness for the row when this process cannot see host PIDs', function (?bool $recorded, int $ageSeconds, ?bool $expected): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    TaskClaim::query()->sole()->update(['liveness_alive' => $recorded, 'liveness_checked_at' => $recorded === null ? null : now()->subSeconds($ageSeconds)]);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    $row = collect(app(BuildIssueTree::class)->handle()['rows'])->firstWhere('id', $issue->id);
+
+    expect($row['claim']['isCurrentlyAlive'])->toBeNull()
+        ->and($row['claim']['displayAlive'])->toBe($expected);
+})->with([
+    'recorded alive' => [true, 20, true],
+    'recorded gone' => [false, 20, false],
+    'never recorded' => [null, 0, null],
+    'stale recording' => [false, 600, null],
+]);
 
 it('omits claim data for an unclaimed issue', function (): void {
     $issue = Issue::factory()->create();

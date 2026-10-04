@@ -60,3 +60,49 @@ it('reports a verified claim as liveness unknown, not dead, from a process that 
     expect($description['isVerifiedLive'])->toBeTrue()
         ->and($description['isCurrentlyAlive'])->toBeNull();
 });
+
+it('reports no recorded liveness before the watcher has checked the claim', function (): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+
+    expect(app(DescribeTodoClaim::class)->handle($issue->id)['recordedLiveness'])->toBeNull();
+});
+
+it('exposes the watcher\'s recorded liveness, and shows it where the direct check is impossible', function (bool $recordedAlive): void {
+    $this->freezeSecond();
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    TaskClaim::query()->sole()->update(['liveness_alive' => $recordedAlive, 'liveness_checked_at' => now()->subSeconds(20)]);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    $description = app(DescribeTodoClaim::class)->handle($issue->id);
+
+    expect($description['isCurrentlyAlive'])->toBeNull()
+        ->and($description['recordedLiveness'])->toBe(['alive' => $recordedAlive, 'checkedAt' => now()->subSeconds(20)->toAtomString(), 'isStale' => false])
+        ->and($description['displayAlive'])->toBe($recordedAlive);
+})->with(['alive' => true, 'gone' => false]);
+
+it('marks a recording older than the staleness threshold as stale and stops showing it', function (): void {
+    config(['dibs.claim_liveness.stale_after_seconds' => 90]);
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    TaskClaim::query()->sole()->update(['liveness_alive' => false, 'liveness_checked_at' => now()->subSeconds(91)]);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    $description = app(DescribeTodoClaim::class)->handle($issue->id);
+
+    expect($description['recordedLiveness']['isStale'])->toBeTrue()
+        ->and($description['displayAlive'])->toBeNull();
+});
+
+it('prefers its own direct check over a recording that disagrees', function (): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    TaskClaim::query()->sole()->update(['liveness_alive' => false, 'liveness_checked_at' => now()]);
+
+    $description = app(DescribeTodoClaim::class)->handle($issue->id);
+
+    expect($description['isCurrentlyAlive'])->toBeTrue()
+        ->and($description['recordedLiveness']['alive'])->toBeFalse()
+        ->and($description['displayAlive'])->toBeTrue();
+});

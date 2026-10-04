@@ -47,13 +47,16 @@
 
             @if ($detail['claim'])
                 @php($claim = $detail['claim'])
-                <div @class(['rounded-xl border p-4 text-sm', 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40' => $claim['isExpired'], 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30' => ! $claim['isExpired'] && $claim['isCurrentlyAlive'] === false, 'border-teal-200 bg-teal-50 dark:border-teal-900 dark:bg-teal-950/30' => ! $claim['isExpired'] && $claim['isCurrentlyAlive'] !== false])>
+                <div @class(['rounded-xl border p-4 text-sm', 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40' => $claim['isExpired'], 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30' => ! $claim['isExpired'] && $claim['displayAlive'] === false, 'border-teal-200 bg-teal-50 dark:border-teal-900 dark:bg-teal-950/30' => ! $claim['isExpired'] && $claim['displayAlive'] !== false])>
                     <div class="flex items-center justify-between gap-3">
                         <p class="font-medium">
                             {{ __('Claimed by :agent', ['agent' => $claim['agentName']]) }}
                             @if ($claim['isExpired'])<span class="ml-1 text-xs font-normal text-slate-500">{{ __('(lease expired)') }}</span>
                             @elseif ($claim['isCurrentlyAlive'] === false)<span class="ml-1 text-xs font-normal text-red-700 dark:text-red-400">{{ __('(process no longer alive)') }}</span>
-                            @elseif ($claim['isCurrentlyAlive'] === null)<span class="ml-1 text-xs font-normal text-slate-500">{{ __('(liveness unverifiable)') }}</span>
+                            @elseif ($claim['isCurrentlyAlive'] === true)
+                            @elseif ($claim['displayAlive'] === true)<span data-claim-liveness="recorded" class="ml-1 text-xs font-normal text-teal-700 dark:text-teal-400">{{ __('alive · checked :ago', ['ago' => \Illuminate\Support\Carbon::parse($claim['recordedLiveness']['checkedAt'])->diffForHumans()]) }}</span>
+                            @elseif ($claim['displayAlive'] === false)<span data-claim-liveness="recorded" class="ml-1 text-xs font-normal text-red-700 dark:text-red-400">{{ __('process gone · checked :ago', ['ago' => \Illuminate\Support\Carbon::parse($claim['recordedLiveness']['checkedAt'])->diffForHumans()]) }}</span>
+                            @else<span class="ml-1 text-xs font-normal text-slate-500">{{ __('(liveness unverifiable)') }}</span>
                             @endif
                         </p>
                         <flux:button type="button" wire:click="releaseClaim" wire:confirm="{{ __('Release this claim? The agent holding it will lose access.') }}" variant="ghost" size="sm">{{ __('Release claim') }}</flux:button>

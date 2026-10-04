@@ -47,7 +47,9 @@ there's no public registration). Then visit `http://localhost:8095` (override th
 `setup.sh` starts three containers: `web` serves the UI, `scheduler` drains the GitHub push queue
 and prunes the activity log, and `app` is where agents and Artisan commands run
 (`docker compose exec … app …`). `app` shares the host's PID namespace so it can check that a
-claiming agent's process is still alive; see [SECURITY.md](SECURITY.md) for what that implies.
+claiming agent's process is still alive; its main process (`php artisan dibs:claims:watch`) does that
+every 30 seconds and records the result, which is what the UI shows next to a claim. See
+[SECURITY.md](SECURITY.md) for what that implies.
 
 Running behind a reverse proxy? See `docker/compose.traefik.example.yml` for a working
 label-based Traefik example; the labels go on the `web` service. Behind HTTPS, also set

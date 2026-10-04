@@ -20,6 +20,14 @@ return [
     // there, claims show "liveness unverifiable" instead of being judged dead. See LinuxProcessLiveness.
     'process_liveness' => (bool) env('DIBS_PROCESS_LIVENESS', true),
 
+    // dibs:claims:watch (the app container's main process) re-checks every live claim's process this
+    // often and records the result, so the web UI can show it. The UI ignores a recording older than
+    // stale_after_seconds (default three intervals) and shows "liveness unverifiable" instead.
+    'claim_liveness' => [
+        'watch_interval_seconds' => (int) env('DIBS_CLAIM_LIVENESS_INTERVAL', 30),
+        'stale_after_seconds' => (int) env('DIBS_CLAIM_LIVENESS_STALE_AFTER', 90),
+    ],
+
     // Retry budget for a push-queue row whose GitHub call failed transiently (network, 5xx, rate
     // limit). Each failure waits base * 2^(failures - 1) seconds, capped at backoff_cap_seconds, or
     // until the time GitHub gives for a rate limit; the row needs attention once max_attempts

@@ -130,7 +130,11 @@ never stored). `is_verified_live` is false when the PID/start-time couldn't be i
 confirmed (cross-namespace caller, unreadable `/proc`) — the claim still succeeds but is flagged
 as weaker assurance rather than silently trusted. Only the `app` container (MCP server and CLI) has
 the host PID namespace; the `web` container runs with `DIBS_PROCESS_LIVENESS=false`, where a
-liveness re-check reports unknown (null), never dead. Full contract in `agent-interface.md`.
+liveness re-check reports unknown (null), never dead. The `app` container's main process,
+`dibs:claims:watch`, re-checks every live claim on an interval and writes `liveness_alive` and
+`liveness_checked_at` on `task_claims` (via `RecordClaimLiveness`), so the web UI can show the last
+result until it goes stale. Those two columns are display-only; takeover and heartbeat always check
+`/proc` directly. Full contract in `agent-interface.md`.
 
 **`mcp_write_receipts`** — backs the idempotency-key mechanism every MCP write tool can use
 (`ResolveIdempotentWrite`): a repeated call with the same key returns the original result

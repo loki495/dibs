@@ -9,7 +9,6 @@ use App\Models\Issue;
 use App\Models\Label;
 use App\Models\SyncState;
 use App\Models\TaskClaim;
-use App\Services\Process\LinuxProcessLiveness;
 use App\Support\GitHubMirror;
 use App\Support\ProjectColor;
 use Carbon\CarbonInterface;
@@ -19,7 +18,7 @@ class BuildIssueTree
 {
     private const array TREE_SORTS = ['project', 'group'];
 
-    public function __construct(private readonly LinuxProcessLiveness $liveness) {}
+    public function __construct(private readonly ResolveClaimLiveness $liveness) {}
 
     /**
      * @param  list<string>  $labels
@@ -377,15 +376,13 @@ class BuildIssueTree
     /** @return array<string, mixed> */
     private function summarizeClaim(TaskClaim $claim): array
     {
-        $session = $claim->agentSession;
-        $isCurrentlyAlive = $session->is_verified_live && $session->pid !== null && $session->process_started_at !== null
-            ? $this->liveness->currentlyAlive($session->pid, $session->process_started_at)
-            : null;
+        $liveness = $this->liveness->handle($claim);
 
         return [
-            'agentName' => $session->agent_name,
+            'agentName' => $claim->agentSession->agent_name,
             'isExpired' => $claim->expires_at->isPast(),
-            'isCurrentlyAlive' => $isCurrentlyAlive,
+            'isCurrentlyAlive' => $liveness['isCurrentlyAlive'],
+            'displayAlive' => $liveness['displayAlive'],
         ];
     }
 }

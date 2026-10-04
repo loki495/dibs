@@ -11,6 +11,8 @@ use Illuminate\Support\Carbon;
 /**
  * @property Carbon $expires_at
  * @property Carbon|null $released_at
+ * @property bool|null $liveness_alive
+ * @property Carbon|null $liveness_checked_at
  */
 class TaskClaim extends Model
 {
@@ -18,7 +20,7 @@ class TaskClaim extends Model
 
     protected function casts(): array
     {
-        return ['expires_at' => 'datetime', 'released_at' => 'datetime'];
+        return ['expires_at' => 'datetime', 'released_at' => 'datetime', 'liveness_alive' => 'boolean', 'liveness_checked_at' => 'datetime'];
     }
 
     /** @return BelongsTo<AgentSession, $this> */

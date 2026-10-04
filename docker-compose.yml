@@ -2,8 +2,11 @@ name: dibs
 services:
   # Agents' exec target for the MCP server and the todo:agent:* CLI
   # (`docker compose exec -T -u www-data app php artisan mcp:start todo`). It needs the host PID
-  # namespace to verify claim liveness through /proc (LinuxProcessLiveness), so it serves no HTTP:
-  # it only idles until something is exec'd into it.
+  # namespace to verify claim liveness through /proc (LinuxProcessLiveness), so it serves no HTTP.
+  # Its main process is dibs:claims:watch, which re-checks every live claim's process each
+  # DIBS_CLAIM_LIVENESS_INTERVAL seconds (default 30) and records the result for the web UI. It runs
+  # as www-data (setpriv execs in place, so SIGTERM still reaches PHP directly), not root, since it
+  # shares the host's PID namespace.
   app:
     container_name: dibs-app
     build:
@@ -12,13 +15,15 @@ services:
       target: base
     restart: unless-stopped
     pid: "host"
-    command: ["bash", "-c", "trap 'exit 0' TERM INT; sleep infinity & wait"]
-    # The php:apache image's own stop signal is SIGWINCH (Apache's graceful stop), which bash ignores.
+    command: ["setpriv", "--reuid=www-data", "--regid=www-data", "--init-groups", "php", "artisan", "dibs:claims:watch"]
+    # The php:apache image's own stop signal is SIGWINCH (Apache's graceful stop). The watcher traps
+    # SIGTERM and exits within about a second.
     stop_signal: SIGTERM
     volumes:
       - ./:/var/www/html
-  # Apache serving the workspace UI. No pid: host, so it can't see host processes; it shows live
-  # claims as "liveness unverifiable" instead of checking them.
+  # Apache serving the workspace UI. No pid: host, so it can't check host processes itself; it shows
+  # the liveness app's watcher last recorded ("alive · checked 20s ago"), or "liveness unverifiable"
+  # when there's no recording newer than DIBS_CLAIM_LIVENESS_STALE_AFTER seconds (default 90).
   web:
     container_name: dibs-web
     build:
