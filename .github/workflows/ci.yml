@@ -63,6 +63,11 @@ jobs:
       - name: Pest (with coverage)
         run: vendor/bin/pest --coverage --coverage-clover=coverage.xml
 
+      # tests/Browser isn't in phpunit.xml's suites, so the run above skips it. pest-plugin-browser
+      # serves the app in-process and drives the Chromium installed above; no web server needed.
+      - name: Pest browser tests
+        run: vendor/bin/pest tests/Browser
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:

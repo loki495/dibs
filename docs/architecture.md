@@ -328,7 +328,8 @@ transaction (see `ManagesTransactions::handleTransactionException`), converting 
 a `DeadlockException` instead. That class of behavior is verified by reasoning about the code
 and Laravel's own upstream test coverage, not by a Dibs-level regression test.
 
-Browser tests (`composer pest:browser`, `tests/Browser/`) run in the `app-test` container, whose image
+Browser tests (`composer pest:browser`, `tests/Browser/`) run locally in the `app-test` container (CI runs them
+as a separate step of the `quality` job, since `phpunit.xml` doesn't include them), whose image
 bakes Chromium for the Playwright version pinned in `docker/setup-test-container.sh`; that pin must move
 together with `package.json` (a Dependabot bump that skipped it broke every browser test with "Playwright
 is outdated" until the image was rebuilt).
