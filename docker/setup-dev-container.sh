@@ -15,8 +15,9 @@ docker-php-ext-install pdo_sqlite zip intl pcntl sockets
 # PCOV for `composer pest --coverage` (lighter/faster than Xdebug for coverage-only use)
 pecl install pcov
 echo 'extension=pcov.so' > /usr/local/etc/php/conf.d/pcov.ini
-usermod -u 1000 www-data
-groupmod -g 1000 www-data
+# -o: the host's GID may already name a group in the image (e.g. 100 "users"). The Dockerfile passes these.
+groupmod -o -g "${DIBS_GID:-1000}" www-data
+usermod -o -u "${DIBS_UID:-1000}" www-data
 sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|' /etc/apache2/sites-available/000-default.conf
 printf '<Directory /var/www/html/public>\n    AllowOverride All\n    Require all granted\n</Directory>\n' > /etc/apache2/conf-available/todo.conf
 a2enconf todo

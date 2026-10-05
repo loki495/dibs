@@ -6,8 +6,9 @@ welcome.
 
 ## Getting set up
 
-Follow the [README](README.md#quick-start) to get a local instance running with Docker Compose. On Linux
-the images assume host UID 1000; the README explains the workaround for other UIDs.
+Follow the [README](README.md#quick-start) to get a local instance running with Docker Compose. The containers
+run as the checkout's owner: `docker/setup.sh` writes the checkout owner's UID and GID to `DIBS_UID`/`DIBS_GID` in `.env`
+(see the README's "Host UID" note).
 
 ## Before you open a PR
 

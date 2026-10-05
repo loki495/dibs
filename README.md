@@ -49,13 +49,18 @@ The last command creates your login (name, email, and a password of at least 12 
 there's no public registration). Then visit `http://localhost:8095` (override the port with
 `APP_PORT` in `.env`).
 
-**Host UID.** On Linux the images assume your host user has UID 1000: `docker/setup-dev-container.sh`
-remaps the container's `www-data` to 1000, and the `app-test` and `node` services run as `1000:1000`.
-With any other UID the bind-mounted checkout isn't writable by the containers, so `setup.sh` fails
-(`composer install`, writing `database/database.sqlite`, `storage/`). Either change the `1000` values
-in `docker/setup-dev-container.sh` (`usermod`/`groupmod`) and the two `user:` lines in
-`docker-compose.yml` to your own UID and GID, then rebuild (`docker compose build`), or give UID 1000
-ownership of the checkout (`sudo chown -R 1000:1000 .`).
+**Host UID.** The containers run as the user who owns the checkout, so they can write the bind-mounted
+`database/`, `storage/` and `vendor/`. `setup.sh` writes the checkout directory's owner UID and GID to
+`DIBS_UID` and `DIBS_GID` in `.env`, unless they're already set there, so a checkout owned by a service
+account works too and your own values always win. The image build remaps `www-data` to them, and the
+`app-test` and `node` services run as them. Blank or missing values mean 1000. If you change them later,
+rebuild: `docker compose --profile test build`, then `docker compose up -d`.
+
+Rootless Docker or Podman is untested. There, container root is your host user and any other container
+UID maps to a subordinate ID (`/etc/subuid`), which can't write your checkout. `DIBS_UID=0` doesn't
+help: the `web` container's Apache refuses to run as root. Instead, keep `DIBS_UID`/`DIBS_GID` at, say,
+1000 and give the subordinate IDs they map to ownership of the checkout (with Podman,
+`podman unshare chown -R 1000:1000 .`).
 
 `setup.sh` starts three containers: `web` serves the UI, `scheduler` drains the GitHub push queue
 and prunes the activity log, and `app` is where agents and Artisan commands run

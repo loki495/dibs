@@ -6,13 +6,18 @@ services:
   # Its main process is dibs:claims:watch, which re-checks every live claim's process each
   # DIBS_CLAIM_LIVENESS_INTERVAL seconds (default 30) and records the result for the web UI. It runs
   # as www-data (setpriv execs in place, so SIGTERM still reaches PHP directly), not root, since it
-  # shares the host's PID namespace.
+  # shares the host's PID namespace. Every dev image remaps www-data to DIBS_UID/DIBS_GID from .env
+  # (the checkout's owner, default 1000; docker/setup.sh fills them in when unset), so app runs as you: see
+  # SECURITY.md for what that exposes.
   app:
     container_name: dibs-app
     build:
       context: .
       dockerfile: docker/Dockerfile
       target: base
+      args: &uid-args
+        DIBS_UID: ${DIBS_UID:-1000}
+        DIBS_GID: ${DIBS_GID:-1000}
     restart: unless-stopped
     pid: "host"
     command: ["setpriv", "--reuid=www-data", "--regid=www-data", "--init-groups", "php", "artisan", "dibs:claims:watch"]
@@ -30,6 +35,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       target: base
+      args: *uid-args
     restart: unless-stopped
     environment:
       DIBS_PROCESS_LIVENESS: "false"
@@ -43,6 +49,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       target: base
+      args: *uid-args
     restart: unless-stopped
     command: ["php", "artisan", "schedule:work"]
     volumes:
@@ -55,17 +62,18 @@ services:
   app-test:
     container_name: dibs-app-test
     profiles: [test]
-    user: "1000:1000"
+    user: "${DIBS_UID:-1000}:${DIBS_GID:-1000}"
     build:
       context: .
       dockerfile: docker/Dockerfile
       target: test
+      args: *uid-args
     volumes:
       - ./:/var/www/html
   node:
     image: node:22
     profiles: [tools]
     working_dir: /var/www/html
-    user: "1000:1000"
+    user: "${DIBS_UID:-1000}:${DIBS_GID:-1000}"
     volumes:
       - ./:/var/www/html
