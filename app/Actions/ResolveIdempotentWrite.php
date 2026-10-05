@@ -52,8 +52,13 @@ class ResolveIdempotentWrite
             }, 3);
         } catch (UniqueConstraintViolationException $exception) {
             // A concurrent call with the same key committed its receipt first; this call's
-            // write was rolled back with it, so answer with the winner's result.
+            // write was rolled back with it, so answer with the winner's result. With no
+            // receipt for the key the violation came from the write itself (e.g. a label name
+            // created concurrently), not from the key, so it is not ours to explain.
             $receipt = McpWriteReceipt::query()->where('idempotency_key', $idempotencyKey)->first();
+            if (! $receipt instanceof McpWriteReceipt) {
+                throw $exception;
+            }
             $existing = $this->replay($receipt, $idempotencyKey, $subjectType, $find);
             if ($existing instanceof Model) {
                 return $existing;

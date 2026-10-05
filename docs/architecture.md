@@ -140,7 +140,9 @@ instead of repeating the write. The receipt lookup, the write and the receipt in
 `DB::transaction` (the write Action's own transaction becomes a savepoint), so a write never
 commits without its receipt and a failure leaves neither. Two concurrent calls with the same key
 can't both commit: the loser hits the unique `idempotency_key` (or SQLite's "database is locked",
-which the transaction retries), rolls back its write and returns the winner's result. A key
+which the transaction retries), rolls back its write and returns the winner's result. A unique
+violation that leaves no receipt for the key came from the write itself (e.g. two concurrent
+creates of the same new label name), not from the key, and is rethrown unchanged. A key
 already used for a different kind of write (`subject_type`, e.g. a comment key reused for a
 create) is rejected with a `TodoValidationException`.
 

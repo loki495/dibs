@@ -9,8 +9,10 @@ use App\Models\Comment;
 use App\Models\GitHubPushQueueItem;
 use App\Models\GitHubRepository;
 use App\Models\Issue;
+use App\Models\Label;
 use App\Models\McpWriteReceipt;
 use Illuminate\Database\Events\TransactionRolledBack;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
@@ -135,19 +137,61 @@ it('returns the winner of a concurrent call with the same key instead of duplica
         ->and(McpWriteReceipt::query()->where('idempotency_key', 'create-task:race')->sole()->subject_id)->toBe($winner->id);
 });
 
-it('reports a handled error when a concurrent duplicate leaves no result to return', function (): void {
+it('reports a handled error when a concurrent duplicate committed a receipt whose result is gone', function (): void {
+    // The other call's receipt is committed (put back after this call's rollback, as in the
+    // race test above), but the subject it points at no longer exists.
+    $commitOrphanedReceipt = fn () => DB::table('mcp_write_receipts')->insert(['idempotency_key' => 'create-task:race-lost', 'subject_type' => 'issue', 'subject_id' => 999, 'created_at' => now(), 'updated_at' => now()]);
+    $rolledBack = false;
+    Event::listen(TransactionRolledBack::class, function () use (&$rolledBack, $commitOrphanedReceipt): void {
+        if (! $rolledBack) {
+            $rolledBack = true;
+            $commitOrphanedReceipt();
+        }
+    });
+
     expect(fn () => app(ResolveIdempotentWrite::class)->handle(
         'create-task:race-lost',
         'issue',
         fn (int $id) => Issue::find($id),
-        function (): Issue {
-            DB::table('mcp_write_receipts')->insert(['idempotency_key' => 'create-task:race-lost', 'subject_type' => 'issue', 'subject_id' => 999, 'created_at' => now(), 'updated_at' => now()]);
+        function () use ($commitOrphanedReceipt): Issue {
+            $commitOrphanedReceipt();
 
             return Issue::factory()->create(['title' => 'Loser']);
         },
     ))->toThrow(TodoValidationException::class, 'collided with a concurrent call');
 
     expect(Issue::query()->count())->toBe(0);
+});
+
+it('rethrows a receipt violation that left no receipt behind instead of calling it a key collision', function (): void {
+    expect(fn () => app(ResolveIdempotentWrite::class)->handle(
+        'create-task:no-receipt',
+        'issue',
+        fn (int $id) => Issue::find($id),
+        function (): Issue {
+            DB::table('mcp_write_receipts')->insert(['idempotency_key' => 'create-task:no-receipt', 'subject_type' => 'issue', 'subject_id' => 999, 'created_at' => now(), 'updated_at' => now()]);
+
+            return Issue::factory()->create(['title' => 'Loser']);
+        },
+    ))->toThrow(UniqueConstraintViolationException::class);
+
+    expect(Issue::query()->count())->toBe(0)
+        ->and(McpWriteReceipt::query()->count())->toBe(0);
+});
+
+it('surfaces a unique violation from the write itself rather than reporting an idempotency collision', function (): void {
+    // Stands for a concurrent create of the same new label name that committed first.
+    $existing = Label::factory()->create(['name' => 'duplicate']);
+
+    expect(fn () => app(ResolveIdempotentWrite::class)->handle(
+        'create-label:dup',
+        'label',
+        fn (int $id) => Label::find($id),
+        fn () => Label::factory()->for($existing->repository, 'repository')->create(['name' => 'duplicate']),
+    ))->toThrow(UniqueConstraintViolationException::class);
+
+    expect(Label::query()->where('name', 'duplicate')->count())->toBe(1)
+        ->and(McpWriteReceipt::query()->count())->toBe(0);
 });
 
 it('replays a real create without a second issue or push', function (): void {
