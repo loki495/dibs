@@ -254,6 +254,33 @@ it('sorts flat by newest first and newest last using the GitHub issue number', f
         ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_last')['rows'], 'title'))->toBe(['Oldest', 'Middle', 'Newest']);
 });
 
+it('sorts local-only issues without a GitHub number after numbered ones, by local id, in both newest sorts', function (): void {
+    $numberedOld = Issue::factory()->create(['title' => 'Numbered 2', 'github_number' => 2]);
+    $localFirst = Issue::factory()->for($numberedOld->repository, 'repository')->create(['title' => 'Local A', 'github_node_id' => null, 'github_number' => null]);
+    Issue::factory()->for($numberedOld->repository, 'repository')->create(['title' => 'Numbered 7', 'github_number' => 7]);
+    Issue::factory()->for($numberedOld->repository, 'repository')->create(['title' => 'Local B', 'github_node_id' => null, 'github_number' => null]);
+
+    expect(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_last')['rows'], 'title'))->toBe(['Numbered 2', 'Numbered 7', 'Local A', 'Local B'])
+        ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_first')['rows'], 'title'))->toBe(['Numbered 7', 'Numbered 2', 'Local B', 'Local A'])
+        ->and($localFirst->fresh()->github_number)->toBeNull();
+});
+
+it('sorts only local-only issues by local id without failing', function (): void {
+    $first = Issue::factory()->create(['title' => 'First', 'github_node_id' => null, 'github_number' => null]);
+    Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Second', 'github_node_id' => null, 'github_number' => null]);
+
+    expect(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_last')['rows'], 'title'))->toBe(['First', 'Second'])
+        ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_first')['rows'], 'title'))->toBe(['Second', 'First'])
+        ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'priority')['rows'], 'title'))->toBe(['First', 'Second']);
+});
+
+it('breaks Priority ties between numbered and local-only issues without failing, numbered first', function (): void {
+    $local = Issue::factory()->create(['title' => 'Local', 'github_node_id' => null, 'github_number' => null]);
+    Issue::factory()->for($local->repository, 'repository')->create(['title' => 'Numbered', 'github_number' => 3]);
+
+    expect(array_column(app(BuildIssueTree::class)->handle(sortBy: 'priority')['rows'], 'title'))->toBe(['Numbered', 'Local']);
+});
+
 it('sections the All Projects view by Project when sorting by Project, nesting Groups inside', function (): void {
     $work = GitHubProject::factory()->create(['title' => 'Work', 'github_number' => 1]);
     $personal = GitHubProject::factory()->create(['title' => 'Personal Projects', 'github_number' => 2]);

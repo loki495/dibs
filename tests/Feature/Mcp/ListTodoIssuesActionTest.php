@@ -99,3 +99,11 @@ it('excludes unavailable issues entirely', function (): void {
 
     expect($result['items'])->toHaveCount(0)->and($result['total'])->toBe(0);
 });
+
+it('lists numbered issues by number before local-only issues, which follow in local id order', function (): void {
+    $localA = Issue::factory()->create(['github_node_id' => null, 'github_number' => null]);
+    $numbered = Issue::factory()->for($localA->repository, 'repository')->create(['github_number' => 4]);
+    $localB = Issue::factory()->for($localA->repository, 'repository')->create(['github_node_id' => null, 'github_number' => null]);
+
+    expect(array_column(app(ListTodoIssues::class)->handle()['items'], 'id'))->toBe([$numbered->id, $localA->id, $localB->id]);
+});
