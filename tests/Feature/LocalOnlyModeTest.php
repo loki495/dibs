@@ -60,13 +60,49 @@ describe('the local repository row', function (): void {
             ->and($first->github_node_id)->toBe(GitHubRepository::LOCAL_IDENTITY);
     });
 
-    it('is refused when the instance was already imported from GitHub, rather than splitting tasks across two repositories', function (): void {
+    it('is refused when resolved directly on an instance already imported from GitHub, rather than splitting tasks across two repositories', function (): void {
         GitHubRepository::factory()->create(['full_name' => 'example-owner/example-tasks']);
 
-        expect(fn () => app(CreateTodoIssue::class)->handle(title: 'Stranded'))
-            ->toThrow(TodoValidationException::class, 'This instance was imported from GitHub (example-owner/example-tasks), but DIBS_GITHUB_OWNER and DIBS_GITHUB_REPO are blank.');
-        expect(GitHubRepository::query()->where('is_local', true)->exists())->toBeFalse()
-            ->and(Issue::query()->count())->toBe(0);
+        expect(fn () => app(ResolveActiveRepository::class)->local())
+            ->toThrow(TodoValidationException::class, 'This instance was imported from GitHub (example-owner/example-tasks); its tasks and labels belong to that repository, not a new local one.');
+        expect(GitHubRepository::query()->where('is_local', true)->exists())->toBeFalse();
+    });
+});
+
+describe('resolving the active repository in each state', function (): void {
+    it('uses the local row when nothing is imported and GitHub is not configured', function (): void {
+        expect(app(ResolveActiveRepository::class)->handle()->is_local)->toBeTrue();
+    });
+
+    it('follows the imported repository even where this process has blank GitHub settings', function (): void {
+        $imported = GitHubRepository::factory()->create(['full_name' => 'example-owner/example-tasks']);
+
+        expect(app(ResolveActiveRepository::class)->handle()->id)->toBe($imported->id)
+            ->and(GitHubRepository::query()->where('is_local', true)->exists())->toBeFalse();
+    });
+
+    it('uses the configured repository once it is imported', function (): void {
+        configureGitHub();
+        GitHubRepository::factory()->create(['full_name' => 'someone/older-tasks']);
+        $configured = GitHubRepository::factory()->create(['full_name' => 'example-owner/example-tasks']);
+
+        expect(app(ResolveActiveRepository::class)->handle()->id)->toBe($configured->id);
+    });
+
+    it('refuses when GitHub is configured but nothing is imported yet', function (): void {
+        configureGitHub();
+
+        expect(fn () => app(ResolveActiveRepository::class)->handle())
+            ->toThrow(TodoValidationException::class, 'GitHub mirroring is configured for example-owner/example-tasks, but that repository has not been imported yet.');
+        expect(GitHubRepository::query()->count())->toBe(0);
+    });
+
+    it('refuses when GitHub is configured for a repository other than the imported one', function (): void {
+        configureGitHub();
+        GitHubRepository::factory()->create(['full_name' => 'someone/older-tasks']);
+
+        expect(fn () => app(ResolveActiveRepository::class)->handle())
+            ->toThrow(TodoValidationException::class, 'GitHub mirroring is configured for example-owner/example-tasks, but that repository has not been imported yet.');
     });
 });
 
@@ -139,12 +175,14 @@ describe('local-only writes', function (): void {
             ->and(GitHubPushQueueItem::query()->count())->toBe(0);
     });
 
-    it('returns a structured MCP error, not a crash, when the instance was imported but GitHub is unconfigured', function (): void {
-        GitHubRepository::factory()->create(['full_name' => 'example-owner/example-tasks']);
+    it('creates through the MCP tools into the imported repository, queued, when this process has blank GitHub settings', function (): void {
+        $imported = GitHubRepository::factory()->create(['full_name' => 'example-owner/example-tasks']);
 
-        TodoServer::tool(CreateTodoTask::class, ['title' => 'Nowhere to go'])->assertHasErrors(['DIBS_GITHUB_OWNER']);
+        TodoServer::tool(CreateTodoTask::class, ['title' => 'Mirrored anyway'])->assertOk()->assertHasNoErrors();
 
-        expect(Issue::query()->count())->toBe(0);
+        $issue = Issue::query()->sole();
+        expect($issue->repository_id)->toBe($imported->id)
+            ->and(GitHubPushQueueItem::query()->where('operation', 'create_issue')->where('target_id', $issue->id)->exists())->toBeTrue();
     });
 
     it('creates a task through the CLI', function (): void {
@@ -275,6 +313,27 @@ describe('switching a local-only instance to GitHub', function (): void {
             ->and($issue->refresh()->is_available)->toBeTrue()
             ->and(Label::query()->sole()->github_node_id)->toBeNull()
             ->and(GitHubPushQueueItem::query()->count())->toBe(0);
+    });
+});
+
+describe('a process that booted before the switch to GitHub', function (): void {
+    it('queues its writes and creates in the imported repository once another process has imported it', function (): void {
+        // This process keeps blank GitHub settings throughout, as a long-lived MCP server would.
+        $before = app(CreateTodoIssue::class)->handle(title: 'Written while local');
+        config(['github.owner' => 'example-owner', 'github.repository' => 'example-tasks']);
+        app(ApplyGitHubSnapshot::class)->handle(remoteRepositorySnapshot());
+        config(['github.owner' => '', 'github.repository' => '']);
+        GitHubPushQueueItem::query()->delete();
+        $repository = GitHubRepository::query()->sole();
+
+        $after = app(CreateTodoIssue::class)->handle(title: 'Written after the switch');
+        app(UpdateTodoIssue::class)->handle(id: $before->id, expectedRevision: $before->refresh()->revision, title: 'Edited after the switch');
+
+        expect($repository->is_local)->toBeFalse()
+            ->and($after->repository_id)->toBe($repository->id)
+            ->and(GitHubPushQueueItem::query()->where('operation', 'create_issue')->where('target_id', $after->id)->exists())->toBeTrue()
+            ->and(GitHubPushQueueItem::query()->where('target_id', $before->id)->exists())->toBeTrue()
+            ->and(app(DescribeTodoServer::class)->handle()['repository']['mode'])->toBe('github');
     });
 });
 

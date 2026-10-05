@@ -116,9 +116,12 @@ untouched. The first import adopts the local repository record as the GitHub rep
 labels whose names match GitHub's labels merge with them. Every task, label, parent link, closed
 state and comment created while local-only is then queued and pushed like any new write: each local
 task becomes a new GitHub issue. A failed import changes nothing, so the instance stays local-only
-and you can retry. Going the other way is not supported. Once an instance has been imported,
-blanking the two variables makes writes fail with a message to set them again, rather than
-starting a second, unmirrored repository.
+and you can retry. Agent sessions and other processes that were already running pick up the switch
+on their next write, without a restart: whether writes are mirrored is read from the database, not
+from each process's environment. Going the other way is not supported. Once an instance has been
+imported, its writes keep going to the imported repository and queueing pushes even if the two
+variables are blanked, but nothing is pushed until they (and `GITHUB_TOKEN`) are set again for the
+drain.
 
 ## Activity log
 

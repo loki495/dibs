@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\EnqueueGitHubPush;
 use App\Models\GitHubPushQueueItem;
+use App\Models\GitHubRepository;
+
+// Pushes are queued only once a repository has been imported (App\Support\GitHubMirror::mirrored()).
+beforeEach(function (): void {
+    GitHubRepository::factory()->create();
+});
 
 it('creates a pending queue row for a new idempotency key', function (): void {
     $item = app(EnqueueGitHubPush::class)->handle('create_issue', 'issue', 5, ['title' => 'Capture this'], 'issue:create:5');
@@ -52,4 +58,12 @@ it('keeps a still-pending row\'s attempts and backoff when its payload is refres
     expect($item->attempts)->toBe(2)
         ->and($item->next_attempt_at->equalTo($due))->toBeTrue()
         ->and($item->payload)->toBe(['title' => 'Corrected']);
+});
+
+it('queues nothing before a repository is imported, even in a process configured for GitHub', function (): void {
+    GitHubRepository::query()->delete();
+    GitHubRepository::factory()->create(['github_node_id' => GitHubRepository::LOCAL_IDENTITY, 'is_local' => true]);
+
+    expect(app(EnqueueGitHubPush::class)->handle('create_issue', 'issue', 5, ['title' => 'Local'], 'issue:create:5'))->toBeNull()
+        ->and(GitHubPushQueueItem::query()->count())->toBe(0);
 });

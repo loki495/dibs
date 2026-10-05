@@ -21,7 +21,7 @@ class DescribeTodoServer
             'app' => (string) config('app.name'),
             'environment' => (string) config('app.env'),
             'repository' => [
-                'mode' => GitHubMirror::enabled() ? 'github' : 'local',
+                'mode' => $repository instanceof GitHubRepository || GitHubMirror::enabled() ? 'github' : 'local',
                 'owner' => (string) config('github.owner'),
                 'name' => (string) config('github.repository'),
                 'imported' => $repository instanceof GitHubRepository,

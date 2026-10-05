@@ -13,13 +13,13 @@ class EnqueueGitHubPush
      * Record an intended GitHub write for the scheduled push worker to deliver.
      * Retry-safe: calling again with the same idempotency key refreshes a still-pending
      * row's payload instead of duplicating it, and leaves an already-pushed row alone.
-     * Local-only (GitHub mirroring not configured) nothing is queued and null is returned.
+     * Local-only (no repository imported from GitHub yet) nothing is queued and null is returned.
      *
      * @param  array<string, mixed>  $payload
      */
     public function handle(string $operation, string $targetType, ?int $targetId, array $payload, string $idempotencyKey): ?GitHubPushQueueItem
     {
-        if (! GitHubMirror::enabled()) {
+        if (! GitHubMirror::mirrored()) {
             return null;
         }
         $existing = GitHubPushQueueItem::query()->where('idempotency_key', $idempotencyKey)->first();

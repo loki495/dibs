@@ -23,19 +23,27 @@ There are no inbound webhooks and no scheduled freshness polling. The only path 
 (`scripts/github-pull`, `php artisan todo:sync`), used for initial import, disaster recovery,
 and bringing a second instance in sync. It never overwrites unpushed local changes.
 
-**Local-only mode.** Mirroring is optional: it is on only when both `DIBS_GITHUB_OWNER` and
-`DIBS_GITHUB_REPO` are set (`App\Support\GitHubMirror::enabled()`). With either blank, the instance
-is local-only. `ResolveActiveRepository` (the one place `CreateTodoIssue`, `UpdateTodoIssue` and
+**Local-only mode.** Mirroring is optional. Whether writes are mirrored is decided from the
+database, not from each process's environment: they are once a repository has been imported (a
+`repositories` row with `is_local = false`, `App\Support\GitHubMirror::mirrored()`, one small
+uncached query per call). Long-lived processes such as stdio MCP servers read `.env` once at boot,
+so an environment check would leave sessions started before the switch writing local-only, their
+edits never queued and liable to be overwritten by the next import. `DIBS_GITHUB_OWNER` and
+`DIBS_GITHUB_REPO` (`GitHubMirror::enabled()`) only say which repository to import and whether a
+process may contact GitHub (import, Refresh, the push-queue drain, which also need `GITHUB_TOKEN`).
+With nothing imported and both blank, the instance is local-only. `ResolveActiveRepository` (the one place `CreateTodoIssue`, `UpdateTodoIssue` and
 `CreateLabel` get "the repository" from) returns a single local `repositories` row
 (`is_local = true`, `github_node_id`/`full_name` set to the sentinel `GitHubRepository::LOCAL_IDENTITY`,
 `local`, which no real GitHub node id or `owner/name` can equal). It creates the row on first use with
 `createOrFirst`, so repeated or concurrent calls always yield one row. `EnqueueGitHubPush` queues
 nothing and returns `null`, `todo:push:drain` exits successfully without draining, `SyncGitHub` refuses
-with a `GitHubSyncException`, and the UI hides **Refresh from GitHub**. With mirroring configured,
-`ResolveActiveRepository` returns the imported row whose `full_name` matches, and refuses with a
-`TodoValidationException` until the first import has created it. It also refuses to create a local
-row on an instance that already has an imported one (configuration blanked after an import), so
-tasks are never split across two repositories.
+with a `GitHubSyncException`, and the UI hides **Refresh from GitHub**. Once a repository is imported,
+`ResolveActiveRepository` returns it (`GitHubMirror::importedRepository()`) in every process, even one
+whose GitHub variables are blank, and `EnqueueGitHubPush` queues. A process whose variables name a
+repository that is not imported yet refuses writes with a `TodoValidationException` telling you to
+run the import, rather than writing to a local or older repository. `ResolveActiveRepository::local()`
+itself refuses on an instance that already has an imported repository, so tasks are never split
+across two repositories.
 
 **Switching to GitHub.** The first `ApplyGitHubSnapshot` on an instance with a local row and no row
 for the remote repository's node id adopts the local row: it is updated in place to the remote

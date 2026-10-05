@@ -5,9 +5,15 @@ declare(strict_types=1);
 use App\Actions\RenameGroupOption;
 use App\Exceptions\TodoValidationException;
 use App\Models\GitHubPushQueueItem;
+use App\Models\GitHubRepository;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use Illuminate\Support\Facades\Http;
+
+// Pushes are queued only once a repository has been imported (App\Support\GitHubMirror::mirrored()).
+beforeEach(function (): void {
+    GitHubRepository::factory()->create();
+});
 
 it('renames a Group option locally and enqueues the rename for GitHub', function (): void {
     Http::fake();

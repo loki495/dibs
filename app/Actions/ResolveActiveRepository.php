@@ -9,23 +9,24 @@ use App\Models\GitHubRepository;
 use App\Support\GitHubMirror;
 
 /**
- * The repository new tasks and labels belong to. With GitHub mirroring configured it is the
- * imported repository; local-only, it is the single local repository row, created on first use.
+ * The repository new tasks and labels belong to: the imported repository once one exists (decided
+ * from the database, so a process that booted before the switch still follows it), otherwise the
+ * single local repository row, created on first use. A process configured for a repository that is
+ * not imported yet refuses the write.
  */
 class ResolveActiveRepository
 {
     public function handle(): GitHubRepository
     {
-        if (! GitHubMirror::enabled()) {
-            return $this->local();
+        $imported = GitHubMirror::importedRepository();
+        if ($imported instanceof GitHubRepository) {
+            return $imported;
         }
-
-        $repository = GitHubRepository::query()->where('full_name', GitHubMirror::fullName())->first();
-        if (! $repository instanceof GitHubRepository) {
+        if (GitHubMirror::enabled()) {
             throw new TodoValidationException('GitHub mirroring is configured for '.GitHubMirror::fullName().', but that repository has not been imported yet. Run the GitHub import (scripts/github-pull or php artisan todo:sync) first.');
         }
 
-        return $repository;
+        return $this->local();
     }
 
     /** Idempotent: concurrent or repeated calls always end up with the same single row. */
@@ -35,7 +36,7 @@ class ResolveActiveRepository
         if (is_string($imported)) {
             // Starting a second, local repository next to an imported one would split tasks and labels
             // across two repositories and strand the local ones outside the GitHub mirror.
-            throw new TodoValidationException("This instance was imported from GitHub ({$imported}), but DIBS_GITHUB_OWNER and DIBS_GITHUB_REPO are blank. Set them again to keep working.");
+            throw new TodoValidationException("This instance was imported from GitHub ({$imported}); its tasks and labels belong to that repository, not a new local one.");
         }
 
         return GitHubRepository::query()->createOrFirst(['github_node_id' => GitHubRepository::LOCAL_IDENTITY], [
