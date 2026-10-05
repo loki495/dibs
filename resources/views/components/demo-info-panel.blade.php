@@ -34,10 +34,10 @@
             </p>
             <p>
                 <strong>{{ __('Local-first sync:') }}</strong>
-                {{ __('the Push queue link in the sidebar shows two items mid-flight — one already delivered, one still pending — a live view of the same durable queue that syncs every real edit to GitHub in the background.') }}
+                {{ __('the Push queue link in the sidebar shows two seeded example rows — one already delivered, one still pending — to illustrate the durable queue a GitHub-mirrored instance uses. Nothing you do in the demo is queued.') }}
             </p>
             <p class="text-xs text-sky-700/80 dark:text-sky-300/80">
-                {{ __("This demo has no real GitHub connection, so the pending item stays pending — that's expected, not a bug.") }}
+                {{ __("This demo has no real GitHub connection, so the pending example row stays pending — that's expected, not a bug.") }}
             </p>
         </div>
     </div>

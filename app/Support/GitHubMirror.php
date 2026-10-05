@@ -31,6 +31,12 @@ class GitHubMirror
         return GitHubRepository::query()->where('is_local', false)->exists();
     }
 
+    /** The push queue only carries real work once mirrored; the demo seeds example rows so visitors can see the page. */
+    public static function showsPushQueue(): bool
+    {
+        return (bool) config('dibs.push_queue_ui_enabled') && (self::mirrored() || config('dibs.demo_mode'));
+    }
+
     /**
      * The imported repository writes belong to. With DIBS_GITHUB_OWNER/REPO set in this process it is
      * that repository or nothing (switching to a repository not yet imported must not keep writing to

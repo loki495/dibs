@@ -3,7 +3,7 @@
     <section class="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col bg-white shadow-2xl dark:bg-slate-900">
         <header class="shrink-0 border-b border-slate-200 bg-white px-5 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] dark:border-slate-800 dark:bg-slate-900">
             <div class="flex items-center justify-between gap-3">
-                <span class="text-xs text-slate-500">{{ $detail['issue']->repository->is_local ? __('Local only') : $detail['issue']->repository->full_name }}@if ($detail['issue']->github_number !== null) · #{{ $detail['issue']->github_number }}@endif</span>
+                <span class="text-xs text-slate-500">{{ $detail['issue']->repository->is_local ? __('Local only') : $detail['issue']->repository->full_name }}@if ($detail['issue']->github_number !== null) · {{ \App\Support\IssueNumber::label($detail['issue']->github_number) }}@endif</span>
                 <div class="flex items-center gap-1">
                     @if (! $editingIssue)
                         @if ($detail['issue']->state === 'OPEN')<button type="button" wire:click="closeIssue" class="flex size-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" aria-label="{{ __('Mark done') }}"><flux:icon.check class="size-4" /></button>
@@ -63,7 +63,7 @@
                     </div>
                     <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
                         @if ($claim['host'])<dt>{{ __('Host') }}</dt><dd>{{ $claim['host'] }}</dd>@endif
-                        <dt>{{ __('Process') }}</dt><dd>{{ __('pid :pid', ['pid' => $claim['pid']]) }}</dd>
+                        <dt>{{ __('Process') }}</dt><dd>{{ $claim['pid'] !== null ? __('pid :pid', ['pid' => $claim['pid']]) : __('unknown') }}</dd>
                         <dt>{{ __('Last heartbeat') }}</dt><dd>{{ \Illuminate\Support\Carbon::parse($claim['lastSeenAt'])->diffForHumans() }}</dd>
                         <dt>{{ __('Lease expires') }}</dt><dd>{{ \Illuminate\Support\Carbon::parse($claim['expiresAt'])->diffForHumans() }}</dd>
                     </dl>
@@ -76,7 +76,7 @@
                     @if ($detail['parent'])
                         <div>
                             <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Parent') }}</p>
-                            <button type="button" wire:click="$set('selected', {{ $detail['parent']['id'] }})" class="text-left text-teal-700 hover:underline dark:text-teal-400">#{{ $detail['parent']['number'] }} {{ $detail['parent']['title'] }}</button>
+                            <button type="button" wire:click="$set('selected', {{ $detail['parent']['id'] }})" class="text-left text-teal-700 hover:underline dark:text-teal-400">{{ \App\Support\IssueNumber::withTitle($detail['parent']['number'], $detail['parent']['title']) }}</button>
                         </div>
                     @endif
                     @if (count($detail['children']) > 0)
@@ -84,7 +84,7 @@
                             <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Child tasks') }}</p>
                             <ul class="space-y-1">
                                 @foreach ($detail['children'] as $child)
-                                    <li><button type="button" wire:click="$set('selected', {{ $child['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $child['isKnowledge'], 'text-teal-700 dark:text-teal-400' => ! $child['isKnowledge'], 'line-through opacity-70' => $child['state'] === 'CLOSED'])>#{{ $child['number'] }} {{ $child['title'] }}</button></li>
+                                    <li><button type="button" wire:click="$set('selected', {{ $child['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $child['isKnowledge'], 'text-teal-700 dark:text-teal-400' => ! $child['isKnowledge'], 'line-through opacity-70' => $child['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($child['number'], $child['title']) }}</button></li>
                                 @endforeach
                             </ul>
                         </div>
@@ -94,7 +94,7 @@
                             <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Related knowledge') }}</p>
                             <ul class="space-y-1">
                                 @foreach ($detail['knowledge'] as $item)
-                                    <li><button type="button" wire:click="$set('selected', {{ $item['id'] }})" class="text-left text-violet-700 hover:underline dark:text-violet-400">#{{ $item['number'] }} {{ $item['title'] }}</button></li>
+                                    <li><button type="button" wire:click="$set('selected', {{ $item['id'] }})" class="text-left text-violet-700 hover:underline dark:text-violet-400">{{ \App\Support\IssueNumber::withTitle($item['number'], $item['title']) }}</button></li>
                                 @endforeach
                             </ul>
                         </div>

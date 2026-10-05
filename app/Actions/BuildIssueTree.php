@@ -123,6 +123,7 @@ class BuildIssueTree
             'areaCounts' => $areaCounts, 'taskCount' => $taskCount, 'dailyCount' => $dailyCount,
             'matchCount' => count(array_filter($matches)), 'groups' => $groups, 'labelOptions' => $labelOptions,
             'filtered' => $search !== '' || $group !== 0 || $labels !== [] || $priority !== 0 || $view !== 'tasks', 'today' => $today,
+            'mirrored' => GitHubMirror::mirrored(),
             'sync' => SyncState::query()->where('resource_key', 'github:'.GitHubMirror::fullName())->first()];
     }
 
