@@ -110,9 +110,12 @@ Local edits queue automatically and push to GitHub in the background; a manual
 **Refresh from GitHub** button pulls the latest.
 
 **Switching a local-only instance to GitHub.** Set the variables above, then run the first import
-(`scripts/github-pull`, or `php artisan todo:sync`). Until that import succeeds, creating or
-editing a task is refused with a message telling you to run it, and your local data is left
-untouched. The first import adopts the local repository record as the GitHub repository. Local
+(`scripts/github-pull`, or `php artisan todo:sync`). Until that import succeeds, a process
+whose `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO` are set refuses to create a task or label (`todo_create`,
+the capture form, new labels) and to save the UI edit form, with a message telling you to run it.
+Everything else is accepted and written locally: `todo_update`/revise, comments, close/complete and
+reopen, claims. Nothing is queued before the import, which then queues all of it. Your local data is
+left untouched. The first import adopts the local repository record as the GitHub repository. Local
 labels whose names match GitHub's labels merge with them. Every task, label, parent link, closed
 state and comment created while local-only is then queued and pushed like any new write: each local
 task becomes a new GitHub issue. A failed import changes nothing, so the instance stays local-only
@@ -286,8 +289,17 @@ Without a GitHub mirror that is the whole job. With one, rows queued after the s
 ```bash
 git pull
 bash docker/setup.sh                # rebuilds images, installs dependencies, runs migrations, rebuilds assets
-docker compose restart app scheduler  # long-running processes still hold the old code
+docker compose restart app web scheduler  # long-running processes still hold the old code
 ```
+
+`setup.sh` already runs `docker compose up -d`, so the `web` service appears on the first upgrade
+from an older checkout. If you start it by hand instead, use `docker compose up -d app web scheduler`.
+`--remove-orphans` is not needed: no service was removed.
+
+**Upgrading an install from before the `web` service.** HTTP is now served by `web`, not `app`
+(which no longer exposes a port). Move any Traefik labels, networks, port mappings or other overrides
+for the HTTP side from `app` to `web` (see `docker/compose.traefik.example.yml`), or the site stops
+answering. Migrations run as part of `setup.sh`; to run them alone see below.
 
 To run migrations alone: `composer artisan -- migrate`, or without Composer on the host,
 `docker compose exec -T -u www-data app php artisan migrate --force`. Reconnect any agent sessions

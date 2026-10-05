@@ -40,8 +40,13 @@ nothing and returns `null`, `todo:push:drain` exits successfully without drainin
 with a `GitHubSyncException`, and the UI hides **Refresh from GitHub**. Once a repository is imported,
 `ResolveActiveRepository` returns it (`GitHubMirror::importedRepository()`) in every process, even one
 whose GitHub variables are blank, and `EnqueueGitHubPush` queues. A process whose variables name a
-repository that is not imported yet refuses writes with a `TodoValidationException` telling you to
-run the import, rather than writing to a local or older repository. `ResolveActiveRepository::local()`
+repository that is not imported yet refuses, with a `TodoValidationException` telling you to run the
+import, exactly the writes that resolve a repository through `ResolveActiveRepository`: creating a
+task (`CreateTodoIssue`, so `todo_create` and the capture form), creating a label (`CreateLabel`)
+and the UI edit form (`UpdateTodoIssue`), rather than writing to a local or older repository.
+Everything that does not (`ReviseTodoIssue`/`todo_update`, comments, close/complete, reopen, claims)
+is accepted and written locally before the import; `EnqueueGitHubPush` queues nothing until a
+repository is imported, and the first import's `QueueLocalRecordsForGitHub` queues it all. `ResolveActiveRepository::local()`
 itself refuses on an instance that already has an imported repository, so tasks are never split
 across two repositories.
 
