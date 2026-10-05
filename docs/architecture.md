@@ -126,7 +126,8 @@ the last error, read by the manual-pull path only; it drives no scheduled behavi
 
 **`github_push_queue`** — the durable outbound queue described below: `operation`, `target_type`
 + `target_id`, a JSON `payload`, `status` (pending/failed/needs_attention/pushed), `attempts`,
-`last_error`, `next_attempt_at` (when a backing-off row is next due), and a unique `idempotency_key`.
+`last_error`, `next_attempt_at` (when a backing-off row is next due), `unconfirmed_create` (see
+below), and a unique `idempotency_key`.
 
 **`agent_sessions` / `task_claims`** — local worker identity and expiring task claims. A claim
 binds to the caller's real OS process (host, pid, process start time verified via
@@ -224,7 +225,27 @@ spending their attempts, since the limit is per token; the rate-limited row itse
 one either. A row needs attention once `max_attempts` calls have failed for a reason other than a
 rate limit (`config('dibs.push_queue')`, defaults 8 / 30 s / 1 h, about two hours in all). A row
 that is enqueued again under its idempotency key after leaving `pending` (e.g. from
-`needs_attention`) starts a fresh budget: `attempts` back to 0 and no wait. The push-queue page shows "retrying at …" under a backing-off row's status, and a
+`needs_attention`) starts a fresh budget: `attempts` back to 0 and no wait.
+
+A timeout, 5xx or unconfirmed response to a create may mean GitHub applied it anyway, so retrying
+blindly could duplicate it. The drain marks such a row `unconfirmed_create`, and its next attempt
+looks on GitHub first, adopting what it finds (recording the node id/number and marking the row
+pushed) instead of creating again. A rate limit or a permanent rejection was never applied, so it
+doesn't mark the row. No marker is embedded in what GitHub shows; each create is identified by what
+the app already has:
+
+- `create_label`: the label's name, unique per repository (`repository.label(name:)`).
+- `create_group_option`: the option's name among the field's current options, which the push reads
+  anyway; a same-named option is always adopted rather than added twice.
+- `create_issue` / `create_comment`: the 50 newest issues of the repository (or the issue's 100
+  newest comments) are read, and the candidates are the ones this token's user created since the
+  row was queued (less 5 minutes of clock skew) that no local record is linked to yet. A candidate
+  with the same title and body (comment: body), line endings and outer whitespace aside, is
+  adopted. With no candidates, and a page reaching back past the queued time, nothing was created
+  and the create is retried. Otherwise, a candidate that doesn't match (an edit since, or something
+  made by hand on GitHub) or a page too full to see that far back, the drain can't tell, and sends
+  the row to `needs_attention` with that explanation and the flag cleared, so a person's Retry
+  creates it without looking again. The push-queue page shows "retrying at …" under a backing-off row's status, and a
 manual Retry clears the wait.
 
 The MCP write Actions `CompleteTodoTask`, `ClaimTaskForAgent`, `ReviseTodoIssue`, `ReviseTodoComment`,
