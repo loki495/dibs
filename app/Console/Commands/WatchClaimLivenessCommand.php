@@ -37,9 +37,9 @@ class WatchClaimLivenessCommand extends Command
         }
 
         while (! $this->stopping) {
-            $this->checkOnce($record, $concurrency);
+            $passed = $this->checkOnce($record, $concurrency);
             if ($once) {
-                break;
+                return $passed ? self::SUCCESS : self::FAILURE;
             }
             // One-second steps so a SIGTERM ends the wait within a second even if it lands between sleeps.
             for ($waited = 0; $waited < $interval && ! $this->stopping; $waited++) {
@@ -50,22 +50,30 @@ class WatchClaimLivenessCommand extends Command
         return self::SUCCESS;
     }
 
-    private function checkOnce(RecordClaimLiveness $record, ConcurrencyErrorDetector $concurrency): void
+    /** @phpstan-impure It writes the database, and the signal trap can flip $stopping while it runs. */
+    private function checkOnce(RecordClaimLiveness $record, ConcurrencyErrorDetector $concurrency): bool
     {
         try {
             $counts = $record->handle();
             $this->line(sprintf('Checked claims: %d alive, %d gone, %d not checkable.', $counts['alive'], $counts['dead'], $counts['skipped']), verbosity: 'v');
+
+            return true;
         } catch (Throwable $e) {
             // A busy SQLite writer (the scheduler's push-queue drain, an agent's write) is expected now and
-            // then; the next pass retries. Anything else is reported in full, then the loop carries on so a
-            // bad pass doesn't stop the container that agents exec into.
+            // then; the next pass retries. Anything else surfaces in debug; in production it is reported in
+            // full and the loop carries on so a bad pass doesn't stop the container that agents exec into.
             if ($concurrency->causedByConcurrencyError($e)) {
                 $this->warn('Database busy; will retry on the next check.');
 
-                return;
+                return false;
+            }
+            if (config('app.debug')) {
+                throw $e;
             }
             report($e);
             $this->error('Claim liveness check failed: '.$e->getMessage());
+
+            return false;
         }
     }
 }

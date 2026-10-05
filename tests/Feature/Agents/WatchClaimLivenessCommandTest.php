@@ -125,15 +125,58 @@ it('stops within about a second of SIGTERM even mid-wait on a long interval', fu
     expect(microtime(true) - $started)->toBeLessThan(5);
 });
 
-it('reports an unexpected error instead of swallowing it, and keeps the process alive', function (): void {
+it('reports an unexpected error outside debug and exits with failure when its single --once pass failed', function (): void {
+    config(['app.debug' => false]);
     Exceptions::fake();
     $this->mock(RecordClaimLiveness::class)->shouldReceive('handle')->once()->andThrow(new RuntimeException('boom'));
 
     $this->artisan('dibs:claims:watch', ['--once' => true])
         ->expectsOutputToContain('Claim liveness check failed: boom')
-        ->assertSuccessful();
+        ->assertFailed();
 
     Exceptions::assertReported(fn (RuntimeException $e): bool => $e->getMessage() === 'boom');
+});
+
+it('exits with failure from --once when the database was busy for its single pass', function (): void {
+    $this->mock(RecordClaimLiveness::class)->shouldReceive('handle')->once()->andThrow(lockedDatabaseException());
+
+    $this->artisan('dibs:claims:watch', ['--once' => true])
+        ->expectsOutputToContain('Database busy; will retry on the next check.')
+        ->assertFailed();
+});
+
+it('reports an unexpected error outside debug and keeps watching', function (): void {
+    config(['app.debug' => false]);
+    enableSignalTraps();
+    Exceptions::fake();
+    $calls = 0;
+    $this->mock(RecordClaimLiveness::class)->shouldReceive('handle')->twice()->andReturnUsing(function () use (&$calls): array {
+        $calls++;
+        if ($calls === 1) {
+            throw new RuntimeException('boom');
+        }
+        posix_kill(getmypid(), SIGTERM);
+
+        return ['alive' => 0, 'dead' => 0, 'skipped' => 0];
+    });
+
+    $this->artisan('dibs:claims:watch', ['--interval' => 1])
+        ->expectsOutputToContain('Claim liveness check failed: boom')
+        ->assertSuccessful();
+
+    expect($calls)->toBe(2);
+    Exceptions::assertReported(fn (RuntimeException $e): bool => $e->getMessage() === 'boom');
+});
+
+it('rethrows an unexpected error in debug instead of reporting and carrying on', function (): void {
+    config(['app.debug' => true]);
+    Exceptions::fake();
+    $this->mock(RecordClaimLiveness::class)->shouldReceive('handle')->once()->andThrow(new RuntimeException('boom'));
+
+    expect(fn () => $this->artisan('dibs:claims:watch', ['--interval' => 1])->run())
+        ->toThrow(RuntimeException::class, 'boom');
+
+    Exceptions::assertNothingReported();
 });
 
 it('does not overwrite a claim released between the read and the write', function (): void {
