@@ -27,7 +27,10 @@ class EnqueueGitHubPush
             return $existing;
         }
         if ($existing instanceof GitHubPushQueueItem) {
-            $existing->update(['operation' => $operation, 'target_type' => $targetType, 'target_id' => $targetId, 'payload' => $payload, 'status' => 'pending', 'last_error' => null]);
+            // A row brought back from needs_attention starts a fresh retry budget; a still-pending
+            // row keeps its backoff.
+            $retry = $existing->status === 'pending' ? [] : ['attempts' => 0, 'next_attempt_at' => null];
+            $existing->update(['operation' => $operation, 'target_type' => $targetType, 'target_id' => $targetId, 'payload' => $payload, 'status' => 'pending', 'last_error' => null, ...$retry]);
 
             return $existing->refresh();
         }

@@ -36,7 +36,7 @@ it('waits for Retry-After on a rate limit, skips the row until then, and then pu
 
     expect($first['deferred'])->toBe(1)
         ->and($item->status)->toBe('pending')
-        ->and($item->attempts)->toBe(1)
+        ->and($item->attempts)->toBe(0)
         ->and($item->next_attempt_at->equalTo(now()->addSeconds(120)))->toBeTrue()
         ->and($item->last_error)->toContain('rate limit');
 
@@ -58,7 +58,7 @@ it('waits until X-RateLimit-Reset on an exhausted primary limit and holds the ot
     $result = app(DrainGitHubPushQueue::class)->handle('test-token');
 
     expect($result['deferred'])->toBe(1)
-        ->and($limited->refresh()->attempts)->toBe(1)
+        ->and($limited->refresh()->attempts)->toBe(0)
         ->and($limited->next_attempt_at->equalTo($reset))->toBeTrue()
         ->and($untouched->refresh()->attempts)->toBe(0)
         ->and($untouched->next_attempt_at->equalTo($reset))->toBeTrue();
@@ -68,6 +68,26 @@ it('waits until X-RateLimit-Reset on an exhausted primary limit and holds the ot
     'HTTP 403' => [403, ['message' => 'API rate limit exceeded']],
     'HTTP 429' => [429, ['message' => 'API rate limit exceeded']],
 ]);
+
+it('never spends the retry budget on rate limits, so a row at its last attempt still waits', function (): void {
+    config(['dibs.push_queue.max_attempts' => 3]);
+    $item = ($this->queueCreate)(['attempts' => 2]);
+    Http::fakeSequence()
+        ->push(['message' => 'API rate limit exceeded'], 429, ['Retry-After' => '30'])
+        ->push(['message' => 'API rate limit exceeded'], 429, ['Retry-After' => '30'])
+        ->push('Bad gateway', 502);
+
+    foreach (range(1, 2) as $pass) {
+        app(DrainGitHubPushQueue::class)->handle('test-token');
+        $item->refresh();
+        expect($item->status)->toBe('pending')->and($item->attempts)->toBe(2);
+        $this->travelTo($item->next_attempt_at);
+    }
+    app(DrainGitHubPushQueue::class)->handle('test-token');
+
+    expect($item->refresh()->status)->toBe('needs_attention')
+        ->and($item->attempts)->toBe(3);
+});
 
 it('waits a minute on a secondary rate limit that gives no retry time', function (): void {
     $item = ($this->queueCreate)();

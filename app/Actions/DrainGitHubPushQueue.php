@@ -642,11 +642,13 @@ class DrainGitHubPushQueue
      */
     private function deferOrFail(GitHubPushQueueItem $item, GitHubSyncException $exception): string
     {
-        $attempts = $item->attempts + 1;
+        // A rate limit says nothing about the row itself, so it waits without spending its budget.
+        $rateLimited = $exception->isRateLimit();
+        $attempts = $rateLimited ? $item->attempts : $item->attempts + 1;
         if ($exception->retryAt instanceof CarbonImmutable) {
             $this->rateLimitedUntil = $exception->retryAt;
         }
-        if (! $exception->transient || $attempts >= (int) config('dibs.push_queue.max_attempts')) {
+        if (! $exception->transient || (! $rateLimited && $attempts >= (int) config('dibs.push_queue.max_attempts'))) {
             $item->update(['attempts' => $attempts, 'last_error' => $exception->getMessage(), 'attempted_at' => now(), 'status' => 'needs_attention', 'next_attempt_at' => null]);
 
             return 'needs_attention';

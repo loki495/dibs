@@ -212,9 +212,11 @@ sends a permanent failure straight to `needs_attention`. A transient one stays `
 `next_attempt_at` set to GitHub's `retryAt` or an exponential backoff (`backoff_base_seconds *
 2^(failures - 1)`, capped at `backoff_cap_seconds`), and the drain skips rows that aren't due. A
 rate limit also ends the pass and holds every other queued row until the same time without
-spending their attempts, since the limit is per token. A row needs attention once
-`max_attempts` calls have failed (`config('dibs.push_queue')`, defaults 8 / 30 s / 1 h, about two
-hours in all). The push-queue page shows "retrying at …" under a backing-off row's status, and a
+spending their attempts, since the limit is per token; the rate-limited row itself does not spend
+one either. A row needs attention once `max_attempts` calls have failed for a reason other than a
+rate limit (`config('dibs.push_queue')`, defaults 8 / 30 s / 1 h, about two hours in all). A row
+that is enqueued again under its idempotency key after leaving `pending` (e.g. from
+`needs_attention`) starts a fresh budget: `attempts` back to 0 and no wait. The push-queue page shows "retrying at …" under a backing-off row's status, and a
 manual Retry clears the wait.
 
 The MCP write Actions `CompleteTodoTask`, `ClaimTaskForAgent`, `ReviseTodoIssue`, `ReviseTodoComment`,
