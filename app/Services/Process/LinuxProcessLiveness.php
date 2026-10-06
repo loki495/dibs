@@ -26,10 +26,17 @@ class LinuxProcessLiveness
 
     public function __construct(private readonly string $procPath = '/proc', private readonly bool $enabled = true) {}
 
-    /** Whether this process can check the agents' processes at all: enabled, and /proc readable. */
+    /**
+     * Whether this process can check the agents' processes at all: enabled, and /proc readable. PID 1's
+     * stat stands in for "other users' processes": /proc mounted with hidepid hides them from a
+     * non-root user, and a missing process must then read as unknown, not dead.
+     */
     public function isVerifiable(): bool
     {
-        return $this->enabled && is_readable($this->procPath.'/stat') && is_readable($this->procPath.'/uptime');
+        return $this->enabled
+            && is_readable($this->procPath.'/stat')
+            && is_readable($this->procPath.'/uptime')
+            && is_readable($this->procPath.'/1/stat');
     }
 
     /** The real start time of $pid right now, or null if the process doesn't exist or /proc can't be read. */

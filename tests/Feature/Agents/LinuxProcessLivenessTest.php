@@ -51,6 +51,23 @@ it('reports unverifiable when /proc is not readable in this environment', functi
     expect($liveness->startedAt(getmypid()))->toBeNull();
 });
 
+it('reports unverifiable when other users\' processes are hidden, as /proc mounted with hidepid does', function (): void {
+    $procPath = sys_get_temp_dir().'/fake-proc-'.uniqid();
+    mkdir($procPath, recursive: true);
+    file_put_contents($procPath.'/stat', "btime 1000000000\n");
+    file_put_contents($procPath.'/uptime', '100.00 50.00');
+
+    $liveness = new LinuxProcessLiveness($procPath);
+
+    expect($liveness->isVerifiable())->toBeFalse()
+        ->and($liveness->currentlyAlive(999_999_999, now()))->toBeNull();
+
+    mkdir($procPath.'/1');
+    file_put_contents($procPath.'/1/stat', '1 (init) S '.str_repeat('1 ', 20));
+
+    expect($liveness->isVerifiable())->toBeTrue();
+});
+
 it('reports verifiable when the real /proc is readable', function (): void {
     expect((new LinuxProcessLiveness)->isVerifiable())->toBeTrue();
 });
