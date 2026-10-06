@@ -9,10 +9,11 @@ use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectFieldOption;
 use App\Models\TaskClaim;
+use App\Support\TrustedAuthors;
 
 class DescribeTodoContext
 {
-    public function __construct(private readonly DescribeGitHubPushQueue $describeQueue) {}
+    public function __construct(private readonly DescribeGitHubPushQueue $describeQueue, private readonly TrustedAuthors $trust) {}
 
     /** @return array<string, mixed> */
     public function handle(): array
@@ -56,7 +57,7 @@ class DescribeTodoContext
 
         return $claims->map(fn (TaskClaim $claim): array => [
             'issueId' => $claim->issue_id,
-            'issueTitle' => $claim->issue instanceof Issue ? $claim->issue->title : null,
+            'issueTitle' => $claim->issue instanceof Issue ? $this->trust->title($claim->issue) : null,
             'agentName' => $claim->agentSession?->agent_name,
             'expiresAt' => $claim->expires_at->toIso8601String(),
             'isVerifiedLive' => (bool) $claim->agentSession?->is_verified_live,

@@ -9,9 +9,12 @@ use App\Exceptions\TodoRecordUnavailableException;
 use App\Models\GitHubProject;
 use App\Models\Issue;
 use App\Support\IssueSummary;
+use App\Support\TrustedAuthors;
 
 class DescribeTodoIssue
 {
+    public function __construct(private readonly TrustedAuthors $trust) {}
+
     public const MAX_COMMENTS_PER_PAGE = 50;
 
     public const DEFAULT_COMMENTS_PER_PAGE = 20;
@@ -38,18 +41,18 @@ class DescribeTodoIssue
             throw new TodoRecordUnavailableException("Issue #{$issue->github_number} (local id {$id}) is no longer available; it was removed or lost GitHub access.");
         }
 
-        $body = $issue->body;
+        $body = $this->trust->allows($issue->author_login) ? $issue->body : null;
         $bodyTruncated = $maxBodyLength !== null && $body !== null && mb_strlen($body) > $maxBodyLength;
         if ($bodyTruncated) {
             $body = mb_substr($body, 0, $maxBodyLength).'…';
         }
 
         $result = [
-            ...IssueSummary::from($issue),
+            ...IssueSummary::from($issue, $this->trust),
             'body' => $body,
             'bodyTruncated' => $bodyTruncated,
-            'parent' => $issue->parent instanceof Issue ? IssueSummary::from($issue->parent) : null,
-            'children' => $issue->children->map(IssueSummary::from(...))->all(),
+            'parent' => $issue->parent instanceof Issue ? IssueSummary::from($issue->parent, $this->trust) : null,
+            'children' => $issue->children->map(fn (Issue $child): array => IssueSummary::from($child, $this->trust))->all(),
             'memberships' => $issue->projectItems->map(fn ($item): array => [
                 'area' => $item->project instanceof GitHubProject ? ['id' => $item->project->id, 'title' => $item->project->title] : null,
                 'group' => $item->groupOption?->name,
@@ -67,7 +70,9 @@ class DescribeTodoIssue
                 ->paginate($commentsPerPage, ['*'], 'page', max(1, $commentsPage));
             $result['comments'] = [
                 'items' => $paginator->getCollection()->map(fn ($comment): array => [
-                    'id' => $comment->id, 'author' => $comment->author_login, 'body' => $comment->body,
+                    'id' => $comment->id, 'author' => $comment->author_login,
+                    'body' => $this->trust->allows($comment->author_login) ? $comment->body : TrustedAuthors::withheld($comment->author_login),
+                    'withheld' => ! $this->trust->allows($comment->author_login),
                     'createdAt' => $comment->remote_created_at?->toIso8601String(), 'revision' => $comment->revision,
                 ])->all(),
                 'page' => $paginator->currentPage(), 'perPage' => $paginator->perPage(),
@@ -96,7 +101,7 @@ class DescribeTodoIssue
 
         return [
             'reason' => $issue->state_reason,
-            'note' => $note?->body,
+            'note' => $note !== null && $this->trust->allows($note->author_login) ? $note->body : null,
             'references' => $note?->references,
             'closedAt' => ($issue->closed_at ?? ($note !== null ? $note->created_at : $issue->updated_at))->toIso8601String(),
         ];

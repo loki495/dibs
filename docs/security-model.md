@@ -28,13 +28,18 @@ the only layout where a compromised web tier stays inside a container.
   agent reads them through `todo_show`, `todo_list` or the plan bundle and follows them, with the
   agent's own permissions (shell, files, other credentials), which are far wider than Dibs's.
 - **Preconditions.** GitHub mirroring is on, and the attacker can open issues or comment on the mirror
-  repository. On a public repository that is anyone with a GitHub account. Dibs imports issues and
-  comments from every author.
-- **Mitigations today.** None in the app. Comments keep their `author_login`, but agents aren't told
-  to distrust them.
-- **What to do.** Mirror to a **private** repository, or one where only you can open issues and
-  comment. If it must be public, tell your agents (in their instructions or skill) to treat issue and
-  comment text as data, never as instructions, and review what they act on.
+  repository. On a public repository that is anyone with a GitHub account.
+- **Mitigations today.** Dibs imports issues and comments from every author and records who wrote them,
+  but agent-facing output (every MCP tool and the `todo:agent:*` CLI) only carries text by trusted
+  authors: the mirrored repository's owner, the logins in `DIBS_TRUSTED_GITHUB_AUTHORS`, and anything
+  created through Dibs. Other authors' titles, bodies, search excerpts, comments and closing notes are
+  replaced by a "withheld" note with `withheld: true`; ids, state, labels and the author's login stay
+  visible. Text from deleted GitHub accounts is stored as `ghost` and withheld too. The web UI still
+  shows everything, for you to read.
+- **What to do.** Keep `DIBS_TRUSTED_GITHUB_AUTHORS` to people you'd let instruct your agents. If your
+  token's account isn't the repository owner, add it, or your own text is withheld after it round-trips
+  through GitHub. Labels are still shown to agents, so on a public repository don't give triage rights to
+  people you don't trust. A private mirror remains the strongest option.
 
 ### Owner auto-login and `TRUSTED_PROXIES`
 

@@ -36,7 +36,7 @@ it('shows full issue detail through the todo_show tool', function (): void {
 
 it('includes comments only when withComments is requested', function (): void {
     $issue = Issue::factory()->create();
-    Comment::factory()->for($issue, 'issue')->create(['body' => 'A helpful comment']);
+    Comment::factory()->for($issue, 'issue')->create(['body' => 'A helpful comment', 'author_login' => null]);
 
     TodoServer::tool(DescribeTodoIssue::class, ['id' => $issue->id])
         ->assertOk()->assertDontSee('A helpful comment');

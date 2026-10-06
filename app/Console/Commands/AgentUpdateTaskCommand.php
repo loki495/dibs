@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Actions\GetIssueDetails;
+use App\Actions\DescribeTodoIssue;
 use App\Actions\ReviseTodoIssue;
 use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
@@ -24,7 +24,7 @@ class AgentUpdateTaskCommand extends Command
 
     protected $description = 'Revise a Todo task\'s title/body for a host-local agent as JSON';
 
-    public function handle(ReviseTodoIssue $revise, GetIssueDetails $details): int
+    public function handle(ReviseTodoIssue $revise, DescribeTodoIssue $details): int
     {
         $expectedRevision = $this->option('expected-revision');
         if ($expectedRevision === null || ! ctype_digit((string) $expectedRevision)) {

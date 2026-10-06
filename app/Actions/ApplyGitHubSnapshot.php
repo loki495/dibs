@@ -15,6 +15,7 @@ use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubSyncException;
 use App\Support\LabelName;
 use App\Support\ProjectColor;
+use App\Support\TrustedAuthors;
 use Illuminate\Support\Facades\DB;
 
 class ApplyGitHubSnapshot
@@ -67,7 +68,7 @@ class ApplyGitHubSnapshot
             foreach ($snapshot['issues'] as $remoteIssue) {
                 $issue = Issue::query()->updateOrCreate(['github_node_id' => $remoteIssue['id']], [
                     'repository_id' => $repo->id, 'github_number' => $remoteIssue['number'], 'title' => $remoteIssue['title'],
-                    'body' => $remoteIssue['body'], 'state' => $remoteIssue['state'], 'state_reason' => $remoteIssue['stateReason'], 'closed_at' => $remoteIssue['closedAt'] ?? null,
+                    'body' => $remoteIssue['body'], 'author_login' => $remoteIssue['author']['login'] ?? TrustedAuthors::DELETED_ACCOUNT, 'state' => $remoteIssue['state'], 'state_reason' => $remoteIssue['stateReason'], 'closed_at' => $remoteIssue['closedAt'] ?? null,
                     'url' => $remoteIssue['url'], 'github_parent_node_id' => $remoteIssue['parent']['id'] ?? null,
                     'parent_issue_id' => null, 'sibling_position' => 0, 'remote_updated_at' => $remoteIssue['updatedAt'], ...$stamp,
                 ]);
@@ -88,7 +89,7 @@ class ApplyGitHubSnapshot
                             throw new GitHubSyncException('GitHub returned a comment without an id; snapshot was not applied.');
                         }
                         Comment::query()->updateOrCreate(['github_node_id' => $comment['id']], [
-                            'issue_id' => $issue->id, 'body' => $comment['body'], 'author_login' => $comment['author']['login'] ?? null,
+                            'issue_id' => $issue->id, 'body' => $comment['body'], 'author_login' => $comment['author']['login'] ?? TrustedAuthors::DELETED_ACCOUNT,
                             'url' => $comment['url'], 'remote_created_at' => $comment['createdAt'], 'remote_updated_at' => $comment['updatedAt'], ...$stamp,
                         ]);
                     }

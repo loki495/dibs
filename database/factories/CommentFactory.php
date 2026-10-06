@@ -16,7 +16,8 @@ class CommentFactory extends Factory
     /** @return static */
     public function closing()
     {
-        return $this->state(['kind' => Comment::KIND_CLOSING]);
+        // Closing notes are written through Dibs, so they have no GitHub author until pushed.
+        return $this->state(['kind' => Comment::KIND_CLOSING, 'author_login' => null]);
     }
 
     /** @return array<string, mixed> */

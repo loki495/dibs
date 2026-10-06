@@ -7,6 +7,7 @@ namespace App\Actions;
 use App\Models\Issue;
 use App\Support\IssueFilters;
 use App\Support\IssueSummary;
+use App\Support\TrustedAuthors;
 use Illuminate\Validation\ValidationException;
 
 class SearchTodoIssues
@@ -17,7 +18,7 @@ class SearchTodoIssues
 
     private const int EXCERPT_CONTEXT = 60;
 
-    public function __construct(private readonly ApplyIssueFilters $applyFilters) {}
+    public function __construct(private readonly ApplyIssueFilters $applyFilters, private readonly TrustedAuthors $trust) {}
 
     /** @return array<string, mixed> */
     public function handle(
@@ -65,8 +66,8 @@ class SearchTodoIssues
 
         return [
             'items' => $paginator->getCollection()->map(fn (Issue $issue): array => [
-                ...IssueSummary::from($issue),
-                'excerpt' => $this->excerpt($issue->body ?? '', $terms),
+                ...IssueSummary::from($issue, $this->trust),
+                'excerpt' => $this->trust->allows($issue->author_login) ? $this->excerpt($issue->body ?? '', $terms) : '',
             ])->all(),
             'page' => $paginator->currentPage(),
             'perPage' => $paginator->perPage(),

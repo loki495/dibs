@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Actions\ApplyGitHubSnapshot;
+use App\Models\Comment;
 use App\Models\GitHubPushQueueItem;
 use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubSyncException;
+use App\Support\TrustedAuthors;
 
 function githubSnapshotFixture(): array
 {
@@ -253,4 +255,22 @@ it('never retires local-first records that have not reached GitHub, even when Gi
         ->and($pendingLabel->refresh()->is_available)->toBeTrue()
         ->and(Issue::query()->where('github_node_id', 'I1')->sole()->is_available)->toBeFalse()
         ->and(Label::query()->where('github_node_id', 'L1')->sole()->is_available)->toBeFalse();
+});
+
+it('records issue and comment authors on import, and marks deleted accounts as ghost', function (): void {
+    $snapshot = githubSnapshotFixture();
+    $snapshot['issues'][0]['author'] = ['login' => 'example-owner'];
+    $snapshot['issues'][1]['author'] = null;
+    $snapshot['issues'][0]['comments'] = [
+        ['id' => 'C1', 'body' => 'Hi', 'author' => ['login' => 'mallory'], 'url' => null, 'createdAt' => '2026-09-08T12:00:00Z', 'updatedAt' => '2026-09-08T12:00:00Z'],
+        ['id' => 'C2', 'body' => 'Bye', 'author' => null, 'url' => null, 'createdAt' => '2026-09-08T12:00:00Z', 'updatedAt' => '2026-09-08T12:00:00Z'],
+    ];
+
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+
+    expect(Issue::query()->where('github_node_id', 'I1')->sole()->author_login)->toBe('example-owner')
+        ->and(Issue::query()->where('github_node_id', 'I2')->sole()->author_login)->toBe(TrustedAuthors::DELETED_ACCOUNT)
+        ->and(Comment::query()->where('github_node_id', 'C1')->sole()->author_login)->toBe('mallory')
+        ->and(Comment::query()->where('github_node_id', 'C2')->sole()->author_login)->toBe(TrustedAuthors::DELETED_ACCOUNT)
+        ->and((new TrustedAuthors)->allows('example-owner'))->toBeTrue();
 });
