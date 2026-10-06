@@ -36,7 +36,7 @@ local SQLite is authoritative.
 
 ## Quick start
 
-Requires Docker and Docker Compose.
+Requires Docker and Docker Compose (or see [Running without Docker](#running-without-docker)).
 
 ```bash
 git clone https://github.com/loki495/dibs.git
@@ -78,6 +78,14 @@ Want to look around with realistic sample data instead of an empty workspace?
 `docker compose exec -u www-data app php artisan db:seed --class="Database\Seeders\DemoSeeder"`
 adds a few dozen fake tasks across areas, groups, priorities, and labels. It's meant for a
 fresh database — don't run it against one you care about.
+
+### Running without Docker
+
+Dibs also runs directly on a Linux host: PHP 8.5 with `pdo_sqlite`, `intl`, `pcntl` and `zip`, Composer,
+and Node.js to build the assets, plus a web server, `php artisan schedule:work` and
+`php artisan dibs:claims:watch` kept running (systemd user units work well), and agents launching
+`php /path/to/dibs/artisan mcp:start todo`. Step by step, with upgrade instructions:
+[`docs/bare-metal.md`](docs/bare-metal.md).
 
 ### Connecting to GitHub (optional)
 
@@ -364,6 +372,7 @@ raw form shown beside each.
 - [`docs/architecture.md`](docs/architecture.md) — data model and sync design
 - [`docs/agent-interface.md`](docs/agent-interface.md) — MCP/CLI contract for agents
 - [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md) — a ready-to-use agent skill for working with Dibs
+- [`docs/bare-metal.md`](docs/bare-metal.md) — running Dibs without Docker
 - [`docs/demo-hosting.md`](docs/demo-hosting.md) — how the public demo instance is built and deployed
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
 - [`CLAUDE.md`](CLAUDE.md) — conventions for AI coding assistants working in this repo
