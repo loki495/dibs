@@ -61,6 +61,9 @@ return [
     'demo_mode' => (bool) env('DIBS_DEMO_MODE', false),
     'demo_db_template_path' => env('DEMO_DB_TEMPLATE_PATH', storage_path('demo-template.sqlite')),
     'demo_db_storage_path' => env('DEMO_DB_STORAGE_PATH', storage_path('demo-dbs')),
+    // Most per-visitor copies kept at once; making one more deletes the least recently written. Bounds
+    // demo_db_storage_path to this many times the template's size.
+    'demo_max_instances' => (int) env('DEMO_MAX_INSTANCES', 2000),
 
     // Opt-in owner auto-login (any deployment), see AutoLoginForTrustedRequests. All off by default.
     // Account to sign in as; defaults to the demo account in demo mode. Never created, must already exist.

@@ -137,13 +137,14 @@ the only layout where a compromised web tier stays inside a container.
 - **Mitigations today.** Each visitor gets a private SQLite copy of a seeded template, keyed by an
   encrypted cookie; nobody sees anyone else's edits. The demo has its own `.env` with no GitHub token, so
   it runs local-only and never contacts GitHub. `DB_DATABASE` points at a dedicated fallback, never a
-  real database. Copies older than 24 hours are deleted daily. It runs from the production image, with
-  no bind mount.
-- **Known gap.** Every request without the demo cookie creates a new copy, so a script that discards
-  cookies can fill the disk before the daily cleanup runs.
+  real database. Every request without the demo cookie creates a copy, so their number is capped at
+  `DEMO_MAX_INSTANCES` (default 2000), evicting the least recently written; disk use is bounded by the
+  cap times the template's size. Copies older than 24 hours are also deleted daily. It runs from the
+  production image, with no bind mount.
 - **What to do.** Host the demo on its own checkout, ideally its own machine, never next to a real
-  instance's `.env`. Rate-limit it at your proxy or CDN, and keep `storage/demo-dbs` on a volume with
-  a size limit. See [demo-hosting.md](demo-hosting.md).
+  instance's `.env`. Size `DEMO_MAX_INSTANCES` to your disk. A flood of cookieless requests evicts real
+  visitors' copies early, so rate-limit the demo at your proxy or CDN too. See
+  [demo-hosting.md](demo-hosting.md).
 
 ## Data at rest
 

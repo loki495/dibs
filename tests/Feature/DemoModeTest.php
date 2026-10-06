@@ -85,6 +85,55 @@ it('reuses the same copy for a returning visitor instead of creating another one
     expect(glob("{$this->storagePath}/*.sqlite") ?: [])->toHaveCount(1);
 });
 
+it('never keeps more copies than demo_max_instances, deleting the least recently written first', function (): void {
+    config(['dibs.demo_max_instances' => 3]);
+    mkdir($this->storagePath, recursive: true);
+    foreach (['oldest' => 300, 'middle' => 200, 'newest' => 100] as $name => $age) {
+        copy($this->templatePath, "{$this->storagePath}/{$name}.sqlite");
+        touch("{$this->storagePath}/{$name}.sqlite", time() - $age);
+    }
+
+    $this->get('/login')->assertOk();
+
+    $remaining = array_map(basename(...), glob("{$this->storagePath}/*.sqlite") ?: []);
+    expect($remaining)->toHaveCount(3)
+        ->not->toContain('oldest.sqlite')
+        ->toContain('middle.sqlite', 'newest.sqlite');
+});
+
+it('keeps the count bounded when every request drops the cookie', function (): void {
+    config(['dibs.demo_max_instances' => 2]);
+
+    foreach (range(1, 5) as $ignored) {
+        $this->get('/login')->assertOk();
+    }
+
+    expect(glob("{$this->storagePath}/*.sqlite") ?: [])->toHaveCount(2);
+});
+
+it('evicts nothing while under the cap', function (): void {
+    config(['dibs.demo_max_instances' => 5]);
+
+    $this->get('/login')->assertOk();
+    $this->get('/login')->assertOk();
+
+    expect(glob("{$this->storagePath}/*.sqlite") ?: [])->toHaveCount(2);
+});
+
+it('gives an evicted visitor a fresh copy instead of an error', function (): void {
+    config(['dibs.demo_max_instances' => 1]);
+    $cookie = $this->get('/login')->getCookie('demo_instance_id');
+
+    $this->get('/login')->assertOk();
+    expect(glob("{$this->storagePath}/*.sqlite") ?: [])->toHaveCount(1);
+
+    $this->withCookie($cookie->getName(), $cookie->getValue())->get('/login')->assertOk();
+
+    $remaining = glob("{$this->storagePath}/*.sqlite") ?: [];
+    expect($remaining)->toHaveCount(1)
+        ->and(filesize($remaining[0]))->toBe(filesize($this->templatePath));
+});
+
 it('aborts with a clear error when the template is missing', function (): void {
     unlink($this->templatePath);
 

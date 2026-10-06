@@ -55,6 +55,11 @@ See `AutoLoginForTrustedRequests`.
   deletes per-visitor copies older than 24h from `storage/demo-dbs/`. It only
   ever touches `*.sqlite` files in that one configured directory. No destructive
   "wipe everything" command runs unattended anywhere in this design.
+- **A cap on copies**: every request without the cookie gets a new copy, so
+  `ResolveDemoDatabase` keeps at most `DEMO_MAX_INSTANCES` (default 2000) of them.
+  Making one more first deletes the least recently written, and a visitor whose
+  copy was evicted silently gets a fresh one. Disk use for `storage/demo-dbs/`
+  is therefore bounded by the cap times the template's size.
 - **A separate fallback database**: `DB_DATABASE` points at a harmless dedicated
   path, never `database/database.sqlite`, so nothing outside the per-visitor
   copies is ever served.
