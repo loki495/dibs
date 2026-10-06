@@ -5,7 +5,7 @@ declare(strict_types=1);
 $optionalId = static fn (?string $value): ?int => $value === null || $value === '' ? null : (int) $value;
 
 return [
-    'timezone' => env('DIBS_TIMEZONE', 'America/Los_Angeles'),
+    'timezone' => env('DIBS_TIMEZONE', 'UTC'),
     'trusted_proxies' => array_filter(explode(',', env('TRUSTED_PROXIES', ''))),
     // Seconds a Livewire request may run before the browser gives up on it, shows the reconnect banner and
     // frees the request queue. 0 disables the timeout (failed requests still show the banner).
@@ -14,6 +14,29 @@ return [
     // so quick ones don't flicker.
     'loading_indicator_delay_ms' => (int) env('DIBS_LOADING_INDICATOR_DELAY_MS', 150),
     'push_queue_ui_enabled' => (bool) env('DIBS_PUSH_QUEUE_UI_ENABLED', true),
+
+    // Whether this process can see the agents' PIDs (/proc of the host PID namespace) to verify claim
+    // liveness. docker-compose.yml sets it false for the web service, which runs without pid: host;
+    // there, claims show "liveness unverifiable" instead of being judged dead. See LinuxProcessLiveness.
+    'process_liveness' => (bool) env('DIBS_PROCESS_LIVENESS', true),
+
+    // dibs:claims:watch (the app container's main process) re-checks every live claim's process this
+    // often and records the result, so the web UI can show it. The UI ignores a recording older than
+    // stale_after_seconds (default three intervals) and shows "liveness unverifiable" instead.
+    'claim_liveness' => [
+        'watch_interval_seconds' => (int) env('DIBS_CLAIM_LIVENESS_INTERVAL', 30),
+        'stale_after_seconds' => (int) env('DIBS_CLAIM_LIVENESS_STALE_AFTER', 90),
+    ],
+
+    // Retry budget for a push-queue row whose GitHub call failed transiently (network, 5xx, rate
+    // limit). Each failure waits base * 2^(failures - 1) seconds, capped at backoff_cap_seconds, or
+    // until the time GitHub gives for a rate limit; the row needs attention once max_attempts
+    // calls have failed. The defaults spread 8 attempts over about two hours.
+    'push_queue' => [
+        'max_attempts' => (int) env('DIBS_PUSH_MAX_ATTEMPTS', 8),
+        'backoff_base_seconds' => (int) env('DIBS_PUSH_BACKOFF_BASE_SECONDS', 30),
+        'backoff_cap_seconds' => (int) env('DIBS_PUSH_BACKOFF_CAP_SECONDS', 3600),
+    ],
 
     // Where todo_report_bug files its issues. Unset (the default) leaves them unparented,
     // same as before this existed. See docs/agent-interface.md for the todo_report_bug tool.
@@ -43,6 +66,5 @@ return [
     // Account to sign in as; defaults to the demo account in demo mode. Never created, must already exist.
     'auto_login_email' => env('AUTO_LOGIN_EMAIL'),
     'auto_login_lan' => (bool) env('AUTO_LOGIN_LAN', false),
-    'auto_login_owner_email' => env('AUTO_LOGIN_OWNER_EMAIL'),
     'demo_login_email' => env('DEMO_LOGIN_EMAIL', 'demo@example.com'),
 ];

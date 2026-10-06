@@ -594,10 +594,6 @@ new class extends Component
             $this->selected = 0;
 
             return;
-        } catch (TodoRecordNotFoundException) {
-            $this->cancelEdit();
-
-            return;
         } catch (TodoStaleRevisionException) {
             $this->editError = 'This task was changed elsewhere since you started editing. Cancel, reopen it to see the latest, and apply your edit again.';
 
@@ -868,8 +864,9 @@ new class extends Component
                     @endforeach
                 </div>
             </nav>
-            @php($sidebarQueueCounts = config('dibs.push_queue_ui_enabled') && auth()->check() ? app(\App\Actions\DescribeGitHubPushQueue::class)->counts() : ['actionable' => 0, 'pending' => 0])
-            @if (config('dibs.push_queue_ui_enabled'))
+            @php($showQueue = \App\Support\GitHubMirror::showsPushQueue())
+            @php($sidebarQueueCounts = $showQueue && auth()->check() ? app(\App\Actions\DescribeGitHubPushQueue::class)->counts() : ['actionable' => 0, 'pending' => 0])
+            @if ($showQueue)
                 <a href="{{ route('push-queue') }}" class="mt-4 flex min-h-9 cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900">
                     <flux:icon.arrow-path-rounded-square class="size-4 shrink-0" /><span class="flex-1">{{ __('Push queue') }}</span>
                     @if ($sidebarQueueCounts['actionable'] > 0)
@@ -888,6 +885,8 @@ new class extends Component
             <div class="mt-4 border-t border-slate-200 px-3 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800" aria-live="polite">
                 @if ($sync?->last_success_at)
                     <span class="mr-1 inline-block size-1.5 rounded-full bg-teal-600"></span>{{ __('Last synced :time', ['time' => $sync->last_success_at->diffForHumans()]) }}
+                @elseif (! $mirrored)
+                    {{ __('Local only · not mirrored to GitHub') }}
                 @else
                     {{ __('Waiting for the first import') }}
                 @endif
@@ -971,7 +970,7 @@ new class extends Component
                             <div wire:key="deleted-row-{{ $row->id }}" role="listitem" class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 last:border-0 dark:border-slate-800/70">
                                 <div class="min-w-0">
                                     <span class="block truncate text-sm text-slate-500 line-through dark:text-slate-400">{{ $row->title }}</span>
-                                    <span class="text-[11px] text-slate-500" title="{{ $row->updated_at->diffForHumans() }}">#{{ $row->github_number }} · {{ __('Deleted :date', ['date' => $row->updated_at->copy()->timezone((string) config('dibs.timezone'))->format('M j, Y')]) }}</span>
+                                    <span class="text-[11px] text-slate-500" title="{{ $row->updated_at->diffForHumans() }}">{{ \App\Support\IssueNumber::label($row->github_number) }}{{ $row->github_number !== null ? ' · ' : '' }}{{ __('Deleted :date', ['date' => $row->updated_at->copy()->timezone((string) config('dibs.timezone'))->format('M j, Y')]) }}</span>
                                 </div>
                                 <flux:button type="button" wire:click="restoreIssue({{ $row->id }})" size="sm">{{ __('Restore') }}</flux:button>
                             </div>
@@ -1019,7 +1018,7 @@ new class extends Component
                             </div>
                         @else
                             <div wire:key="issue-row-{{ $row['id'] }}" data-issue-number="{{ $row['number'] }}" role="listitem" x-show="visible(@js($row['ancestors']))" x-cloak class="border-b border-slate-100 last:border-0 dark:border-slate-800/70">
-                                <div data-project-color="{{ $row['projectColor'] }}" role="button" tabindex="0" wire:click="{{ $bulkMode ? 'toggleBulkSelect('.$row['id'].')' : "\$set('selected', {$row['id']})" }}" @keydown.enter.prevent="$wire.set('selected', {{ $row['id'] }})" @keydown.space.prevent="$wire.set('selected', {{ $row['id'] }})" aria-label="{{ __('Open issue :number: :title', ['number' => $row['number'], 'title' => $row['title']]) }}" class="flex min-h-16 cursor-pointer items-start gap-1 py-2 pr-3 hover:brightness-[.98] dark:hover:brightness-125" style="padding-left: calc(0.5rem + {{ min($row['depth'], 5) }} * 1rem); @if ($row['projectColor']) background-color: color-mix(in srgb, {{ $row['projectColor'] }} {{ min(9 + ($row['depth'] * 5), 34) }}%, transparent); @endif">
+                                <div data-project-color="{{ $row['projectColor'] }}" role="button" tabindex="0" wire:click="{{ $bulkMode ? 'toggleBulkSelect('.$row['id'].')' : "\$set('selected', {$row['id']})" }}" @keydown.enter.prevent="$wire.set('selected', {{ $row['id'] }})" @keydown.space.prevent="$wire.set('selected', {{ $row['id'] }})" aria-label="{{ __('Open issue :task', ['task' => \App\Support\IssueNumber::withTitle($row['number'], $row['title'])]) }}" class="flex min-h-16 cursor-pointer items-start gap-1 py-2 pr-3 hover:brightness-[.98] dark:hover:brightness-125" style="padding-left: calc(0.5rem + {{ min($row['depth'], 5) }} * 1rem); @if ($row['projectColor']) background-color: color-mix(in srgb, {{ $row['projectColor'] }} {{ min(9 + ($row['depth'] * 5), 34) }}%, transparent); @endif">
                                     @if ($bulkMode)
                                         <input type="checkbox" wire:click.stop="toggleBulkSelect({{ $row['id'] }})" @checked(in_array($row['id'], $bulkSelected, true)) class="mt-3.5 size-4 shrink-0 self-start rounded border-slate-300 text-teal-600 focus:ring-teal-600 dark:border-slate-600" aria-label="{{ __('Select :title', ['title' => $row['title']]) }}">
                                     @endif
@@ -1029,9 +1028,9 @@ new class extends Component
                                     <div class="min-w-0 flex-1 py-2 text-left">
                                         <span @class(['block break-words text-sm leading-6', 'font-medium' => $row['container'], 'text-slate-500 dark:text-slate-400' => $row['context'], 'line-through opacity-70' => $row['state'] === 'CLOSED'])>{{ $row['title'] }}</span>
                                         <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                            <span>#{{ $row['number'] }}</span>
+                                            @if ($row['number'] !== null)<span>{{ \App\Support\IssueNumber::label($row['number']) }}</span>@endif
                                             @if ($row['claim'])
-                                                <span data-claim-pill="{{ $row['id'] }}" title="{{ __('Claimed by :agent', ['agent' => $row['claim']['agentName']]) }}" @class(['inline-flex items-center rounded-full border px-1.5 py-0.5 font-medium', 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400' => $row['claim']['isExpired'], 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400' => ! $row['claim']['isExpired'] && $row['claim']['isCurrentlyAlive'] === false, 'border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-400' => ! $row['claim']['isExpired'] && $row['claim']['isCurrentlyAlive'] !== false])>{{ $row['claim']['agentName'] }}</span>
+                                                <span data-claim-pill="{{ $row['id'] }}" title="{{ __('Claimed by :agent', ['agent' => $row['claim']['agentName']]) }}" @class(['inline-flex items-center rounded-full border px-1.5 py-0.5 font-medium', 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400' => $row['claim']['isExpired'], 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400' => ! $row['claim']['isExpired'] && $row['claim']['displayAlive'] === false, 'border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-400' => ! $row['claim']['isExpired'] && $row['claim']['displayAlive'] !== false])>{{ $row['claim']['agentName'] }}</span>
                                             @endif
                                             @if ($row['parentTitle'] ?? null)<span>{{ __('↳ :title', ['title' => $row['parentTitle']]) }}</span>@endif
                                             @if ($row['outsideArea'])<span>{{ __('Parent from another area') }}</span>@elseif ($row['context'])<span>{{ __('Parent context') }}</span>@endif
@@ -1162,7 +1161,7 @@ new class extends Component
                     $membership = $option->projectItems->first();
                     $context = $membership ? ' — '.$membership->project->title.($membership->groupOption ? ' / '.$membership->groupOption->name : '') : '';
 
-                    return '#'.$option->github_number.' '.$option->title.$context;
+                    return \App\Support\IssueNumber::withTitle($option->github_number, $option->title).$context;
                 },
                 'mode' => 'single',
                 'valueModel' => 'bulkParent',
@@ -1202,7 +1201,7 @@ new class extends Component
                 @if ($deletingIssueChildrenCount > 0)
                     <flux:text class="mt-1">{{ trans_choice('This task has :count sub-task. What should happen to it?|This task has :count sub-tasks. What should happen to them?', $deletingIssueChildrenCount, ['count' => $deletingIssueChildrenCount]) }}</flux:text>
                 @else
-                    <flux:text class="mt-1">{{ __('This deletes the task on GitHub. You can undo it right after, as long as it has not synced yet.') }}</flux:text>
+                    <flux:text class="mt-1">{{ $mirrored ? __('This deletes the task on GitHub. You can undo it right after, as long as it has not synced yet.') : __('This deletes the task. You can undo it right after.') }}</flux:text>
                 @endif
             </div>
             @if ($deleteError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $deleteError }}</p>@endif

@@ -13,26 +13,38 @@ use Illuminate\Support\Carbon;
  * before honoring a heartbeat, release, or takeover decision.
  *
  * Container/PID-namespace note: this only works when the running process's /proc reflects the same
- * PID namespace as the process it's checking (the `dibs-app` container runs with `pid: "host"` for
- * exactly this reason). If /proc/<pid> isn't readable at all, callers must treat that as "liveness
- * could not be verified", not as "process is dead" — see isVerifiable().
+ * PID namespace as the process it's checking (the `app` service, which runs the MCP server and the
+ * CLI, has `pid: "host"` for exactly this reason). The web service doesn't, so it runs with
+ * DIBS_PROCESS_LIVENESS=false: its /proc only shows its own container, where a host PID is either
+ * missing or a different process. When liveness can't be checked, callers must treat that as
+ * "could not be verified", never as "process is dead" — see currentlyAlive().
  */
 class LinuxProcessLiveness
 {
     /** USER_HZ is 100 on effectively all modern Linux kernels; avoids a getconf subprocess per check. */
     private const int CLOCK_TICKS_PER_SECOND = 100;
 
-    public function __construct(private readonly string $procPath = '/proc') {}
+    public function __construct(private readonly string $procPath = '/proc', private readonly bool $enabled = true) {}
 
-    /** Whether /proc is readable at all in this environment (false inside most unprivileged containers without pid:host). */
+    /**
+     * Whether this process can check the agents' processes at all: enabled, and /proc readable. PID 1's
+     * stat stands in for "other users' processes": /proc mounted with hidepid hides them from a
+     * non-root user, and a missing process must then read as unknown, not dead.
+     */
     public function isVerifiable(): bool
     {
-        return is_readable($this->procPath.'/stat') && is_readable($this->procPath.'/uptime');
+        return $this->enabled
+            && is_readable($this->procPath.'/stat')
+            && is_readable($this->procPath.'/uptime')
+            && is_readable($this->procPath.'/1/stat');
     }
 
     /** The real start time of $pid right now, or null if the process doesn't exist or /proc can't be read. */
     public function startedAt(int $pid): ?Carbon
     {
+        if (! $this->enabled) {
+            return null;
+        }
         $bootTime = $this->bootTime();
         if ($bootTime === null) {
             return null;
@@ -69,6 +81,12 @@ class LinuxProcessLiveness
 
         // Tolerate rounding: ticks give ~10ms resolution, boot-time arithmetic can be off by a second.
         return abs($actual->getTimestamp() - $expectedStartedAt->getTimestamp()) <= 2;
+    }
+
+    /** isAlive(), or null when this environment can't check processes at all (see isVerifiable()). */
+    public function currentlyAlive(int $pid, Carbon $expectedStartedAt): ?bool
+    {
+        return $this->isVerifiable() ? $this->isAlive($pid, $expectedStartedAt) : null;
     }
 
     private function bootTime(): ?int

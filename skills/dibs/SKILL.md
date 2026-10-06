@@ -1,12 +1,12 @@
 ---
 name: dibs
 description: How an AI agent should use a Dibs task tracker over its MCP server (todo_* tools) - picking up work cold, filing tasks and plans, claiming and completing tasks without colliding with other agents, and recording research and lessons. Use whenever the dibs MCP server is available and the work involves tracked tasks, multi-step plans, or knowledge worth keeping.
-compatibility: Requires the Dibs MCP server (php artisan mcp:start todo). The php artisan todo:agent:* commands are the CLI fallback.
+compatibility: Requires the Dibs MCP server (php artisan mcp:start todo). The php artisan todo:agent:* commands are a partial CLI fallback.
 ---
 
 # Working with Dibs
 
-Dibs is a task and knowledge tracker built for agents. Local SQLite is authoritative; GitHub is an asynchronous mirror, so a write succeeds locally at once and is pushed later. The tools are the hand-off between sessions: nothing needs to be remembered in chat, and anything worth keeping between sessions belongs in Dibs, not in the conversation.
+Dibs is a task and knowledge tracker built for agents. Local SQLite is authoritative; GitHub is an optional asynchronous mirror, so a write succeeds locally at once and is pushed later, or never on a local-only instance (`todo_status` reports `mode: local`). The tools are the hand-off between sessions: nothing needs to be remembered in chat, and anything worth keeping between sessions belongs in Dibs, not in the conversation.
 
 ## Start of a session
 
@@ -35,7 +35,7 @@ Before starting work that may already have a plan, look for an open issue labele
 - Name any label you create with spaces, not hyphens (`needs research`, not `needs-research`); labels accept spaces. Labels are always stored lowercase and a label filter ignores case, so any casing resolves to the same label.
 - Apply the `agent task` label to a task an agent could complete on its own. Include `"agent task"` in `labelNames`; it is attached, and created on first use.
 - Multi-step work: use `todo_scaffold_plan` to create the plan and its initial child tasks in one atomic call, and add more with `todo_create(parentId: <plan id>)` as scope grows. Break the plan into child tasks as soon as its scope is known, even if you will do it all yourself. Open children are what is left; closed ones are done.
-- Pass an `idempotencyKey` on any create or revise so a retry returns the original result instead of duplicating it.
+- Pass an `idempotencyKey` on any create or revise so a retry returns the original result instead of duplicating it. The write and its receipt commit together, so a failed call leaves nothing behind and is safe to retry with the same key. Use a fresh key per intended write: reusing one for a different kind of write (a comment key on a create) is rejected.
 - If you notice a follow-up while busy with something else, file it as a task right then instead of mentioning it only in chat.
 
 ## Claim, work, finish
@@ -85,4 +85,4 @@ When you find something durable, file it as a knowledge issue instead of leaving
 | Who holds a task | `todo_claim_status` |
 | Report tooling problem | `todo_report_bug` |
 
-If the MCP server cannot be reached, the same operations exist as `php artisan todo:agent:<command>` inside the app container. Those commands need an explicit `--pid` for the calling agent. See `docs/agent-interface.md` for the full contract.
+If the MCP server cannot be reached, a subset of the operations exists as CLI commands inside the `app` container: `php artisan todo:agent:` followed by `list`, `show`, `claim`, `heartbeat`, `release`, `create`, `update`, `comment` or `complete`. The rest (`todo_status`, `todo_context`, `todo_metadata`, `todo_search`, `todo_peek`, `todo_queue_status`, `todo_scaffold_plan`, `todo_reopen`, `todo_claim_status`, `todo_report_bug`) are MCP-only. The claim-scoped commands (`claim`, `heartbeat`, `release`, `complete`) need an explicit `--pid` for the calling agent, and `heartbeat`, `release` and `complete` also need `--token`. See `docs/agent-interface.md` for the full contract.

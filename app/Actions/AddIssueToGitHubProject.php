@@ -20,7 +20,7 @@ class AddIssueToGitHubProject
             throw new GitHubSyncException('The selected task or area is not available in the local snapshot. Refresh and try again.');
         }
 
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id updatedAt } } }',
             ['projectId' => $project->github_node_id, 'contentId' => $issue->github_node_id],
         );

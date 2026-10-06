@@ -32,8 +32,10 @@ Off by default, and works on any Dibs deployment, not just the demo. `AUTO_LOGIN
 to sign in as (the demo defaults to `demo@example.com`). `AUTO_LOGIN_LAN=true` signs it in for requests that carry
 no Cloudflare edge header (`CF-Connecting-IP`/`CF-Ray`) and come from a private address; only enable it when nothing
 but your tunnel and your LAN can reach the app, since that is what makes "no Cloudflare header" mean "on the LAN".
-`AUTO_LOGIN_OWNER_EMAIL=you@example.com` does the same when Cloudflare Access itself asserts that email
-(`Cf-Access-Authenticated-User-Email`). Neither trusts `X-Forwarded-For`. See `AutoLoginForTrustedRequests`.
+Requests arriving through Cloudflare are never auto-logged-in. The private-address check uses Laravel's client IP. Behind a reverse proxy
+that is the proxy's own Docker address unless `TRUSTED_PROXIES` lists it, so set `TRUSTED_PROXIES` (below) before
+enabling `AUTO_LOGIN_LAN`, and never set it to `*`. The README's "Owner auto-login" section has the full conditions.
+See `AutoLoginForTrustedRequests`.
 
 ## Architecture
 
@@ -64,7 +66,9 @@ but your tunnel and your LAN can reach the app, since that is what makes "no Clo
   on disk, whichever image tag is "running".
 - **Isolated env**: the demo's `.env` is a completely separate file from any real
   instance's `.env`, so a real `GITHUB_TOKEN`/`DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`
-  can never leak into the demo.
+  can never leak into the demo. With those left blank the demo runs local-only: `DemoSeeder` seeds
+  into the local repository record, a visitor's new tasks and labels land there too, and nothing is
+  ever queued for GitHub (the push-queue page shows only the seeder's own showcase rows).
 - **Unambiguous names**: containers and the compose project are `dibs-demo-*`, so
   the demo can't be confused with a real instance in `docker ps` on a shared host.
 
@@ -107,7 +111,7 @@ git clone https://github.com/loki495/dibs.git ~/dibs-demo   # first time only
 cd ~/dibs-demo
 cp .env.example .env
 php -r "echo 'APP_KEY=base64:'.base64_encode(random_bytes(32)).PHP_EOL;" >> .env  # or generate after first boot instead
-# Edit .env: APP_ENV=demo, APP_URL=https://<demo-host>, APP_PORT=8112,
+# Edit .env: APP_ENV=demo, APP_URL=https://<demo-host>, SESSION_SECURE_COOKIE=true, APP_PORT=8112,
 # DIBS_DEMO_MODE=true, DEMO_DB_TEMPLATE_PATH=/var/www/html/storage/demo-template.sqlite,
 # DEMO_DB_STORAGE_PATH=/var/www/html/storage/demo-dbs, DB_DATABASE pointed at a harmless
 # dedicated fallback path (not database/database.sqlite), GITHUB_TOKEN/DIBS_GITHUB_OWNER/
@@ -121,8 +125,7 @@ No manual template-build step: `docker/entrypoint-prod.sh` runs
 
 ### TRUSTED_PROXIES: the mixed-content trap
 
-`TRUSTED_PROXIES` is not copy-pasteable from `.env.example`. Its default
-(`172.18.0.0/16`) is just one common Docker network range. It must list the
+`TRUSTED_PROXIES` is blank in `.env.example`. Behind a proxy it must list the
 demo's own Docker network subnet, plus `<lan-ip>/32` for any LAN reverse proxy
 that forwards to it:
 

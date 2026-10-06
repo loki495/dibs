@@ -18,6 +18,14 @@
         </include>
     </source>
     <php>
+        <!-- Auto-login is opt-in per deployment; a developer's own AUTO_LOGIN_* must not leak into tests.
+             <server> as well as <env>, since Laravel reads $_SERVER first and a container's real environment lands there. -->
+        <env name="AUTO_LOGIN_EMAIL" value="" force="true"/>
+        <env name="AUTO_LOGIN_LAN" value="false" force="true"/>
+        <env name="DEMO_LOGIN_EMAIL" value="demo@example.com" force="true"/>
+        <server name="AUTO_LOGIN_EMAIL" value="" force="true"/>
+        <server name="AUTO_LOGIN_LAN" value="false" force="true"/>
+        <server name="DEMO_LOGIN_EMAIL" value="demo@example.com" force="true"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
@@ -26,6 +34,8 @@
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
+        <env name="DIBS_GITHUB_OWNER" value="example-owner" force="true"/>
+        <env name="DIBS_GITHUB_REPO" value="example-tasks" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

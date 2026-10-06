@@ -7,6 +7,7 @@ use App\Actions\HeartbeatTaskClaim;
 use App\Actions\ReleaseTaskClaim;
 use App\Models\Issue;
 use App\Models\TaskClaim;
+use App\Services\Process\LinuxProcessLiveness;
 
 it('claims an available task, verifying the caller pid is genuinely alive', function (): void {
     $issue = Issue::factory()->create();
@@ -98,4 +99,19 @@ it('refuses to renew a claim once its process is no longer verifiably alive', fu
 
     expect(fn () => app(HeartbeatTaskClaim::class)->handle($issue->id, getmypid(), $result['capability_token'], 30))
         ->toThrow(DomainException::class, 'no longer verifiably alive');
+});
+
+it('neither takes over nor refuses to renew a verified claim from a process that cannot check liveness', function (): void {
+    $issue = Issue::factory()->create();
+    $result = app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 5);
+    $originalExpiry = $result['claim']->expires_at;
+    // Stored start time no longer matches, but the web tier (no host PIDs) can't tell either way.
+    $result['claim']->agentSession->update(['process_started_at' => now()->subDays(30)]);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    expect(fn () => app(ClaimTaskForAgent::class)->handle($issue, 'claude', getmypid(), 30))
+        ->toThrow(DomainException::class, 'currently claimed');
+
+    $renewed = app(HeartbeatTaskClaim::class)->handle($issue->id, getmypid(), $result['capability_token'], 30);
+    expect($renewed->expires_at->greaterThan($originalExpiry))->toBeTrue();
 });

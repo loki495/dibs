@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Mcp\ClientIdentity;
 use App\Services\Activity\ActivityContext;
+use App\Services\Process\LinuxProcessLiveness;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskStarting;
 use Illuminate\Http\Middleware\TrustProxies;
@@ -19,6 +20,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->scoped(ActivityContext::class);
         $this->app->singleton(ClientIdentity::class);
+        $this->app->bind(LinuxProcessLiveness::class, fn (): LinuxProcessLiveness => new LinuxProcessLiveness(enabled: (bool) config('dibs.process_liveness')));
     }
 
     /**

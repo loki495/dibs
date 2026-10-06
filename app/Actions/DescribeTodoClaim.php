@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace App\Actions;
 
 use App\Models\TaskClaim;
-use App\Services\Process\LinuxProcessLiveness;
 
 class DescribeTodoClaim
 {
-    public function __construct(private readonly LinuxProcessLiveness $liveness) {}
+    public function __construct(private readonly ResolveClaimLiveness $liveness) {}
 
     /** @return array<string, mixed>|null */
     public function handle(int $issueId): ?array
@@ -20,9 +19,7 @@ class DescribeTodoClaim
         }
 
         $session = $claim->agentSession;
-        $isCurrentlyAlive = $session->is_verified_live && $session->pid !== null && $session->process_started_at !== null
-            ? $this->liveness->isAlive($session->pid, $session->process_started_at)
-            : null;
+        $liveness = $this->liveness->handle($claim);
 
         return [
             'claimId' => $claim->id,
@@ -32,7 +29,9 @@ class DescribeTodoClaim
             'pid' => $session->pid,
             'processStartedAt' => $session->process_started_at?->toAtomString(),
             'isVerifiedLive' => $session->is_verified_live,
-            'isCurrentlyAlive' => $isCurrentlyAlive,
+            'isCurrentlyAlive' => $liveness['isCurrentlyAlive'],
+            'recordedLiveness' => $liveness['recordedLiveness'],
+            'displayAlive' => $liveness['displayAlive'],
             'isExpired' => $claim->expires_at->isPast(),
             'lastSeenAt' => $session->last_seen_at->toAtomString(),
             'expiresAt' => $claim->expires_at->toAtomString(),

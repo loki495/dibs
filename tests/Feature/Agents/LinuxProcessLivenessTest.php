@@ -51,6 +51,23 @@ it('reports unverifiable when /proc is not readable in this environment', functi
     expect($liveness->startedAt(getmypid()))->toBeNull();
 });
 
+it('reports unverifiable when other users\' processes are hidden, as /proc mounted with hidepid does', function (): void {
+    $procPath = sys_get_temp_dir().'/fake-proc-'.uniqid();
+    mkdir($procPath, recursive: true);
+    file_put_contents($procPath.'/stat', "btime 1000000000\n");
+    file_put_contents($procPath.'/uptime', '100.00 50.00');
+
+    $liveness = new LinuxProcessLiveness($procPath);
+
+    expect($liveness->isVerifiable())->toBeFalse()
+        ->and($liveness->currentlyAlive(999_999_999, now()))->toBeNull();
+
+    mkdir($procPath.'/1');
+    file_put_contents($procPath.'/1/stat', '1 (init) S '.str_repeat('1 ', 20));
+
+    expect($liveness->isVerifiable())->toBeTrue();
+});
+
 it('reports verifiable when the real /proc is readable', function (): void {
     expect((new LinuxProcessLiveness)->isVerifiable())->toBeTrue();
 });
@@ -87,3 +104,32 @@ it('returns null boot time when /proc/stat has no btime line', function (): void
 
     expect($liveness->startedAt(123))->toBeNull();
 });
+
+it('reports unverifiable and knows no start time when disabled, even with a readable /proc', function (): void {
+    $liveness = new LinuxProcessLiveness(enabled: false);
+
+    expect($liveness->isVerifiable())->toBeFalse()
+        ->and($liveness->startedAt(getmypid()))->toBeNull();
+});
+
+it('reports currentlyAlive as null when it cannot check, never false', function (): void {
+    $actual = (new LinuxProcessLiveness)->startedAt(getmypid());
+
+    expect((new LinuxProcessLiveness(enabled: false))->currentlyAlive(getmypid(), $actual))->toBeNull()
+        ->and((new LinuxProcessLiveness(sys_get_temp_dir().'/nonexistent-proc-'.uniqid()))->currentlyAlive(getmypid(), $actual))->toBeNull();
+});
+
+it('reports currentlyAlive as true or false when it can check', function (): void {
+    $liveness = new LinuxProcessLiveness;
+    $actual = $liveness->startedAt(getmypid());
+
+    expect($liveness->currentlyAlive(getmypid(), $actual))->toBeTrue()
+        ->and($liveness->currentlyAlive(getmypid(), now()->subDays(30)))->toBeFalse()
+        ->and($liveness->currentlyAlive(999_999_999, now()))->toBeFalse();
+});
+
+it('resolves from the container with DIBS_PROCESS_LIVENESS applied', function (bool $enabled): void {
+    config(['dibs.process_liveness' => $enabled]);
+
+    expect(app(LinuxProcessLiveness::class)->isVerifiable())->toBe($enabled);
+})->with([true, false]);

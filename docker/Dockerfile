@@ -1,6 +1,10 @@
 FROM composer:2 AS composer
 FROM php:8.5-apache AS base
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+# www-data's UID/GID match the host user who owns the bind-mounted checkout (DIBS_UID/DIBS_GID in .env,
+# written by docker/setup.sh), so the containers can write it.
+ARG DIBS_UID=1000
+ARG DIBS_GID=1000
 COPY docker/setup-dev-container.sh /tmp/setup.sh
 RUN bash /tmp/setup.sh
 WORKDIR /var/www/html

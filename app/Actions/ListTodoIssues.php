@@ -50,7 +50,9 @@ class ListTodoIssues
                     ->whereHas('project', fn ($project) => $project->where('is_available', true)),
                 'projectItems.project', 'projectItems.groupOption', 'projectItems.priorityOption',
             ])
+            ->orderByRaw('github_number is null')
             ->orderBy('github_number')
+            ->orderBy('id')
             ->paginate($perPage, ['*'], 'page', $page);
 
         return [

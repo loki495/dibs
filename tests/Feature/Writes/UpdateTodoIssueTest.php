@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\UpdateTodoIssue;
-use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
@@ -99,11 +98,11 @@ it('refuses an unavailable or unknown issue', function (): void {
     expect(GitHubPushQueueItem::query()->count())->toBe(0);
 });
 
-it('refuses to save when the repository is not configured locally', function (): void {
+it('refuses to save when the configured GitHub repository has not been imported yet', function (): void {
     $issue = Issue::factory()->create(['title' => 'Old title', 'body' => 'Old body', 'revision' => 3]);
 
     expect(fn () => app(UpdateTodoIssue::class)->handle(id: $issue->id, expectedRevision: 3, title: 'New'))
-        ->toThrow(TodoRecordNotFoundException::class, 'The repository is not configured or not available locally. Refresh and try again.');
+        ->toThrow(TodoValidationException::class, 'GitHub mirroring is configured for example-owner/example-tasks, but that repository has not been imported yet.');
 
     expectUntouched($issue);
 });

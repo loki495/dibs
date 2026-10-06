@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions;
 
 use App\Exceptions\TodoValidationException;
-use App\Models\GitHubRepository;
 use App\Models\Label;
 use App\Support\LabelName;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  */
 class CreateLabel
 {
-    public function __construct(private readonly ResolveLabels $resolveLabels) {}
+    public function __construct(private readonly ResolveLabels $resolveLabels, private readonly ResolveActiveRepository $activeRepository) {}
 
     public function handle(string $name): Label
     {
@@ -26,10 +25,7 @@ class CreateLabel
             throw new TodoValidationException('A label needs a name.');
         }
 
-        $repository = GitHubRepository::query()->where('full_name', config('github.owner').'/'.config('github.repository'))->first();
-        if (! $repository instanceof GitHubRepository) {
-            throw new TodoValidationException('The repository is not configured or not available locally. Refresh and try again.');
-        }
+        $repository = $this->activeRepository->handle();
 
         $duplicate = Label::query()->where('repository_id', $repository->id)->whereRaw('LOWER(name) = ?', [$normalized])->exists();
         if ($duplicate) {

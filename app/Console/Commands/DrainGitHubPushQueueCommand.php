@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\DrainGitHubPushQueue;
+use App\Support\GitHubMirror;
 use Illuminate\Console\Command;
 
 class DrainGitHubPushQueueCommand extends Command
@@ -16,6 +17,12 @@ class DrainGitHubPushQueueCommand extends Command
 
     public function handle(DrainGitHubPushQueue $drain): int
     {
+        if (! GitHubMirror::enabled()) {
+            $this->info('GitHub mirroring is not configured (local-only); nothing to push.');
+
+            return self::SUCCESS;
+        }
+
         $token = (string) config('github.token');
         if ($token === '') {
             $this->error('Supply GITHUB_TOKEN to drain the push queue.');

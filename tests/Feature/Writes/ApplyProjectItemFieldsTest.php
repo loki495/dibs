@@ -5,9 +5,15 @@ declare(strict_types=1);
 use App\Actions\ApplyProjectItemFields;
 use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
+use App\Models\GitHubRepository;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
+
+// Pushes are queued only once a repository has been imported (App\Support\GitHubMirror::mirrored()).
+beforeEach(function (): void {
+    GitHubRepository::factory()->create();
+});
 
 function optionFor(GitHubProject $project, string $semanticKey): ProjectFieldOption
 {

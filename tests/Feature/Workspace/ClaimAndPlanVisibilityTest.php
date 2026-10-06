@@ -8,6 +8,7 @@ use App\Models\Issue;
 use App\Models\Label;
 use App\Models\TaskClaim;
 use App\Models\User;
+use App\Services\Process\LinuxProcessLiveness;
 use Livewire\Livewire;
 
 it('shows an active claim with a release action', function (): void {
@@ -16,6 +17,30 @@ it('shows an active claim with a release action', function (): void {
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
         ->assertSee('Claimed by codex')->assertSee('Release claim');
+});
+
+it('shows the watcher\'s recorded liveness in the detail panel where host PIDs are not visible', function (?bool $recorded, int $ageSeconds, string $expected): void {
+    $this->freezeSecond();
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    TaskClaim::query()->sole()->update(['liveness_alive' => $recorded, 'liveness_checked_at' => $recorded === null ? null : now()->subSeconds($ageSeconds)]);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertSee('Claimed by codex')->assertSee($expected);
+})->with([
+    'recorded alive' => [true, 20, 'alive · checked 20 seconds ago'],
+    'recorded gone' => [false, 20, 'process gone · checked 20 seconds ago'],
+    'never recorded' => [null, 0, '(liveness unverifiable)'],
+    'stale recording' => [true, 600, '(liveness unverifiable)'],
+]);
+
+it('shows no liveness note for a claim it checked directly and found alive', function (): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertSee('Claimed by codex')->assertDontSee('(liveness unverifiable)')->assertDontSeeHtml('data-claim-liveness');
 });
 
 it('shows a claimed pill on the task list row without opening the detail panel', function (): void {

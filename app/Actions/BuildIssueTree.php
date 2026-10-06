@@ -9,7 +9,7 @@ use App\Models\Issue;
 use App\Models\Label;
 use App\Models\SyncState;
 use App\Models\TaskClaim;
-use App\Services\Process\LinuxProcessLiveness;
+use App\Support\GitHubMirror;
 use App\Support\ProjectColor;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
@@ -18,7 +18,7 @@ class BuildIssueTree
 {
     private const array TREE_SORTS = ['project', 'group'];
 
-    public function __construct(private readonly LinuxProcessLiveness $liveness) {}
+    public function __construct(private readonly ResolveClaimLiveness $liveness) {}
 
     /**
      * @param  list<string>  $labels
@@ -30,7 +30,7 @@ class BuildIssueTree
             'labels' => fn ($query) => $query->where('is_available', true),
             'projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')->whereHas('project', fn ($project) => $project->where('is_available', true)),
             'projectItems.project', 'projectItems.groupOption', 'projectItems.priorityOption', 'projectItems.statusOption',
-        ])->orderBy('sibling_position')->orderBy('github_number')->get();
+        ])->orderBy('sibling_position')->orderByRaw('github_number is null')->orderBy('github_number')->orderBy('id')->get();
         $containerIds = $issues->pluck('parent_issue_id')->filter()->flip()->all();
         $requiresParent = in_array('parent', $labels, true);
         $requestedLabels = array_values(array_filter($labels, fn (string $label): bool => $label !== 'parent'));
@@ -123,7 +123,8 @@ class BuildIssueTree
             'areaCounts' => $areaCounts, 'taskCount' => $taskCount, 'dailyCount' => $dailyCount,
             'matchCount' => count(array_filter($matches)), 'groups' => $groups, 'labelOptions' => $labelOptions,
             'filtered' => $search !== '' || $group !== 0 || $labels !== [] || $priority !== 0 || $view !== 'tasks', 'today' => $today,
-            'sync' => SyncState::query()->where('resource_key', 'github:'.config('github.owner').'/'.config('github.repository'))->first()];
+            'mirrored' => GitHubMirror::mirrored(),
+            'sync' => SyncState::query()->where('resource_key', 'github:'.GitHubMirror::fullName())->first()];
     }
 
     /** @param array<int, array<string, mixed>> $nodes
@@ -200,12 +201,14 @@ class BuildIssueTree
     private function buildFlatRows(array $nodes, array $matches, string $sortBy, int $area): array
     {
         $ids = array_keys(array_filter($matches));
-        $sortKey = fn (int $id): int => match ($sortBy) {
-            'newest_first' => -$nodes[$id]['number'],
-            'newest_last' => $nodes[$id]['number'],
-            default => $this->minPriority($nodes[$id], $area),
+        // Numbered issues first by number, then local-only ones (no GitHub number yet) by local id.
+        $age = fn (int $id): array => $nodes[$id]['number'] === null ? [1, $id] : [0, $nodes[$id]['number']];
+        $sortKey = fn (int $id): array => match ($sortBy) {
+            'newest_first' => [$age($id)[0], -$age($id)[1]],
+            'newest_last' => $age($id),
+            default => [$this->minPriority($nodes[$id], $area)],
         };
-        usort($ids, fn (int $left, int $right): int => $sortKey($left) <=> $sortKey($right) ?: $nodes[$left]['number'] <=> $nodes[$right]['number']);
+        usort($ids, fn (int $left, int $right): int => $sortKey($left) <=> $sortKey($right) ?: $age($left) <=> $age($right));
 
         return array_map(function (int $id) use ($nodes): array {
             $node = $nodes[$id];
@@ -376,15 +379,13 @@ class BuildIssueTree
     /** @return array<string, mixed> */
     private function summarizeClaim(TaskClaim $claim): array
     {
-        $session = $claim->agentSession;
-        $isCurrentlyAlive = $session->is_verified_live && $session->pid !== null && $session->process_started_at !== null
-            ? $this->liveness->isAlive($session->pid, $session->process_started_at)
-            : null;
+        $liveness = $this->liveness->handle($claim);
 
         return [
-            'agentName' => $session->agent_name,
+            'agentName' => $claim->agentSession->agent_name,
             'isExpired' => $claim->expires_at->isPast(),
-            'isCurrentlyAlive' => $isCurrentlyAlive,
+            'isCurrentlyAlive' => $liveness['isCurrentlyAlive'],
+            'displayAlive' => $liveness['displayAlive'],
         ];
     }
 }

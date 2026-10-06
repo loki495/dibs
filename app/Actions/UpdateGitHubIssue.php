@@ -22,7 +22,7 @@ class UpdateGitHubIssue
             throw new GitHubSyncException('The selected task is not available in the local snapshot. Refresh and try again.');
         }
 
-        $data = (new GitHubClient($token))->query(
+        $data = new GitHubClient($token)->query(
             'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason closedAt url updatedAt } } }',
             ['issueId' => $issue->github_node_id, 'title' => $title, 'body' => $body],
         );

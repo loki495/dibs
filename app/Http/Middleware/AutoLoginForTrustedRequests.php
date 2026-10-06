@@ -19,8 +19,8 @@ use Symfony\Component\HttpFoundation\Response;
  * Never trusts $request->ip()/X-Forwarded-For alone (a client can append to that chain). A request counts
  * as LAN when auto_login_lan is on, it carries no Cloudflare edge header (CF-Connecting-IP/CF-Ray, which
  * only Cloudflare adds) and its peer is a private address - only valid when nothing but the tunnel and the
- * LAN can reach this app. A request that did come through Cloudflare is trusted only when Cloudflare Access
- * itself asserted auto_login_owner_email (Cf-Access-Authenticated-User-Email).
+ * LAN can reach this app. A request that did come through Cloudflare is never auto-logged-in: its headers can be
+ * forged by anyone who reaches the app directly, so it uses the normal login.
  * Must run after StartSession (and ResolveDemoDatabase in demo mode) and before the auth gate.
  */
 class AutoLoginForTrustedRequests
@@ -52,18 +52,15 @@ class AutoLoginForTrustedRequests
 
     private function isTrusted(Request $request): bool
     {
-        if (! $request->headers->has('CF-Connecting-IP') && ! $request->headers->has('CF-Ray')) {
-            $ip = $request->ip();
-
-            return (bool) config('dibs.auto_login_lan')
-                && $ip !== null
-                && filter_var($ip, FILTER_VALIDATE_IP) !== false
-                && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE) === false;
+        if ($request->headers->has('CF-Connecting-IP') || $request->headers->has('CF-Ray')) {
+            return false;
         }
 
-        $ownerEmail = config('dibs.auto_login_owner_email');
+        $ip = $request->ip();
 
-        return $ownerEmail !== null && $ownerEmail !== ''
-            && $request->header('Cf-Access-Authenticated-User-Email') === $ownerEmail;
+        return (bool) config('dibs.auto_login_lan')
+            && $ip !== null
+            && filter_var($ip, FILTER_VALIDATE_IP) !== false
+            && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE) === false;
     }
 }

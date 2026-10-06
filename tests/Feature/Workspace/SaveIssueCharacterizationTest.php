@@ -158,10 +158,13 @@ it('rejects an unavailable Area and changes nothing', function (): void {
     expect(GitHubPushQueueItem::query()->count())->toBe(0);
 });
 
-it('closes the edit form and saves nothing when the repository is not configured locally', function (): void {
+it('keeps the edit form open with an explanation and saves nothing when the configured GitHub repository has not been imported', function (): void {
     $issue = Issue::factory()->create(['title' => 'Old title']);
 
-    workspaceFor($issue)->set('editTitle', 'Should not save')->call('saveIssue')->assertSet('editingIssue', false);
+    workspaceFor($issue)->set('editTitle', 'Should not save')->call('saveIssue')
+        ->assertSet('editingIssue', true)
+        ->assertSet('editTitle', 'Should not save')
+        ->assertSet('editError', fn (?string $error): bool => str_starts_with((string) $error, 'GitHub mirroring is configured for example-owner/example-tasks, but that repository has not been imported yet.'));
 
     expect($issue->refresh()->title)->toBe('Old title');
     expect(GitHubPushQueueItem::query()->count())->toBe(0);

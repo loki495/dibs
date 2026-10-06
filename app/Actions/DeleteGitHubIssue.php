@@ -21,7 +21,7 @@ class DeleteGitHubIssue
             throw new GitHubSyncException('Detach or delete this task’s children before deleting it.');
         }
 
-        (new GitHubClient($token))->query(
+        new GitHubClient($token)->query(
             'mutation($issueId: ID!) { deleteIssue(input: {issueId: $issueId}) { clientMutationId } }',
             ['issueId' => $issue->github_node_id],
         );

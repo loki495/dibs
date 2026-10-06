@@ -1,37 +1,70 @@
 # Contributing to Dibs
 
-Thanks for considering a contribution. Dibs is a personal project shared publicly, maintained
-in spare time, so response times on issues and PRs may vary — but contributions are welcome.
+Thanks for considering a contribution. Dibs is an experimental alpha, a personal project shared
+publicly and maintained in spare time, so response times on issues and PRs vary. Contributions are
+welcome.
 
 ## Getting set up
 
-Follow the [README](README.md#quick-start) to get a local instance running with Docker Compose.
+Follow the [README](README.md#quick-start) to get a local instance running with Docker Compose. The containers
+run as the checkout's owner: `docker/setup.sh` writes the checkout owner's UID and GID to `DIBS_UID`/`DIBS_GID` in `.env`
+(see the README's "Host UID" note).
 
 ## Before you open a PR
 
-Run the full check suite and make sure it's clean:
+Target the `main` branch. CI runs one required check, **Pint, PHPStan, Rector, Pest**, which also runs
+the browser suite. Run the same tools locally, in this order, so style and static-analysis problems
+don't get mixed into a test-failure investigation:
+
+| Check | Command |
+|---|---|
+| Code style (auto-fixes) | `composer pint` |
+| Static analysis (PHPStan level 6) | `composer phpstan` |
+| Modernization (dry-run only) | `composer rector` |
+| Tests | `composer pest` |
+| Browser tests | `composer pest:browser` |
+
+These `composer` scripts are host-side wrappers around `docker compose exec`, so they need Composer on
+your host and a running `app` container (`docker compose up -d`). Without Composer, use the raw form:
 
 ```bash
-composer pint      # code style (auto-fixes)
-composer phpstan    # static analysis
-composer rector      # modernization, dry-run only
-composer pest        # test suite
+docker compose exec -T -u www-data app vendor/bin/pint
+docker compose exec -T -u www-data app vendor/bin/phpstan analyse --memory-limit=512M
+docker compose exec -T -u www-data app vendor/bin/rector process --dry-run
+docker compose exec -T -u www-data app vendor/bin/pest
+docker compose --profile test run --rm app-test vendor/bin/pest tests/Browser
 ```
 
-- Keep PRs focused — one feature or fix per PR is easier to review than a bundle of unrelated changes.
-- Add or update tests for behavior changes (Pest). Sad paths (validation failures, conflicts,
-  unauthorized access) matter as much as the happy path — see `CLAUDE.md` for the project's
-  testing conventions.
-- Match the existing code style and architecture: thin Livewire components/Artisan commands
-  delegating to typed Actions, which are the layer both the UI and the MCP agent tools call
-  into. `CLAUDE.md` covers this in more detail.
-- If you're changing the MCP/CLI agent surface, `docs/agent-interface.md` is the contract —
-  update it alongside the code.
+The browser suite runs in its own `app-test` container (Node.js and Chromium), built the first time you run it.
 
-## Reporting bugs / suggesting features
+## What a good PR contains
 
-Open a GitHub issue with enough detail to reproduce (for a bug) or the problem you're trying to
-solve (for a feature request). Screenshots help for UI issues.
+- **One feature or fix per PR**, in focused commits. Commit subjects are imperative and specific
+  ("Retry GitHub pushes with backoff that honours rate-limit headers", not "fixes" or "updated queue").
+  Use the body for why, when it isn't obvious.
+- **Tests with the change, happy and sad paths.** Cover validation failures, stale-revision conflicts,
+  claim conflicts, push-queue failures and unauthorized access, and assert the specific handled outcome
+  (a validation error, a conflict payload), not just "it didn't succeed". Tests use Pest and fake GitHub
+  with `Http::fake()`; a test must never make a real network call.
+- **Docs in the same commit.** If a change touches behavior, configuration or the agent surface, update
+  every document it makes wrong: the README, `docs/` (`docs/agent-interface.md` is the contract for the
+  MCP/CLI surface), `.env.example`, `skills/dibs/SKILL.md` and `CLAUDE.md`.
+- **The existing architecture.** Livewire components, Artisan commands and MCP tools stay thin and delegate
+  to typed Actions in `app/Actions/`. The UI, MCP and HTTP layers never write to the database themselves; an
+  architecture test enforces it. `CLAUDE.md` describes the conventions in more detail.
+- Don't weaken, skip or delete a test to make a build pass.
+
+## Reporting bugs and suggesting features
+
+Open a [GitHub issue](https://github.com/loki495/dibs/issues/new/choose) with enough detail to reproduce
+(for a bug) or the problem you're trying to solve (for a feature request). Screenshots help for UI issues.
+
+README screenshots: `scripts/readme-screenshots.mjs` (Playwright) re-shoots `docs/images/` from a throwaway, DemoSeeder-seeded local-only instance. Set `BASE_URL`, `OUT_DIR` and `DETAIL_TASK` (a task title with a live claim and comments, which the script opens for the detail panel).
+
+## Security issues
+
+Don't open a public issue. Use GitHub's private vulnerability reporting, as described in
+[SECURITY.md](SECURITY.md).
 
 ## Code of conduct
 

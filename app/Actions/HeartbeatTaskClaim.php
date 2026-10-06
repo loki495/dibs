@@ -25,7 +25,8 @@ class HeartbeatTaskClaim
             $claim = $this->authorize->handle($issueId, $pid, $capabilityToken);
             $session = $claim->agentSession;
 
-            if ($session->is_verified_live && ! $this->liveness->isAlive($pid, $session->process_started_at)) {
+            if ($session->is_verified_live && $session->process_started_at !== null
+                && $this->liveness->currentlyAlive($pid, $session->process_started_at) === false) {
                 throw new DomainException('This claim\'s process is no longer verifiably alive; it cannot be renewed.');
             }
 

@@ -48,15 +48,16 @@ it('defers a row for retry when GitHub is unreachable, without touching the loca
 });
 
 it('marks a row needing attention after repeated failures instead of retrying forever', function (): void {
+    $budget = (int) config('dibs.push_queue.max_attempts');
     $repository = GitHubRepository::factory()->create();
     $issue = Issue::factory()->create(['repository_id' => $repository->id, 'github_node_id' => null, 'github_number' => null]);
-    $item = GitHubPushQueueItem::factory()->create(['operation' => 'create_issue', 'target_type' => 'issue', 'target_id' => $issue->id, 'attempts' => 2, 'status' => 'failed']);
+    $item = GitHubPushQueueItem::factory()->create(['operation' => 'create_issue', 'target_type' => 'issue', 'target_id' => $issue->id, 'attempts' => $budget - 1, 'status' => 'failed']);
     Http::fake(fn () => Http::response(['errors' => [['message' => 'still failing']]], 200));
 
     $result = app(DrainGitHubPushQueue::class)->handle('test-token');
 
     expect($result)->toBe(['pushed' => 0, 'deferred' => 0, 'needs_attention' => 1, 'waiting' => 0]);
-    expect($item->refresh())->status->toBe('needs_attention')->attempts->toBe(3);
+    expect($item->refresh())->status->toBe('needs_attention')->attempts->toBe($budget)->next_attempt_at->toBeNull();
 });
 
 it('rejects an unsupported operation instead of looping on it forever', function (): void {

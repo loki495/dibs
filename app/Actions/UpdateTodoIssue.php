@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions;
 
-use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
 use App\Models\GitHubProject;
-use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectFieldOption;
@@ -28,6 +26,7 @@ class UpdateTodoIssue
         private readonly AssignIssueToProject $assignToProject,
         private readonly ApplyProjectItemFields $applyFields,
         private readonly ActivityRecorder $recorder,
+        private readonly ResolveActiveRepository $activeRepository,
     ) {}
 
     /**
@@ -40,7 +39,6 @@ class UpdateTodoIssue
      *
      * @throws TodoValidationException
      * @throws TodoRecordUnavailableException
-     * @throws TodoRecordNotFoundException
      * @throws TodoStaleRevisionException
      */
     public function handle(
@@ -67,10 +65,7 @@ class UpdateTodoIssue
         if ($issue->revision !== $expectedRevision) {
             throw new TodoStaleRevisionException($issue->id, "Issue (local id {$id}) has changed since expectedRevision was read. Reread it and reconcile before retrying.");
         }
-        $repository = GitHubRepository::query()->where('full_name', config('github.owner').'/'.config('github.repository'))->first();
-        if (! $repository instanceof GitHubRepository) {
-            throw new TodoRecordNotFoundException('The repository is not configured or not available locally. Refresh and try again.');
-        }
+        $repository = $this->activeRepository->handle();
 
         $project = $areaId > 0 ? GitHubProject::query()->where('is_available', true)->find($areaId) : null;
         $parent = $parentId > 0 ? Issue::query()->where('is_available', true)->find($parentId) : null;

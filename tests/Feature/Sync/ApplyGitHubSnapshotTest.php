@@ -236,3 +236,21 @@ it('stores GitHub\'s closedAt on a closed issue, and leaves closed_at null when 
     expect(Issue::query()->where('github_node_id', 'I1')->sole()->closed_at?->toIso8601String())->toBe('2026-09-10T08:30:00+00:00')
         ->and(Issue::query()->where('github_node_id', 'I2')->sole()->closed_at)->toBeNull();
 });
+
+it('never retires local-first records that have not reached GitHub, even when GitHub has none of that kind yet', function (): void {
+    $snapshot = githubSnapshotFixture();
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+    $repository = GitHubRepository::query()->sole();
+    $pendingIssue = Issue::factory()->for($repository, 'repository')->create(['github_node_id' => null, 'github_number' => null]);
+    $pendingLabel = Label::factory()->for($repository, 'repository')->create(['github_node_id' => null, 'name' => 'pending']);
+
+    $snapshot['labels'] = [];
+    $snapshot['issues'] = [];
+    $snapshot['projects'][0]['items'] = [];
+    app(ApplyGitHubSnapshot::class)->handle($snapshot);
+
+    expect($pendingIssue->refresh()->is_available)->toBeTrue()
+        ->and($pendingLabel->refresh()->is_available)->toBeTrue()
+        ->and(Issue::query()->where('github_node_id', 'I1')->sole()->is_available)->toBeFalse()
+        ->and(Label::query()->where('github_node_id', 'L1')->sole()->is_available)->toBeFalse();
+});

@@ -14,7 +14,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Reports whether a task currently has a live claim — agent name, pid, whether liveness is verified, and when the lease expires — without exposing any capability token. Use before todo_claim to check if a task is free.')]
+#[Description('Reports whether a task currently has a live claim — agent name, pid, whether liveness is verified, a direct liveness check (isCurrentlyAlive), the background watcher\'s last recorded check (recordedLiveness, display-only), and when the lease expires — without exposing any capability token. Use before todo_claim to check if a task is free.')]
 class DescribeTodoClaimTool extends Tool implements Errable
 {
     protected string $name = 'todo_claim_status';

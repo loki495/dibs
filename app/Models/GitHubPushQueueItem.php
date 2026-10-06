@@ -21,6 +21,6 @@ class GitHubPushQueueItem extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['payload' => 'array', 'attempted_at' => 'datetime', 'pushed_at' => 'datetime'];
+        return ['payload' => 'array', 'attempted_at' => 'datetime', 'pushed_at' => 'datetime', 'next_attempt_at' => 'datetime', 'unconfirmed_create' => 'boolean'];
     }
 }

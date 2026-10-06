@@ -6,8 +6,14 @@ use App\Actions\ResolveGroupOption;
 use App\Exceptions\TodoValidationException;
 use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
+use App\Models\GitHubRepository;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
+
+// Pushes are queued only once a repository has been imported (App\Support\GitHubMirror::mirrored()).
+beforeEach(function (): void {
+    GitHubRepository::factory()->create();
+});
 
 it('reuses an existing Group case-insensitively without creating or enqueueing anything', function (): void {
     $project = GitHubProject::factory()->create();

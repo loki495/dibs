@@ -6,7 +6,6 @@ namespace App\Actions;
 
 use App\Exceptions\TodoValidationException;
 use App\Models\GitHubProject;
-use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectFieldOption;
@@ -21,6 +20,7 @@ class CreateTodoIssue
         private readonly ResolveGroupOption $resolveGroup,
         private readonly ResolveLabels $resolveLabels,
         private readonly ActivityRecorder $recorder,
+        private readonly ResolveActiveRepository $activeRepository,
     ) {}
 
     /**
@@ -63,10 +63,7 @@ class CreateTodoIssue
             if ($labels->count() !== count($labelIds) || ($parent instanceof Issue && $labels->contains(fn (Label $label): bool => $label->repository_id !== $parent->repository_id))) {
                 throw new TodoValidationException('One or more selected labels are no longer available. Refresh and try again.');
             }
-            $repository = GitHubRepository::query()->where('full_name', config('github.owner').'/'.config('github.repository'))->first();
-            if (! $repository instanceof GitHubRepository) {
-                throw new TodoValidationException('The repository is not configured or not available locally. Refresh and try again.');
-            }
+            $repository = $this->activeRepository->handle();
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.

@@ -13,6 +13,7 @@ use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubClient;
 use App\Services\GitHub\GitHubSyncException;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
@@ -30,7 +31,13 @@ use SensitiveParameter;
  */
 class DrainGitHubPushQueue
 {
-    private const int MAX_ATTEMPTS = 3;
+    /** Set when GitHub rate-limits a call; the token's limit applies to every remaining row. */
+    private ?CarbonImmutable $rateLimitedUntil = null;
+
+    /** How far before a create was queued its earlier attempt's GitHub record may be dated (clock skew). */
+    private const int CREATE_LOOKUP_SLACK_MINUTES = 5;
+
+    private const string UNCONFIRMED_CREATE = 'An earlier attempt failed in a way that may have created this on GitHub anyway (a timeout or server error), and GitHub could not confirm it either way. Check GitHub: Retry creates it, so close any duplicate there afterwards.';
 
     /** @var list<string> */
     private const array OPERATION_ORDER = [
@@ -48,8 +55,12 @@ class DrainGitHubPushQueue
     {
         $result = ['pushed' => 0, 'deferred' => 0, 'needs_attention' => 0, 'waiting' => 0];
 
+        $this->forgetRateLimit();
+
         foreach (self::OPERATION_ORDER as $operation) {
-            $items = GitHubPushQueueItem::query()->whereIn('status', ['pending', 'failed'])->where('operation', $operation)->orderBy('id')->limit($limit)->get();
+            $items = GitHubPushQueueItem::query()->whereIn('status', ['pending', 'failed'])->where('operation', $operation)
+                ->where(fn ($query) => $query->whereNull('next_attempt_at')->orWhere('next_attempt_at', '<=', now()))
+                ->orderBy('id')->limit($limit)->get();
             foreach ($items as $item) {
                 $state = match ($operation) {
                     'create_issue' => $this->pushCreateIssue($token, $item),
@@ -80,6 +91,11 @@ class DrainGitHubPushQueue
                     default => $this->pushUpdateComment($token, $item),
                 };
                 $result[$state] = ($result[$state] ?? 0) + 1;
+                if ($this->rateLimitedUntil instanceof CarbonImmutable) {
+                    $this->pauseQueueUntil($this->rateLimitedUntil);
+
+                    return $result;
+                }
             }
         }
 
@@ -111,16 +127,23 @@ class DrainGitHubPushQueue
         $body = $item->payload['body'] ?? null;
 
         try {
-            $data = (new GitHubClient($token))->query(
-                'mutation($repositoryId: ID!, $title: String!, $body: String) { createIssue(input: {repositoryId: $repositoryId, title: $title, body: $body}) { issue { id number title body state stateReason url updatedAt } } }',
-                ['repositoryId' => $issue->repository->github_node_id, 'title' => $title, 'body' => $body],
-            );
-            $remote = $data['createIssue']['issue'] ?? null;
+            $client = new GitHubClient($token);
+            $remote = $item->unconfirmed_create ? $this->findCreatedIssue($client, $item, $issue, $title, is_string($body) ? $body : null) : null;
+            if ($remote === false) {
+                return $this->giveUpUnconfirmed($item);
+            }
+            if ($remote === null) {
+                $data = $client->query(
+                    'mutation($repositoryId: ID!, $title: String!, $body: String) { createIssue(input: {repositoryId: $repositoryId, title: $title, body: $body}) { issue { id number title body state stateReason url updatedAt } } }',
+                    ['repositoryId' => $issue->repository->github_node_id, 'title' => $title, 'body' => $body],
+                );
+                $remote = $data['createIssue']['issue'] ?? null;
+            }
             if (! is_array($remote) || ! is_string($remote['id'] ?? null) || ! is_int($remote['number'] ?? null)) {
                 throw new GitHubSyncException('GitHub did not return the created issue.');
             }
         } catch (GitHubSyncException $exception) {
-            return $this->deferOrFail($item, $exception);
+            return $this->deferCreate($item, $exception);
         }
 
         DB::transaction(function () use ($issue, $item, $remote): void {
@@ -170,18 +193,25 @@ class DrainGitHubPushQueue
                 throw new GitHubSyncException('GitHub did not return the current Group options.');
             }
             $options = [];
+            $alreadyThere = false;
             foreach ($remote['options'] as $existing) {
                 if (! is_array($existing) || ! is_string($existing['id'] ?? null) || ! is_string($existing['name'] ?? null) || ! is_string($existing['color'] ?? null)) {
                     throw new GitHubSyncException('GitHub returned an invalid Group option.');
                 }
                 $options[] = ['id' => $existing['id'], 'name' => $existing['name'], 'color' => $existing['color'], 'description' => $existing['description'] ?? ''];
+                $alreadyThere = $alreadyThere || strcasecmp($existing['name'], $name) === 0;
             }
-            $options[] = ['name' => $name, 'color' => $color, 'description' => ''];
-            $data = $client->query(
-                'mutation($fieldId: ID!, $options: [ProjectV2SingleSelectFieldOptionInput!]!) { updateProjectV2Field(input: {fieldId: $fieldId, singleSelectOptions: $options}) { projectV2Field { ... on ProjectV2SingleSelectField { id options { id name color description } } } } }',
-                ['fieldId' => $field->github_node_id, 'options' => $options],
-            );
-            $updated = $data['updateProjectV2Field']['projectV2Field']['options'] ?? null;
+            // An earlier attempt that timed out may have added it already; adopt it rather than add a duplicate.
+            if ($alreadyThere) {
+                $updated = $remote['options'];
+            } else {
+                $options[] = ['name' => $name, 'color' => $color, 'description' => ''];
+                $data = $client->query(
+                    'mutation($fieldId: ID!, $options: [ProjectV2SingleSelectFieldOptionInput!]!) { updateProjectV2Field(input: {fieldId: $fieldId, singleSelectOptions: $options}) { projectV2Field { ... on ProjectV2SingleSelectField { id options { id name color description } } } } }',
+                    ['fieldId' => $field->github_node_id, 'options' => $options],
+                );
+                $updated = $data['updateProjectV2Field']['projectV2Field']['options'] ?? null;
+            }
             if (! is_array($updated)) {
                 throw new GitHubSyncException('GitHub did not confirm the Group creation.');
             }
@@ -339,16 +369,21 @@ class DrainGitHubPushQueue
         $description = $item->payload['description'] ?? null;
 
         try {
-            $data = (new GitHubClient($token))->query(
-                'mutation($repositoryId: ID!, $name: String!, $color: String!, $description: String) { createLabel(input: {repositoryId: $repositoryId, name: $name, color: $color, description: $description}) { label { id name color description url } } }',
-                ['repositoryId' => $label->repository->github_node_id, 'name' => $name, 'color' => $color, 'description' => $description],
-            );
-            $remote = $data['createLabel']['label'] ?? null;
+            $client = new GitHubClient($token);
+            // Label names are unique per repository, so an earlier attempt's label is found by name.
+            $remote = $item->unconfirmed_create ? $this->findLabelByName($client, $label, $name) : null;
+            if ($remote === null) {
+                $data = $client->query(
+                    'mutation($repositoryId: ID!, $name: String!, $color: String!, $description: String) { createLabel(input: {repositoryId: $repositoryId, name: $name, color: $color, description: $description}) { label { id name color description url } } }',
+                    ['repositoryId' => $label->repository->github_node_id, 'name' => $name, 'color' => $color, 'description' => $description],
+                );
+                $remote = $data['createLabel']['label'] ?? null;
+            }
             if (! is_array($remote) || ! is_string($remote['id'] ?? null)) {
                 throw new GitHubSyncException('GitHub did not return the created label.');
             }
         } catch (GitHubSyncException $exception) {
-            return $this->deferOrFail($item, $exception);
+            return $this->deferCreate($item, $exception);
         }
 
         DB::transaction(function () use ($label, $item, $remote): void {
@@ -375,7 +410,7 @@ class DrainGitHubPushQueue
         $name = (string) ($item->payload['name'] ?? $label->name);
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($id: ID!, $name: String!) { updateLabel(input: {id: $id, name: $name}) { label { id name color description } } }',
                 ['id' => $label->github_node_id, 'name' => $name],
             );
@@ -403,7 +438,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            (new GitHubClient($token))->query(
+            new GitHubClient($token)->query(
                 'mutation($id: ID!) { deleteLabel(input: {id: $id}) { clientMutationId } }',
                 ['id' => $label->github_node_id],
             );
@@ -439,7 +474,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id updatedAt } } }',
                 ['projectId' => $projectItem->project->github_node_id, 'contentId' => $projectItem->issue->github_node_id],
             );
@@ -502,7 +537,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {singleSelectOptionId: $optionId}}) { projectV2Item { id updatedAt } } }',
                 ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id, 'fieldId' => $option->field->github_node_id, 'optionId' => $option->github_option_id],
             );
@@ -544,7 +579,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                 ['labelableId' => $issue->github_node_id, 'labelIds' => $labels->pluck('github_node_id')->all()],
             );
@@ -587,7 +622,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($parentId: ID!, $childId: ID!, $replaceParent: Boolean!) { addSubIssue(input: {issueId: $parentId, subIssueId: $childId, replaceParent: $replaceParent}) { subIssue { id updatedAt } } }',
                 ['parentId' => $parent->github_node_id, 'childId' => $child->github_node_id, 'replaceParent' => true],
             );
@@ -617,6 +652,125 @@ class DrainGitHubPushQueue
         return 'needs_attention';
     }
 
+    /**
+     * A timeout, 5xx or unconfirmed response to a create may still have created the record on GitHub,
+     * so the next attempt looks for it first (findCreatedIssue/findCreatedComment/findLabelByName). A
+     * rate limit or a permanent rejection means GitHub did not apply it.
+     */
+    private function deferCreate(GitHubPushQueueItem $item, GitHubSyncException $exception): string
+    {
+        if ($exception->transient && ! $exception->isRateLimit()) {
+            $item->update(['unconfirmed_create' => true]);
+        }
+
+        return $this->deferOrFail($item, $exception);
+    }
+
+    /** Hands the call to a person; their Retry then creates without looking again. */
+    private function giveUpUnconfirmed(GitHubPushQueueItem $item): string
+    {
+        $item->update(['unconfirmed_create' => false]);
+
+        return $this->giveUp($item, self::UNCONFIRMED_CREATE);
+    }
+
+    /** @return array<string, mixed>|false|null the issue an earlier attempt created, null if none did, false if that can't be told */
+    private function findCreatedIssue(GitHubClient $client, GitHubPushQueueItem $item, Issue $issue, string $title, ?string $body): array|false|null
+    {
+        $data = $client->query(
+            'query($id: ID!) { viewer { login } node(id: $id) { ... on Repository { issues(first: 50, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { id number title body state stateReason url updatedAt createdAt author { login } } pageInfo { hasNextPage } } } } }',
+            ['id' => $issue->repository->github_node_id],
+        );
+        $connection = $data['node']['issues'] ?? null;
+        $viewer = $data['viewer']['login'] ?? null;
+        if (! is_array($connection) || ! is_array($connection['nodes'] ?? null) || ! is_string($viewer)) {
+            throw new GitHubSyncException('GitHub did not return the repository\'s recent issues.');
+        }
+
+        return $this->findEarlierCreate(
+            $item, $connection['nodes'], ($connection['pageInfo']['hasNextPage'] ?? true) !== false, $viewer,
+            fn (array $ids): array => Issue::query()->whereIn('github_node_id', $ids)->pluck('github_node_id')->all(),
+            fn (array $node): bool => ($node['title'] ?? null) === $title && $this->sameText($node['body'] ?? null, $body),
+        );
+    }
+
+    /** @return array<string, mixed>|false|null the comment an earlier attempt created, null if none did, false if that can't be told */
+    private function findCreatedComment(GitHubClient $client, GitHubPushQueueItem $item, Comment $comment): array|false|null
+    {
+        $data = $client->query(
+            'query($id: ID!) { viewer { login } node(id: $id) { ... on Issue { comments(last: 100) { nodes { id body url createdAt updatedAt author { login } } pageInfo { hasPreviousPage } } } } }',
+            ['id' => $comment->issue?->github_node_id],
+        );
+        $connection = $data['node']['comments'] ?? null;
+        $viewer = $data['viewer']['login'] ?? null;
+        if (! is_array($connection) || ! is_array($connection['nodes'] ?? null) || ! is_string($viewer)) {
+            throw new GitHubSyncException('GitHub did not return the issue\'s recent comments.');
+        }
+
+        return $this->findEarlierCreate(
+            $item, $connection['nodes'], ($connection['pageInfo']['hasPreviousPage'] ?? true) !== false, $viewer,
+            fn (array $ids): array => Comment::query()->whereIn('github_node_id', $ids)->pluck('github_node_id')->all(),
+            fn (array $node): bool => $this->sameText($node['body'] ?? null, $comment->body),
+        );
+    }
+
+    /**
+     * Matches an earlier attempt's record by content among those this token created since the row was
+     * queued and no local record already owns. Any such record that doesn't match, or a page that
+     * doesn't reach back that far, makes the answer unknowable rather than "not created".
+     *
+     * @param  array<mixed>  $nodes
+     * @param  callable(list<string>): array<mixed>  $known  the given GitHub ids already linked locally
+     * @param  callable(array<string, mixed>): bool  $matches
+     * @return array<string, mixed>|false|null
+     */
+    private function findEarlierCreate(GitHubPushQueueItem $item, array $nodes, bool $more, string $viewer, callable $known, callable $matches): array|false|null
+    {
+        $since = CarbonImmutable::instance($item->created_at ?? now())->subMinutes(self::CREATE_LOOKUP_SLACK_MINUTES);
+        $oldest = null;
+        $recent = [];
+        foreach ($nodes as $node) {
+            if (! is_array($node) || ! is_string($node['id'] ?? null) || ! is_string($node['createdAt'] ?? null)) {
+                throw new GitHubSyncException('GitHub returned an invalid record while checking for an earlier create.');
+            }
+            $created = CarbonImmutable::parse($node['createdAt']);
+            $oldest = ! $oldest instanceof CarbonImmutable || $created->lessThan($oldest) ? $created : $oldest;
+            if (($node['author']['login'] ?? null) === $viewer && $created->greaterThanOrEqualTo($since)) {
+                $recent[$node['id']] = $node;
+            }
+        }
+        $unclaimed = array_diff_key($recent, array_flip($known(array_map(strval(...), array_keys($recent)))));
+        foreach ($unclaimed as $node) {
+            if ($matches($node)) {
+                return $node;
+            }
+        }
+
+        return $unclaimed === [] && (! $more || ($oldest instanceof CarbonImmutable && $oldest->lessThan($since))) ? null : false;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function findLabelByName(GitHubClient $client, Label $label, string $name): ?array
+    {
+        $data = $client->query(
+            'query($id: ID!, $name: String!) { node(id: $id) { ... on Repository { label(name: $name) { id name color description url } } } }',
+            ['id' => $label->repository->github_node_id, 'name' => $name],
+        );
+        if (! is_array($data['node'] ?? null)) {
+            throw new GitHubSyncException('GitHub did not return the repository while checking for an earlier label create.');
+        }
+        $remote = $data['node']['label'] ?? null;
+
+        return is_array($remote) ? $remote : null;
+    }
+
+    private function sameText(mixed $remote, ?string $local): bool
+    {
+        $normalize = fn (?string $text): string => trim(str_replace("\r\n", "\n", $text ?? ''));
+
+        return $normalize(is_string($remote) ? $remote : null) === $normalize($local);
+    }
+
     private function giveUp(GitHubPushQueueItem $item, string $reason): string
     {
         $item->update(['status' => 'needs_attention', 'last_error' => $reason, 'attempted_at' => now()]);
@@ -624,13 +778,49 @@ class DrainGitHubPushQueue
         return 'needs_attention';
     }
 
+    /**
+     * A transient failure waits and retries: until the time GitHub gave for a rate limit,
+     * otherwise for an exponential backoff. The row needs attention once the retry budget is
+     * spent, or straight away when retrying the same call cannot help.
+     */
     private function deferOrFail(GitHubPushQueueItem $item, GitHubSyncException $exception): string
     {
-        $attempts = $item->attempts + 1;
-        $status = $attempts >= self::MAX_ATTEMPTS ? 'needs_attention' : 'pending';
-        $item->update(['attempts' => $attempts, 'last_error' => $exception->getMessage(), 'attempted_at' => now(), 'status' => $status]);
+        // A rate limit says nothing about the row itself, so it waits without spending its budget.
+        $rateLimited = $exception->isRateLimit();
+        $attempts = $rateLimited ? $item->attempts : $item->attempts + 1;
+        if ($exception->retryAt instanceof CarbonImmutable) {
+            $this->rateLimitedUntil = $exception->retryAt;
+        }
+        if (! $exception->transient || (! $rateLimited && $attempts >= (int) config('dibs.push_queue.max_attempts'))) {
+            $item->update(['attempts' => $attempts, 'last_error' => $exception->getMessage(), 'attempted_at' => now(), 'status' => 'needs_attention', 'next_attempt_at' => null]);
 
-        return $status === 'needs_attention' ? 'needs_attention' : 'deferred';
+            return 'needs_attention';
+        }
+
+        $item->update(['attempts' => $attempts, 'last_error' => $exception->getMessage(), 'attempted_at' => now(), 'status' => 'pending', 'next_attempt_at' => $exception->retryAt ?? now()->addSeconds($this->backoffSeconds($attempts))]);
+
+        return 'deferred';
+    }
+
+    private function backoffSeconds(int $failures): int
+    {
+        $base = max(1, (int) config('dibs.push_queue.backoff_base_seconds'));
+        $cap = max($base, (int) config('dibs.push_queue.backoff_cap_seconds'));
+
+        return min($cap, $base * 2 ** min($failures - 1, 30));
+    }
+
+    private function forgetRateLimit(): void
+    {
+        $this->rateLimitedUntil = null;
+    }
+
+    /** Holds every other due row until the rate limit resets, without spending their attempts. */
+    private function pauseQueueUntil(CarbonImmutable $until): void
+    {
+        GitHubPushQueueItem::query()->whereIn('status', ['pending', 'failed'])
+            ->where(fn ($query) => $query->whereNull('next_attempt_at')->orWhere('next_attempt_at', '<', $until))
+            ->update(['next_attempt_at' => $until]);
     }
 
     private function pushUpdateIssueBody(#[SensitiveParameter] string $token, GitHubPushQueueItem $item): string
@@ -647,7 +837,7 @@ class DrainGitHubPushQueue
         $body = $item->payload['body'] ?? null;
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($issueId: ID!, $title: String!, $body: String) { updateIssue(input: {id: $issueId, title: $title, body: $body}) { issue { id title body state stateReason closedAt url updatedAt } } }',
                 ['issueId' => $issue->github_node_id, 'title' => $title, 'body' => $body],
             );
@@ -687,7 +877,7 @@ class DrainGitHubPushQueue
         // mutation is idempotent (closing an already-closed issue is a harmless no-op), so it's the
         // only reliable signal of whether this specific push has actually reached GitHub.
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($issueId: ID!, $stateReason: IssueClosedStateReason) { closeIssue(input: {issueId: $issueId, stateReason: $stateReason}) { issue { id state stateReason closedAt updatedAt } } }',
                 ['issueId' => $issue->github_node_id, 'stateReason' => $item->payload['stateReason'] ?? null],
             );
@@ -722,7 +912,7 @@ class DrainGitHubPushQueue
 
         // No "already OPEN locally, skip" short-circuit — see the note on pushCloseIssue above.
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($issueId: ID!) { reopenIssue(input: {issueId: $issueId}) { issue { id state stateReason updatedAt } } }',
                 ['issueId' => $issue->github_node_id],
             );
@@ -767,7 +957,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            (new GitHubClient($token))->query(
+            new GitHubClient($token)->query(
                 'mutation($issueId: ID!) { deleteIssue(input: {issueId: $issueId}) { clientMutationId } }',
                 ['issueId' => $issue->github_node_id],
             );
@@ -808,7 +998,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($projectId: ID!, $itemId: ID!) { deleteProjectV2Item(input: {projectId: $projectId, itemId: $itemId}) { deletedItemId } }',
                 ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id],
             );
@@ -867,7 +1057,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) { clearProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId}) { projectV2Item { id updatedAt } } }',
                 ['projectId' => $projectItem->project->github_node_id, 'itemId' => $projectItem->github_node_id, 'fieldId' => $field->github_node_id],
             );
@@ -922,7 +1112,7 @@ class DrainGitHubPushQueue
 
         try {
             if ($addLabels->isNotEmpty()) {
-                $data = (new GitHubClient($token))->query(
+                $data = new GitHubClient($token)->query(
                     'mutation($labelableId: ID!, $labelIds: [ID!]!) { addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                     ['labelableId' => $issue->github_node_id, 'labelIds' => $addLabels->pluck('github_node_id')->all()],
                 );
@@ -932,7 +1122,7 @@ class DrainGitHubPushQueue
                 }
             }
             if ($removeLabels->isNotEmpty()) {
-                $data = (new GitHubClient($token))->query(
+                $data = new GitHubClient($token)->query(
                     'mutation($labelableId: ID!, $labelIds: [ID!]!) { removeLabelsFromLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) { labelable { ... on Issue { id } } } }',
                     ['labelableId' => $issue->github_node_id, 'labelIds' => $removeLabels->pluck('github_node_id')->all()],
                 );
@@ -969,7 +1159,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($parentId: ID!, $childId: ID!) { removeSubIssue(input: {issueId: $parentId, subIssueId: $childId}) { subIssue { id updatedAt } } }',
                 ['parentId' => $parentGithubNodeId, 'childId' => $child->github_node_id],
             );
@@ -1009,16 +1199,23 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
-                'mutation($subjectId: ID!, $body: String!) { addComment(input: {subjectId: $subjectId, body: $body}) { commentEdge { node { id body url createdAt updatedAt author { login } } } } }',
-                ['subjectId' => $comment->issue->github_node_id, 'body' => $comment->body],
-            );
-            $remote = $data['addComment']['commentEdge']['node'] ?? null;
+            $client = new GitHubClient($token);
+            $remote = $item->unconfirmed_create ? $this->findCreatedComment($client, $item, $comment) : null;
+            if ($remote === false) {
+                return $this->giveUpUnconfirmed($item);
+            }
+            if ($remote === null) {
+                $data = $client->query(
+                    'mutation($subjectId: ID!, $body: String!) { addComment(input: {subjectId: $subjectId, body: $body}) { commentEdge { node { id body url createdAt updatedAt author { login } } } } }',
+                    ['subjectId' => $comment->issue->github_node_id, 'body' => $comment->body],
+                );
+                $remote = $data['addComment']['commentEdge']['node'] ?? null;
+            }
             if (! is_array($remote) || ! is_string($remote['id'] ?? null) || ! is_string($remote['body'] ?? null)) {
                 throw new GitHubSyncException('GitHub did not return the created comment.');
             }
         } catch (GitHubSyncException $exception) {
-            return $this->deferOrFail($item, $exception);
+            return $this->deferCreate($item, $exception);
         }
 
         DB::transaction(function () use ($comment, $item, $remote): void {
@@ -1045,7 +1242,7 @@ class DrainGitHubPushQueue
         }
 
         try {
-            $data = (new GitHubClient($token))->query(
+            $data = new GitHubClient($token)->query(
                 'mutation($commentId: ID!, $body: String!) { updateIssueComment(input: {id: $commentId, body: $body}) { issueComment { id body url createdAt updatedAt author { login } } } }',
                 ['commentId' => $comment->github_node_id, 'body' => $comment->body],
             );

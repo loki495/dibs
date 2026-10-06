@@ -14,7 +14,7 @@ class RetryGitHubPushQueueItem
         if (! in_array($item->status, ['failed', 'needs_attention'], true)) {
             return $item;
         }
-        $item->update(['status' => 'pending', 'attempts' => 0, 'last_error' => null]);
+        $item->update(['status' => 'pending', 'attempts' => 0, 'last_error' => null, 'next_attempt_at' => null]);
 
         return $item->refresh();
     }

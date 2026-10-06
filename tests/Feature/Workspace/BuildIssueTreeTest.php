@@ -10,6 +10,7 @@ use App\Models\Label;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
+use App\Models\TaskClaim;
 use App\Services\Process\LinuxProcessLiveness;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +38,33 @@ it('reports null (not true or false) for isCurrentlyAlive when liveness could no
 
     expect($row['claim']['isCurrentlyAlive'])->toBeNull();
 });
+
+it('reports null for isCurrentlyAlive on a verified claim when this process cannot see host PIDs', function (): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    $row = collect(app(BuildIssueTree::class)->handle()['rows'])->firstWhere('id', $issue->id);
+
+    expect($row['claim']['isCurrentlyAlive'])->toBeNull();
+});
+
+it('falls back to the recorded liveness for the row when this process cannot see host PIDs', function (?bool $recorded, int $ageSeconds, ?bool $expected): void {
+    $issue = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    TaskClaim::query()->sole()->update(['liveness_alive' => $recorded, 'liveness_checked_at' => $recorded === null ? null : now()->subSeconds($ageSeconds)]);
+    app()->instance(LinuxProcessLiveness::class, new LinuxProcessLiveness(enabled: false));
+
+    $row = collect(app(BuildIssueTree::class)->handle()['rows'])->firstWhere('id', $issue->id);
+
+    expect($row['claim']['isCurrentlyAlive'])->toBeNull()
+        ->and($row['claim']['displayAlive'])->toBe($expected);
+})->with([
+    'recorded alive' => [true, 20, true],
+    'recorded gone' => [false, 20, false],
+    'never recorded' => [null, 0, null],
+    'stale recording' => [false, 600, null],
+]);
 
 it('omits claim data for an unclaimed issue', function (): void {
     $issue = Issue::factory()->create();
@@ -224,6 +252,33 @@ it('sorts flat by newest first and newest last using the GitHub issue number', f
 
     expect(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_first')['rows'], 'title'))->toBe(['Newest', 'Middle', 'Oldest'])
         ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_last')['rows'], 'title'))->toBe(['Oldest', 'Middle', 'Newest']);
+});
+
+it('sorts local-only issues without a GitHub number after numbered ones, by local id, in both newest sorts', function (): void {
+    $numberedOld = Issue::factory()->create(['title' => 'Numbered 2', 'github_number' => 2]);
+    $localFirst = Issue::factory()->for($numberedOld->repository, 'repository')->create(['title' => 'Local A', 'github_node_id' => null, 'github_number' => null]);
+    Issue::factory()->for($numberedOld->repository, 'repository')->create(['title' => 'Numbered 7', 'github_number' => 7]);
+    Issue::factory()->for($numberedOld->repository, 'repository')->create(['title' => 'Local B', 'github_node_id' => null, 'github_number' => null]);
+
+    expect(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_last')['rows'], 'title'))->toBe(['Numbered 2', 'Numbered 7', 'Local A', 'Local B'])
+        ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_first')['rows'], 'title'))->toBe(['Numbered 7', 'Numbered 2', 'Local B', 'Local A'])
+        ->and($localFirst->fresh()->github_number)->toBeNull();
+});
+
+it('sorts only local-only issues by local id without failing', function (): void {
+    $first = Issue::factory()->create(['title' => 'First', 'github_node_id' => null, 'github_number' => null]);
+    Issue::factory()->for($first->repository, 'repository')->create(['title' => 'Second', 'github_node_id' => null, 'github_number' => null]);
+
+    expect(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_last')['rows'], 'title'))->toBe(['First', 'Second'])
+        ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'newest_first')['rows'], 'title'))->toBe(['Second', 'First'])
+        ->and(array_column(app(BuildIssueTree::class)->handle(sortBy: 'priority')['rows'], 'title'))->toBe(['First', 'Second']);
+});
+
+it('breaks Priority ties between numbered and local-only issues without failing, numbered first', function (): void {
+    $local = Issue::factory()->create(['title' => 'Local', 'github_node_id' => null, 'github_number' => null]);
+    Issue::factory()->for($local->repository, 'repository')->create(['title' => 'Numbered', 'github_number' => 3]);
+
+    expect(array_column(app(BuildIssueTree::class)->handle(sortBy: 'priority')['rows'], 'title'))->toBe(['Numbered', 'Local']);
 });
 
 it('sections the All Projects view by Project when sorting by Project, nesting Groups inside', function (): void {

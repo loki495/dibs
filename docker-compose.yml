@@ -1,13 +1,44 @@
 name: dibs
 services:
+  # Agents' exec target for the MCP server and the todo:agent:* CLI
+  # (`docker compose exec -T -u www-data app php artisan mcp:start todo`). It needs the host PID
+  # namespace to verify claim liveness through /proc (LinuxProcessLiveness), so it serves no HTTP.
+  # Its main process is dibs:claims:watch, which re-checks every live claim's process each
+  # DIBS_CLAIM_LIVENESS_INTERVAL seconds (default 30) and records the result for the web UI. It runs
+  # as www-data (setpriv execs in place, so SIGTERM still reaches PHP directly), not root, since it
+  # shares the host's PID namespace. Every dev image remaps www-data to DIBS_UID/DIBS_GID from .env
+  # (the checkout's owner, default 1000; docker/setup.sh fills them in when unset), so app runs as you: see
+  # docs/security-model.md for what that exposes.
   app:
     container_name: dibs-app
     build:
       context: .
       dockerfile: docker/Dockerfile
       target: base
+      args: &uid-args
+        DIBS_UID: ${DIBS_UID:-1000}
+        DIBS_GID: ${DIBS_GID:-1000}
     restart: unless-stopped
     pid: "host"
+    command: ["setpriv", "--reuid=www-data", "--regid=www-data", "--init-groups", "php", "artisan", "dibs:claims:watch"]
+    # The php:apache image's own stop signal is SIGWINCH (Apache's graceful stop). The watcher traps
+    # SIGTERM and exits within about a second.
+    stop_signal: SIGTERM
+    volumes:
+      - ./:/var/www/html
+  # Apache serving the workspace UI. No pid: host, so it can't check host processes itself; it shows
+  # the liveness app's watcher last recorded ("alive · checked 20s ago"), or "liveness unverifiable"
+  # when there's no recording newer than DIBS_CLAIM_LIVENESS_STALE_AFTER seconds (default 90).
+  web:
+    container_name: dibs-web
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: base
+      args: *uid-args
+    restart: unless-stopped
+    environment:
+      DIBS_PROCESS_LIVENESS: "false"
     volumes:
       - ./:/var/www/html
     ports:
@@ -18,29 +49,31 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       target: base
+      args: *uid-args
     restart: unless-stopped
     command: ["php", "artisan", "schedule:work"]
     volumes:
       - ./:/var/www/html
   # Browser (Pest + Playwright) tests only — never started by a plain `docker compose
-  # up`. Adds Node.js + Chromium on top of the same `base` image `app` uses, kept out of
-  # `app` itself since that image also serves the public demo (see CLAUDE.md) and
+  # up`. Adds Node.js + Chromium on top of the same `base` image `app`/`web` use, kept out of
+  # `base` itself since that image also serves the public demo (see CLAUDE.md) and
   # shouldn't carry a JS runtime + browser binary just for dev-time tests.
   # Run with: composer pest:browser
   app-test:
     container_name: dibs-app-test
     profiles: [test]
-    user: "1000:1000"
+    user: "${DIBS_UID:-1000}:${DIBS_GID:-1000}"
     build:
       context: .
       dockerfile: docker/Dockerfile
       target: test
+      args: *uid-args
     volumes:
       - ./:/var/www/html
   node:
     image: node:22
     profiles: [tools]
     working_dir: /var/www/html
-    user: "1000:1000"
+    user: "${DIBS_UID:-1000}:${DIBS_GID:-1000}"
     volumes:
       - ./:/var/www/html

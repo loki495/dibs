@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Actions\ResolveActiveRepository;
 use App\Models\AgentSession;
 use App\Models\Comment;
 use App\Models\GitHubProject;
@@ -26,6 +27,9 @@ use Illuminate\Support\Str;
  */
 class DemoSeeder extends Seeder
 {
+    /** Local-only tasks have no GitHub identity, so the demo's don't carry a made-up number or link either. */
+    private const array LOCAL_IDENTITY = ['github_node_id' => null, 'github_number' => null, 'url' => null];
+
     private GitHubRepository $repository;
 
     /** @var array<string, Label> */
@@ -39,9 +43,9 @@ class DemoSeeder extends Seeder
             'password' => bcrypt('demo-password-please-change'),
         ]);
 
-        $this->repository = GitHubRepository::factory()->create([
-            'owner' => 'demo-user', 'name' => 'dibs-demo', 'full_name' => 'demo-user/dibs-demo', 'is_private' => true,
-        ]);
+        // The demo runs local-only (no DIBS_GITHUB_OWNER/DIBS_GITHUB_REPO), so its data lives in the
+        // same local repository row a visitor's own new tasks and labels are created in.
+        $this->repository = app(ResolveActiveRepository::class)->local();
 
         foreach (['bug', 'feature', 'documentation', 'research', 'decision', 'lesson', 'guide', 'plan', 'today', 'next', 'waiting', 'someday', 'needs research', 'parent'] as $name) {
             $this->labels[$name] = Label::factory()->for($this->repository, 'repository')->create(['name' => $name]);
@@ -161,7 +165,7 @@ class DemoSeeder extends Seeder
             'title' => $title,
             'body' => null,
             'parent_issue_id' => $parent?->id,
-        ]);
+        ] + self::LOCAL_IDENTITY);
 
         ProjectItem::factory()->for($project, 'project')->create([
             'issue_id' => $issue->id, 'group_option_id' => $group->id, 'priority_option_id' => $priority->id,
@@ -176,7 +180,7 @@ class DemoSeeder extends Seeder
 
     private function closedIssue(string $title, GitHubProject $project, ProjectFieldOption $group): Issue
     {
-        $issue = Issue::factory()->for($this->repository, 'repository')->create(['title' => $title, 'body' => null, 'state' => 'CLOSED']);
+        $issue = Issue::factory()->for($this->repository, 'repository')->create(['title' => $title, 'body' => null, 'state' => 'CLOSED'] + self::LOCAL_IDENTITY);
         ProjectItem::factory()->for($project, 'project')->create(['issue_id' => $issue->id, 'group_option_id' => $group->id]);
 
         return $issue;
@@ -189,14 +193,14 @@ class DemoSeeder extends Seeder
 
     private function researchNote(string $title, GitHubProject $project, string $body): void
     {
-        $issue = Issue::factory()->for($this->repository, 'repository')->create(['title' => $title, 'body' => $body]);
+        $issue = Issue::factory()->for($this->repository, 'repository')->create(['title' => $title, 'body' => $body] + self::LOCAL_IDENTITY);
         ProjectItem::factory()->for($project, 'project')->create(['issue_id' => $issue->id]);
         $issue->labels()->attach($this->labels['research']->id);
     }
 
     private function decisionNote(string $title, GitHubProject $project, string $body): void
     {
-        $issue = Issue::factory()->for($this->repository, 'repository')->create(['title' => $title, 'body' => $body]);
+        $issue = Issue::factory()->for($this->repository, 'repository')->create(['title' => $title, 'body' => $body] + self::LOCAL_IDENTITY);
         ProjectItem::factory()->for($project, 'project')->create(['issue_id' => $issue->id]);
         $issue->labels()->attach($this->labels['decision']->id);
     }
