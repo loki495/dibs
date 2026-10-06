@@ -8,7 +8,7 @@ services:
   # as www-data (setpriv execs in place, so SIGTERM still reaches PHP directly), not root, since it
   # shares the host's PID namespace. Every dev image remaps www-data to DIBS_UID/DIBS_GID from .env
   # (the checkout's owner, default 1000; docker/setup.sh fills them in when unset), so app runs as you: see
-  # SECURITY.md for what that exposes.
+  # docs/security-model.md for what that exposes.
   app:
     container_name: dibs-app
     build:

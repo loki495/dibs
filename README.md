@@ -67,7 +67,7 @@ and prunes the activity log, and `app` is where agents and Artisan commands run
 (`docker compose exec … app …`). `app` shares the host's PID namespace so it can check that a
 claiming agent's process is still alive; its main process (`php artisan dibs:claims:watch`) does that
 every 30 seconds and records the result, which is what the UI shows next to a claim. See
-[SECURITY.md](SECURITY.md) for what that implies.
+[docs/security-model.md](docs/security-model.md) for what that implies.
 
 Running behind a reverse proxy? See `docker/compose.traefik.example.yml` for a working
 label-based Traefik example; the labels go on the `web` service. Behind HTTPS, also set
@@ -374,6 +374,7 @@ raw form shown beside each.
 - [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md) — a ready-to-use agent skill for working with Dibs
 - [`docs/bare-metal.md`](docs/bare-metal.md) — running Dibs without Docker
 - [`docs/demo-hosting.md`](docs/demo-hosting.md) — how the public demo instance is built and deployed
+- [`docs/security-model.md`](docs/security-model.md) — trust model and known attack surfaces by deployment type
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
 - [`CLAUDE.md`](CLAUDE.md) — conventions for AI coding assistants working in this repo
 
