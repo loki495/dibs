@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Actions\GetIssueDetails;
+use App\Actions\DescribeTodoIssue;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Exception\InvalidArgumentException;
 
@@ -14,13 +14,13 @@ class AgentShowTaskCommand extends Command
 
     protected $description = 'Read one Todo task as JSON for a host-local agent';
 
-    public function handle(GetIssueDetails $details): int
+    public function handle(DescribeTodoIssue $details): int
     {
         $id = filter_var($this->argument('issue'), FILTER_VALIDATE_INT);
         if ($id === false || $id < 1) {
             throw new InvalidArgumentException('issue must be a positive local Todo ID.');
         }
-        $result = $details->handle($id);
+        $result = $details->handle($id, withComments: true, commentsPerPage: DescribeTodoIssue::MAX_COMMENTS_PER_PAGE);
         $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
         return self::SUCCESS;

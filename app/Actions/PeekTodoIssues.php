@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Actions;
 
 use App\Models\Issue;
+use App\Support\TrustedAuthors;
 
 class PeekTodoIssues
 {
+    public function __construct(private readonly TrustedAuthors $trust) {}
+
     public const MAX_IDS = 100;
 
     /**
@@ -24,7 +27,7 @@ class PeekTodoIssues
     public function handle(array $ids): array
     {
         $ids = array_values(array_unique($ids));
-        $issues = Issue::query()->whereIn('id', $ids)->get(['id', 'title', 'revision', 'state', 'is_available'])->keyBy('id');
+        $issues = Issue::query()->whereIn('id', $ids)->get(['id', 'title', 'author_login', 'revision', 'state', 'is_available'])->keyBy('id');
 
         $items = [];
         $unresolved = [];
@@ -36,7 +39,7 @@ class PeekTodoIssues
                 continue;
             }
             $items[] = [
-                'id' => $issue->id, 'title' => $issue->title, 'revision' => $issue->revision,
+                'id' => $issue->id, 'title' => $this->trust->title($issue), 'revision' => $issue->revision,
                 'state' => $issue->state, 'available' => $issue->is_available,
             ];
         }

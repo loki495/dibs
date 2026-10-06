@@ -16,7 +16,7 @@ class IssueSummary
      *
      * @return array<string, mixed>
      */
-    public static function from(Issue $issue): array
+    public static function from(Issue $issue, TrustedAuthors $trust): array
     {
         $names = $issue->labels->pluck('name')->all();
         $membership = $issue->projectItems->first();
@@ -24,7 +24,8 @@ class IssueSummary
         return [
             'id' => $issue->id,
             'number' => $issue->github_number,
-            'title' => $issue->title,
+            'title' => $trust->title($issue),
+            'withheld' => ! $trust->allows($issue->author_login),
             'state' => $issue->state,
             'url' => $issue->url,
             'container' => $issue->children_count > 0,

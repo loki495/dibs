@@ -13,7 +13,8 @@ it('prints one task as json for a host-local agent', function (): void {
     $output = json_decode(Artisan::output(), true);
 
     expect($exitCode)->toBe(0)
-        ->and($output['issue']['id'])->toBe($issue->id);
+        ->and($output['id'])->toBe($issue->id)
+        ->and($output['title'])->toBe('Ship the thing');
 });
 
 it('rejects a non-numeric issue argument instead of crashing', function (): void {

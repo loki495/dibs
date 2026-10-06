@@ -57,6 +57,7 @@ class ResolveDemoDatabase
                 mkdir(dirname($dbPath), recursive: true);
             }
 
+            $this->evictOldestBeyondCap(dirname($dbPath));
             copy($template, $dbPath);
         }
 
@@ -69,5 +70,26 @@ class ResolveDemoDatabase
         DB::purge('sqlite');
 
         return $next($request);
+    }
+
+    /**
+     * Keeps the copy count below dibs.demo_max_instances before a new one is made, deleting the least
+     * recently written first, so a client that never sends the cookie back can't fill the disk. A concurrent
+     * request may already have evicted a file, hence the silenced stat and unlink.
+     */
+    private function evictOldestBeyondCap(string $dir): void
+    {
+        $copies = glob($dir.'/*.sqlite') ?: [];
+        $excess = count($copies) - max(1, (int) config('dibs.demo_max_instances')) + 1;
+
+        if ($excess <= 0) {
+            return;
+        }
+
+        usort($copies, fn (string $a, string $b): int => (@filemtime($a) ?: 0) <=> (@filemtime($b) ?: 0));
+
+        foreach (array_slice($copies, 0, $excess) as $file) {
+            @unlink($file);
+        }
     }
 }

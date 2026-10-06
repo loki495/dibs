@@ -102,6 +102,17 @@ To mirror to GitHub Issues/Projects, set these in `.env`:
 - `GITHUB_TOKEN` — a personal access token (see scopes below)
 - `GITHUB_PROJECT_NUMBERS` — comma-separated numbers of the GitHub Projects (v2) to show as areas
   (blank syncs none)
+- `DIBS_TRUSTED_GITHUB_AUTHORS` — optional, comma-separated GitHub logins whose issue and comment text
+  agents may read. By default only the repository owner is trusted; see below.
+
+**What agents see.** Dibs imports every issue and comment, and the web UI shows all of them. Agents
+(MCP tools and the `todo:agent:*` CLI) only get the text of ones written by the repository owner or a
+`DIBS_TRUSTED_GITHUB_AUTHORS` login, plus anything created through Dibs itself. For anyone else, the
+title, body or comment is replaced by a "withheld" note and marked `withheld: true`, because an agent
+may act on instructions it reads (see [docs/security-model.md](docs/security-model.md)). If your
+`GITHUB_TOKEN` belongs to a different account than the repository owner (an organization repository,
+a bot), add that account's login too, or text you write through Dibs is withheld once it comes back
+from GitHub. Local-only instances are unaffected: nothing there has a GitHub author.
 
 **Token scopes.** Dibs reads/writes Issues (title, body, labels, parent links, comments) and
 Projects v2 item fields (Status, Group, Priority, Planned, Due) on the one repo/owner

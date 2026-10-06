@@ -29,7 +29,7 @@ Agents run on the host and connect to a stdio MCP server. The server exposes Dib
 Nine commands exist: `list`, `show`, `claim`, `heartbeat`, `release`, `create`, `update`, `comment` and `complete`. Several MCP tools have no CLI equivalent (`todo_status`, `todo_context`, `todo_metadata`, `todo_search`, `todo_peek`, `todo_queue_status`, `todo_scaffold_plan`, `todo_reopen`, `todo_claim_status`, `todo_report_bug`). The commands are:
 
 - `todo:agent:list` — read current tasks, parent context, Group, Project, labels, Priority, and local push-queue state from SQLite.
-- `todo:agent:show ISSUE` — read one task with description, comments, hierarchy, and relevant Project fields.
+- `todo:agent:show ISSUE` — read one task in the same shape as `todo_show` with `withComments` (first 50 comments), including untrusted-author withholding. `create` and `update` print the same shape for the written task.
 - `todo:agent:claim ISSUE --agent=NAME --pid=PID [--minutes=30]` — claim a task for the calling agent's own OS process. Returns a `capability_token` in the response **once, in plaintext** — the caller must hold onto it; it's required for every subsequent `heartbeat`/`release` on that claim and is never shown again (only its hash is stored). `--pid` must be the calling agent's own real process ID — the server independently verifies it via `/proc` rather than trusting it blindly (see "Claims and checkpoints" below).
 - `todo:agent:heartbeat ISSUE --pid=PID --token=TOKEN [--minutes=30]` — renew a live claim's lease. Re-verifies the process is still alive on every call; a claim cannot renew itself back to life once its process is confirmed dead.
 - `todo:agent:release ISSUE --pid=PID --token=TOKEN` — release a claim. Requires the exact capability token and pid returned by `claim`; nothing else can release another worker's claim.
@@ -39,6 +39,10 @@ Nine commands exist: `list`, `show`, `claim`, `heartbeat`, `release`, `create`, 
 - `todo:agent:complete ISSUE --pid=PID --token=TOKEN [--summary=TEXT]` — closes a claimed task, enqueues the GitHub push, optionally posts `--summary` as a result comment, and releases the claim. Claim-scoped like `release`/`heartbeat`: only the exact process holding the live claim can complete it.
 
 Output is always machine-readable JSON. Commands reject malformed IDs, unavailable local records, and wrong Project-field options before any write.
+
+## Untrusted authors
+
+Every read — each MCP tool and every `todo:agent:*` command — withholds text written on GitHub by anyone who isn't the mirrored repository's owner or listed in `DIBS_TRUSTED_GITHUB_AUTHORS` (`App\Support\TrustedAuthors`). Such an issue's `title` becomes `[withheld from agents: written on GitHub by @login, not a trusted author]`, its `body` is `null`, its search `excerpt` is empty, and its summary carries `withheld: true`; such a comment keeps its place, `id` and `author` but its `body` is the same note and it carries `withheld: true`; such a closing note is `null`. Text with no GitHub author (created through Dibs, including every record in local-only mode) is always shown. Imported text from a deleted account is stored with author `ghost` and withheld. The web workspace is unaffected.
 
 ## MCP tools
 

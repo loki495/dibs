@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\CreateTodoIssue;
-use App\Actions\GetIssueDetails;
+use App\Actions\DescribeTodoIssue;
 use App\Exceptions\TodoValidationException;
 use Illuminate\Console\Command;
 
@@ -25,7 +25,7 @@ class AgentCreateTaskCommand extends Command
 
     protected $description = 'Create a Todo task, plan, or knowledge record locally for a host-local agent as JSON';
 
-    public function handle(CreateTodoIssue $create, GetIssueDetails $details): int
+    public function handle(CreateTodoIssue $create, DescribeTodoIssue $details): int
     {
         try {
             $issue = $create->handle(

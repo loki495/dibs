@@ -8,10 +8,11 @@ use App\Models\Issue;
 use App\Support\IssueFilters;
 use App\Support\IssueSummary;
 use App\Support\KnowledgeLabels;
+use App\Support\TrustedAuthors;
 
 class ListTodoIssues
 {
-    public function __construct(private readonly ApplyIssueFilters $applyFilters) {}
+    public function __construct(private readonly ApplyIssueFilters $applyFilters, private readonly TrustedAuthors $trust) {}
 
     public const MAX_PER_PAGE = 50;
 
@@ -56,7 +57,7 @@ class ListTodoIssues
             ->paginate($perPage, ['*'], 'page', $page);
 
         return [
-            'items' => $paginator->getCollection()->map(IssueSummary::from(...))->all(),
+            'items' => $paginator->getCollection()->map(fn (Issue $issue): array => IssueSummary::from($issue, $this->trust))->all(),
             'page' => $paginator->currentPage(),
             'perPage' => $paginator->perPage(),
             'total' => $paginator->total(),
