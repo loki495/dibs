@@ -349,7 +349,9 @@ Pest, run through `composer pint` → `composer phpstan` → `composer rector` (
 `composer pest`, in that order so style/static-analysis issues don't get mixed into a
 test-failure investigation. `Http::fake()` and `Http::preventStrayRequests()` (set globally in
 `tests/Pest.php`) block real network calls. Feature tests run against an in-memory SQLite
-database wrapped in `RefreshDatabase` (`tests/Pest.php`) — which means a real SQLite
+database wrapped in `RefreshDatabase` (`tests/Pest.php`). `tests/TestCase.php` aborts the run
+before `RefreshDatabase` touches anything if the configured connection is anything else (a
+cached config or a `DB_URL` would otherwise beat `phpunit.xml`). The in-memory database means a real SQLite
 file-locking/concurrency scenario (like the scheduler race above) cannot be exercised as a
 Feature test: `RefreshDatabase`'s own wrapping transaction makes any `DB::transaction()` call
 under test a *nested* transaction, and Laravel deliberately refuses to retry a nested
