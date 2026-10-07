@@ -17,7 +17,7 @@ local SQLite is authoritative.
 
 **Stack:** Laravel 13, Livewire 4, PHP 8.5, SQLite, Tailwind 4, Flux UI.
 
-> **Status: experimental alpha** (`v0.1.0-alpha.1`). Dibs has run the author's own task list, driven
+> **Status: experimental alpha** (`v0.1.0-alpha.2`). Dibs has run the author's own task list, driven
 > by coding agents over MCP, for about a month. It is suitable for personal, self-hosted use. Expect
 > rough edges, schema changes between alpha releases, and the [known limitations](#known-limitations)
 > below. A [public demo](https://dibs-demo.ac495.net) with throwaway data is the quickest way to look around.
