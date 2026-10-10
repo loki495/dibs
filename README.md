@@ -392,3 +392,7 @@ raw form shown beside each.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Workspace JSON export/import
+
+Open **Settings → Data export/import** to download workspace content and history as JSON. Import validates and previews an archive, then restores it transactionally into an **empty workspace only** after confirmation. Existing records are never overwritten or merged. Accounts, credentials, claims and runtime queues are excluded. See [workspace transfer](docs/workspace-transfer.md) for scope, limits and restore instructions.
