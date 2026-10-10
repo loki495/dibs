@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use App\Http\Controllers\WorkspaceTransferController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,13 @@ Route::livewire('/login', 'pages::auth.login')->middleware('guest')->name('login
 Route::livewire('/', 'pages::workspace')->middleware('auth')->name('workspace');
 Route::livewire('/push-queue', 'pages::push-queue')->middleware('auth')->name('push-queue');
 Route::livewire('/activity', 'pages::activity')->middleware('auth')->name('activity');
+Route::middleware('auth')->group(function (): void {
+    Route::get('/data-transfer', [WorkspaceTransferController::class, 'index'])->name('data-transfer');
+    Route::get('/data-transfer/export', [WorkspaceTransferController::class, 'export'])->name('data-transfer.export');
+    Route::post('/data-transfer/preview', [WorkspaceTransferController::class, 'preview'])->name('data-transfer.preview');
+    Route::post('/data-transfer/import', [WorkspaceTransferController::class, 'import'])->name('data-transfer.import');
+    Route::post('/data-transfer/cancel', [WorkspaceTransferController::class, 'cancel'])->name('data-transfer.cancel');
+});
 Route::post('/logout', function (Request $request): RedirectResponse {
     Auth::logout();
     $request->session()->invalidate();

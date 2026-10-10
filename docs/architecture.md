@@ -379,3 +379,7 @@ dead-process claim cleanup, and push-queue failures — not just the happy path.
   targets one configured `DIBS_GITHUB_OWNER`/`DIBS_GITHUB_REPO`, or none (local-only)
 - Areas, Groups and Priority on a local-only instance (they come only from GitHub Projects), and
   returning an imported instance to local-only
+
+## Workspace content transfer
+
+Authenticated JSON export/import reuses typed Actions via `/data-transfer`. Export reads an explicit content/history table allowlist in a transaction. Restore validates the entire archive, requires an empty destination and uses one insert-only transaction; it never calls GitHub or replays runtime queues/claims. Account credentials and coordination state are excluded. See [workspace transfer](workspace-transfer.md) for the versioned format, preview lifecycle, compatibility and tests.

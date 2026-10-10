@@ -84,6 +84,7 @@ new class extends Component
                     @endif
                 </a>
             @endif
+            <a href="{{ route('data-transfer') }}" class="flex items-center rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">{{ __('Data export/import') }}</a>
             @if ($variant !== 'labeled')
                 <a href="{{ route('activity') }}" class="flex items-center rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">{{ __('Activity') }}</a>
             @endif
