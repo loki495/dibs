@@ -350,3 +350,23 @@ it('gives each row a modified date, and a closed date only for closed issues, in
         ->and($rows->firstWhere('id', $closed->id))->modifiedAt->toBe('Sep 12, 2026')->closedAt->toBe('Sep 12, 2026')
         ->and($rows->firstWhere('id', $legacyClosed->id))->closedAt->toBe('Sep 14, 2026');
 });
+
+it('finds an issue by its local id or its GitHub number, with or without a leading #', function (): void {
+    $byId = Issue::factory()->create(['title' => 'Matched by id', 'github_number' => 9001]);
+    $byNumber = Issue::factory()->create(['title' => 'Matched by number', 'github_number' => $byId->id]);
+    $unrelated = Issue::factory()->create(['title' => 'Unrelated', 'github_number' => 9002]);
+
+    foreach ([(string) $byId->id, '#'.$byId->id, ' '.$byId->id.' '] as $search) {
+        $ids = array_column(app(BuildIssueTree::class)->handle(search: $search)['rows'], 'id');
+
+        expect($ids)->toContain($byId->id, $byNumber->id)
+            ->and($ids)->not->toContain($unrelated->id);
+    }
+});
+
+it('finds a local-only issue (null GitHub number) by id and returns nothing for an id that does not exist', function (): void {
+    $local = Issue::factory()->create(['title' => 'Local only', 'github_number' => null]);
+
+    expect(array_column(app(BuildIssueTree::class)->handle(search: (string) $local->id)['rows'], 'id'))->toBe([$local->id])
+        ->and(app(BuildIssueTree::class)->handle(search: (string) ($local->id + 1000))['rows'])->toBe([]);
+});
