@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\GitHubProject;
 use App\Models\Issue;
 use App\Models\Label;
+use App\Models\ProjectField;
+use App\Models\ProjectItem;
 
 it('revises a task title through the CLI', function (): void {
     $issue = Issue::factory()->create(['title' => 'Old', 'revision' => 1]);
@@ -60,4 +63,29 @@ it('fails with a message for a label both added and removed', function (): void 
     $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--add-label' => ['bug'], '--remove-label' => ['bug']])
         ->expectsOutputToContain('both added and removed')
         ->assertFailed();
+});
+
+it('changes and clears the parent and Group through the CLI', function (): void {
+    $project = GitHubProject::factory()->create();
+    ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $parent = Issue::factory()->create();
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--parent' => (string) $parent->id, '--new-group' => 'Homelab'])
+        ->assertSuccessful();
+    expect($issue->fresh()->parent_issue_id)->toBe($parent->id)->and($item->fresh()->group_option_id)->not->toBeNull();
+
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '2', '--clear-parent' => true, '--clear-group' => true])
+        ->assertSuccessful();
+    expect($issue->fresh()->parent_issue_id)->toBeNull()->and($item->fresh()->group_option_id)->toBeNull();
+});
+
+it('fails with a message for a non-numeric --parent or a parent that is also cleared', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--parent' => 'abc'])
+        ->expectsOutputToContain('numeric --parent')->assertFailed();
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--parent' => '5', '--clear-parent' => true])
+        ->expectsOutputToContain('both set and cleared')->assertFailed();
 });
