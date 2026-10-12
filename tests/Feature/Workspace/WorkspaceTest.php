@@ -1093,3 +1093,12 @@ it('opens Manage labels from the sidebar link through the shared event', functio
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')
         ->assertSeeHtml("wire:click=\"\$dispatch('open-manage-labels')\"");
 });
+
+it('shows the local id on the list row and the detail header', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Show my id', 'github_number' => null]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->assertSee('id '.$issue->id)
+        ->set('selected', $issue->id)
+        ->assertSee('id '.$issue->id);
+});
