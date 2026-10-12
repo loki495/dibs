@@ -219,6 +219,28 @@ Or commit/share it as a `.mcp.json`:
 }
 ```
 
+**Codex** (`~/.codex/config.toml`)
+
+```toml
+[mcp_servers.dibs]
+command = "docker"
+args = ["compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u", "www-data", "app", "php", "artisan", "mcp:start", "todo"]
+```
+
+**Antigravity** (`agy`; `~/.gemini/config/mcp_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "dibs": {
+      "command": "docker",
+      "args": ["compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u", "www-data", "app", "php", "artisan", "mcp:start", "todo"],
+      "disabled": false
+    }
+  }
+}
+```
+
 **Any other MCP client** that can launch a stdio server: give it that same command (executable
 `docker`, the rest as arguments). The `dibs` label is yours to choose; the tools are always `todo_*`.
 
@@ -242,7 +264,8 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
   full `todo_show`; `todo_show`'s `maxBodyLength` gives a cheap truncated preview for the same
   reason.
 - **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
-  plan up front and keep it current as work progresses, so the plan itself — not a chat transcript
+  plan up front and keep it current as work progresses (`todo_revise` edits a record's title, body,
+  Group and labels with a stale-write check), so the plan itself — not a chat transcript
   — is the durable record.
 - **Project knowledge** — research, lessons, and decisions get saved as their own records
   (`todo_create` with a knowledge label), discoverable later instead of buried in a comment

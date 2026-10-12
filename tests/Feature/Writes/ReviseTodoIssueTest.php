@@ -11,6 +11,7 @@ use App\Models\Comment;
 use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
+use App\Models\Label;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
@@ -128,4 +129,84 @@ it('rejects a nonexistent groupId', function (): void {
 
     expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, groupId: 999_999))
         ->toThrow(TodoValidationException::class, 'not available in this area');
+});
+
+it('adds labels by name, creating a missing one, and queues only the difference', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $existing = Label::factory()->for($issue->repository, 'repository')->create(['name' => 'bug']);
+
+    $revised = app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, addLabels: ['Bug', '  Agent   Task ']);
+
+    expect($revised->revision)->toBe(2)
+        ->and($issue->labels()->pluck('name')->sort()->values()->all())->toBe(['agent task', 'bug'])
+        ->and(Label::query()->where('name', 'bug')->count())->toBe(1);
+    $created = Label::query()->where('name', 'agent task')->sole();
+    $push = GitHubPushQueueItem::query()->where('operation', 'set_issue_labels')->where('target_id', $issue->id)->sole();
+    expect($push->payload['add_label_ids'])->toEqualCanonicalizing([$existing->id, $created->id])
+        ->and($push->payload['remove_label_ids'])->toBe([])
+        ->and(GitHubPushQueueItem::query()->where('operation', 'create_label')->count())->toBe(1);
+});
+
+it('removes labels by name, leaves the others alone, and ignores a label the issue does not have', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $keep = Label::factory()->for($issue->repository, 'repository')->create(['name' => 'next']);
+    $drop = Label::factory()->for($issue->repository, 'repository')->create(['name' => 'today']);
+    Label::factory()->for($issue->repository, 'repository')->create(['name' => 'unattached']);
+    $issue->labels()->attach([$keep->id, $drop->id]);
+
+    app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, removeLabels: ['TODAY', 'unattached', 'never existed']);
+
+    expect($issue->labels()->pluck('labels.id')->all())->toBe([$keep->id])
+        ->and(Label::query()->where('name', 'never existed')->exists())->toBeFalse();
+    expect(GitHubPushQueueItem::query()->where('operation', 'set_issue_labels')->sole()->payload)
+        ->toBe(['add_label_ids' => [], 'remove_label_ids' => [$drop->id]]);
+});
+
+it('applies labels together with a title change and a knowledge label like any other', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Old', 'revision' => 1]);
+
+    $revised = app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, title: 'New', addLabels: ['research']);
+
+    expect($revised->title)->toBe('New')->and($issue->labels()->pluck('name')->all())->toBe(['research']);
+});
+
+it('queues nothing for a label-only revise that changes nothing, but still bumps the revision', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $label = Label::factory()->for($issue->repository, 'repository')->create(['name' => 'bug']);
+    $issue->labels()->attach($label);
+
+    $revised = app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, addLabels: ['bug'], removeLabels: ['absent']);
+
+    expect($revised->revision)->toBe(2)
+        ->and(GitHubPushQueueItem::query()->where('operation', 'set_issue_labels')->exists())->toBeFalse();
+});
+
+it('rejects a name that is both added and removed, and a blank label name, without changing anything', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, addLabels: ['Bug'], removeLabels: ['bug']))
+        ->toThrow(TodoValidationException::class, 'both added and removed');
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, addLabels: ['   ']))
+        ->toThrow(TodoValidationException::class, 'blank');
+
+    expect($issue->fresh()->revision)->toBe(1)->and($issue->labels()->count())->toBe(0);
+});
+
+it('rejects a stale revision on a label change without touching labels', function (): void {
+    $issue = Issue::factory()->create(['revision' => 2]);
+
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, addLabels: ['bug']))
+        ->toThrow(TodoStaleRevisionException::class);
+
+    expect($issue->labels()->count())->toBe(0)->and(Label::query()->where('name', 'bug')->exists())->toBeFalse();
+});
+
+it('returns the original result when a label revise is retried with the same idempotency key', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    $first = app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, addLabels: ['bug'], idempotencyKey: 'label-once');
+    $second = app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, addLabels: ['bug'], idempotencyKey: 'label-once');
+
+    expect($second->id)->toBe($first->id)->and($issue->fresh()->revision)->toBe(2)
+        ->and(GitHubPushQueueItem::query()->where('operation', 'set_issue_labels')->count())->toBe(1);
 });
