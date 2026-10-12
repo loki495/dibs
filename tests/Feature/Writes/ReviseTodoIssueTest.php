@@ -210,3 +210,97 @@ it('returns the original result when a label revise is retried with the same ide
     expect($second->id)->toBe($first->id)->and($issue->fresh()->revision)->toBe(2)
         ->and(GitHubPushQueueItem::query()->where('operation', 'set_issue_labels')->count())->toBe(1);
 });
+
+function reviseGroupFixture(array $issueAttributes = []): array
+{
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $issue = Issue::factory()->create(['revision' => 1, ...$issueAttributes]);
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    return [$issue, $item, $field];
+}
+
+it('moves the issue to a Group by name, creating it when missing and reusing it case-insensitively', function (): void {
+    [$issue, $item, $field] = reviseGroupFixture();
+    $existing = ProjectFieldOption::factory()->for($field, 'field')->create(['name' => 'Homelab']);
+
+    app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, newGroupName: ' homelab ');
+    expect($item->fresh()->group_option_id)->toBe($existing->id);
+
+    app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 2, newGroupName: 'Brand New');
+    $created = ProjectFieldOption::query()->where('name', 'Brand New')->sole();
+    expect($item->fresh()->group_option_id)->toBe($created->id)
+        ->and(GitHubPushQueueItem::query()->where('operation', 'create_group_option')->count())->toBe(1)
+        ->and(GitHubPushQueueItem::query()->where('operation', 'set_project_item_group')->count())->toBe(1);
+});
+
+it('clears the Group and queues the clear only when there was one', function (): void {
+    [$issue, $item, $field] = reviseGroupFixture();
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $item->update(['group_option_id' => $group->id]);
+
+    app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, clearGroup: true);
+    expect($item->fresh()->group_option_id)->toBeNull()
+        ->and(GitHubPushQueueItem::query()->where('operation', 'clear_project_item_group')->count())->toBe(1);
+
+    app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 2, clearGroup: true);
+    expect(GitHubPushQueueItem::query()->where('operation', 'clear_project_item_group')->count())->toBe(1);
+});
+
+it('rejects conflicting or impossible Group changes without changing anything', function (): void {
+    [$issue, $item, $field] = reviseGroupFixture();
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, groupId: $group->id, clearGroup: true))
+        ->toThrow(TodoValidationException::class, 'only one of groupId, newGroupName or clearGroup');
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, newGroupName: '   '))
+        ->toThrow(TodoValidationException::class, 'blank');
+
+    $noArea = Issue::factory()->create(['revision' => 1]);
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $noArea->id, expectedRevision: 1, newGroupName: 'X'))
+        ->toThrow(TodoValidationException::class, 'no area assigned');
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $noArea->id, expectedRevision: 1, clearGroup: true))
+        ->toThrow(TodoValidationException::class, 'no area assigned');
+
+    expect($issue->fresh()->revision)->toBe(1)->and($item->fresh()->group_option_id)->toBeNull();
+});
+
+it('moves the issue under a parent, queues it, and changes the parent together with a title', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Old', 'revision' => 1]);
+    $parent = Issue::factory()->create();
+
+    $revised = app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, title: 'New', parentId: $parent->id);
+
+    expect($revised->title)->toBe('New')->and($revised->parent_issue_id)->toBe($parent->id)
+        ->and(GitHubPushQueueItem::query()->where('operation', 'set_issue_parent')->where('target_id', $issue->id)->exists())->toBeTrue();
+});
+
+it('clears the parent, queueing the removal only for a parent that reached GitHub', function (): void {
+    $parent = Issue::factory()->create();
+    $synced = Issue::factory()->create(['revision' => 1, 'parent_issue_id' => $parent->id, 'github_parent_node_id' => 'PARENT_NODE']);
+    $local = Issue::factory()->create(['revision' => 1, 'parent_issue_id' => $parent->id]);
+
+    app(ReviseTodoIssue::class)->handle(id: $synced->id, expectedRevision: 1, clearParent: true);
+    app(ReviseTodoIssue::class)->handle(id: $local->id, expectedRevision: 1, clearParent: true);
+
+    expect($synced->fresh()->parent_issue_id)->toBeNull()->and($local->fresh()->parent_issue_id)->toBeNull()
+        ->and(GitHubPushQueueItem::query()->where('operation', 'remove_issue_parent')->pluck('target_id')->all())->toBe([$synced->id]);
+});
+
+it('rejects a self-parent, a descendant as parent, an unavailable parent and parentId with clearParent, rolling everything back', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Keep', 'revision' => 1]);
+    $child = Issue::factory()->create(['parent_issue_id' => $issue->id]);
+    $gone = Issue::factory()->create(['is_available' => false]);
+
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, title: 'Changed', parentId: $issue->id))
+        ->toThrow(TodoValidationException::class, 'own parent');
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, title: 'Changed', parentId: $child->id))
+        ->toThrow(TodoValidationException::class, 'hierarchy cycle');
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, parentId: $gone->id))
+        ->toThrow(TodoValidationException::class, 'no longer available');
+    expect(fn () => app(ReviseTodoIssue::class)->handle(id: $issue->id, expectedRevision: 1, parentId: $child->id, clearParent: true))
+        ->toThrow(TodoValidationException::class, 'both set and cleared');
+
+    expect($issue->fresh()->title)->toBe('Keep')->and($issue->fresh()->revision)->toBe(1)->and($issue->fresh()->parent_issue_id)->toBeNull();
+});

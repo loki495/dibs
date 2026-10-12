@@ -107,3 +107,31 @@ it('reports a conflict instead of changing labels on a stale revision', function
 
     expect($issue->labels()->count())->toBe(0);
 });
+
+it('changes the parent and Group by name, and clears them, through the tool', function (): void {
+    $project = GitHubProject::factory()->create();
+    ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $parent = Issue::factory()->create();
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'parentId' => $parent->id, 'newGroupName' => 'Homelab'])
+        ->assertOk()->assertHasNoErrors()->assertSee('"conflict":false');
+    expect($issue->fresh()->parent_issue_id)->toBe($parent->id)->and($item->fresh()->group_option_id)->not->toBeNull();
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 2, 'clearParent' => true, 'clearGroup' => true])
+        ->assertOk()->assertHasNoErrors();
+    expect($issue->fresh()->parent_issue_id)->toBeNull()->and($item->fresh()->group_option_id)->toBeNull();
+});
+
+it('returns structured errors for contradictory or invalid parent and Group arguments', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'parentId' => $issue->id])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'parentId' => 0])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'parentId' => 5, 'clearParent' => true])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'groupId' => 5, 'clearGroup' => true])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'clearGroup' => 'yes'])->assertHasErrors();
+
+    expect($issue->fresh()->revision)->toBe(1);
+});
