@@ -36,6 +36,7 @@ class BuildIssueTree
         $requestedLabels = array_values(array_filter($labels, fn (string $label): bool => $label !== 'parent'));
         $claims = TaskClaim::query()->whereNull('released_at')->with('agentSession')->get()->keyBy('issue_id');
         $today = now(config('dibs.timezone'))->toDateString();
+        $searchId = ctype_digit($digits = ltrim(trim($search), '#')) ? (int) $digits : null;
         $nodes = [];
         $groups = [];
         $areaCounts = [];
@@ -71,7 +72,7 @@ class BuildIssueTree
                 default => ! $knowledge,
             };
             $stateMatches = $view === 'daily' || $state === 'ALL' || $issue->state === $state;
-            $searchMatches = $search === '' || Str::contains(Str::lower($issue->title.' '.$issue->body.' #'.$issue->github_number), Str::lower(trim($search)));
+            $searchMatches = $search === '' || Str::contains(Str::lower($issue->title.' '.$issue->body.' #'.$issue->github_number), Str::lower(trim($search))) || $issue->id === $searchId;
             $labelMatches = ($requiresParent === false || $container) && ($requestedLabels === [] || count(array_intersect($requestedLabels, $names)) > 0);
             $priorityMatches = $priority === 0 || collect($memberships)->contains(fn (array $item): bool => $item['priority'] === (string) $priority && ($area === 0 || $item['area'] === $area));
             $matches[$issue->id] = $inArea && $inGroup && $modeMatches && $stateMatches && $searchMatches && $labelMatches && $priorityMatches;
