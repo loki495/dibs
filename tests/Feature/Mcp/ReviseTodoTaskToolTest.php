@@ -6,6 +6,7 @@ use App\Mcp\Servers\TodoServer;
 use App\Mcp\Tools\ReviseTodoTask;
 use App\Models\GitHubProject;
 use App\Models\Issue;
+use App\Models\Label;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
@@ -71,4 +72,38 @@ it('returns a structured error when setting a Group on an issue with no area ass
 
     TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'groupId' => $group->id])
         ->assertHasErrors();
+});
+
+it('adds and removes labels by name through the tool and returns them in the detail', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $old = Label::factory()->for($issue->repository, 'repository')->create(['name' => 'today']);
+    $issue->labels()->attach($old);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => ['Next', 'lesson'], 'removeLabels' => ['today', 'not there']])
+        ->assertOk()
+        ->assertHasNoErrors()
+        ->assertSee('"conflict":false')
+        ->assertSee('lesson');
+
+    expect($issue->labels()->pluck('name')->sort()->values()->all())->toBe(['lesson', 'next']);
+});
+
+it('returns a structured error for a blank or contradictory label change', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => ['bug'], 'removeLabels' => ['bug']])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => ['']])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => 'bug'])->assertHasErrors();
+
+    expect($issue->fresh()->revision)->toBe(1)->and($issue->labels()->count())->toBe(0);
+});
+
+it('reports a conflict instead of changing labels on a stale revision', function (): void {
+    $issue = Issue::factory()->create(['revision' => 2]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => ['bug']])
+        ->assertOk()
+        ->assertSee('"conflict":true');
+
+    expect($issue->labels()->count())->toBe(0);
 });

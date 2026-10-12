@@ -19,7 +19,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Revises an issue\'s canonical title, body, and/or Group — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its existing area (the issue must already belong to an area/Project — set one via todo_create/todo_scaffold_plan first) and does not currently support clearing the Group back to none. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
+#[Description('Revises an issue\'s canonical title, body, Group, and/or labels (addLabels/removeLabels deltas by name) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its existing area (the issue must already belong to an area/Project — set one via todo_create/todo_scaffold_plan first) and does not currently support clearing the Group back to none. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
 class ReviseTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_revise';
@@ -32,6 +32,10 @@ class ReviseTodoTask extends Tool implements Errable
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'body' => ['sometimes', 'nullable', 'string', 'max:65535'],
             'groupId' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'addLabels' => ['sometimes', 'array', 'max:20'],
+            'addLabels.*' => ['string', 'max:100'],
+            'removeLabels' => ['sometimes', 'array', 'max:20'],
+            'removeLabels.*' => ['string', 'max:100'],
             'note' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
@@ -45,6 +49,8 @@ class ReviseTodoTask extends Tool implements Errable
                 groupId: $arguments['groupId'] ?? null,
                 note: $arguments['note'] ?? null,
                 idempotencyKey: $arguments['idempotencyKey'] ?? null,
+                addLabels: $arguments['addLabels'] ?? [],
+                removeLabels: $arguments['removeLabels'] ?? [],
             );
         } catch (TodoStaleRevisionException $exception) {
             return Response::structured([
@@ -68,6 +74,8 @@ class ReviseTodoTask extends Tool implements Errable
             'title' => $schema->string()->nullable()->description('The new title, if changing it.'),
             'body' => $schema->string()->nullable()->description('The new canonical body, if changing it.'),
             'groupId' => $schema->integer()->nullable()->description('A Group id within the issue\'s existing area, if moving it to a different Group. The issue must already belong to an area/Project.'),
+            'addLabels' => $schema->array()->items($schema->string())->description('Label names to attach, e.g. ["bug", "agent task"]: matched case-insensitively against existing labels and created if missing, stored lowercase. Knowledge labels (research, lesson, decision, guide) work too and move the issue to Knowledge.'),
+            'removeLabels' => $schema->array()->items($schema->string())->description('Label names to detach; a label the issue does not carry is ignored. A name cannot be in both lists.'),
             'note' => $schema->string()->nullable()->description('An optional concise note explaining the revision, added as a comment.'),
             'idempotencyKey' => $schema->string()->nullable()->description('A caller-chosen key; retrying the same key returns the original result instead of revising again.'),
         ];

@@ -19,10 +19,12 @@ class AgentUpdateTaskCommand extends Command
         {--expected-revision= : The `revision` last read for this issue}
         {--title= : New title}
         {--body= : New canonical body}
+        {--add-label=* : Label name to attach (repeatable); created if missing}
+        {--remove-label=* : Label name to detach (repeatable); ignored if the task lacks it}
         {--note= : Optional revision note, posted as a comment}
         {--idempotency-key= : Retrying the same key returns the original result}';
 
-    protected $description = 'Revise a Todo task\'s title/body for a host-local agent as JSON';
+    protected $description = 'Revise a Todo task\'s title/body/labels for a host-local agent as JSON';
 
     public function handle(ReviseTodoIssue $revise, DescribeTodoIssue $details): int
     {
@@ -41,6 +43,8 @@ class AgentUpdateTaskCommand extends Command
                 body: $this->option('body'),
                 note: $this->option('note'),
                 idempotencyKey: $this->option('idempotency-key'),
+                addLabels: $this->option('add-label'),
+                removeLabels: $this->option('remove-label'),
             );
         } catch (TodoStaleRevisionException $exception) {
             $this->line(json_encode(['conflict' => true, 'message' => $exception->getMessage(), 'current' => $details->handle($exception->currentId)], JSON_PRETTY_PRINT));
