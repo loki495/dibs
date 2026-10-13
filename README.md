@@ -401,6 +401,10 @@ raw form shown beside each.
 | Browser tests | `composer pest:browser` | `docker compose --profile test run --rm app-test vendor/bin/pest tests/Browser` |
 | Any Artisan command | `composer artisan -- <command>` | `docker compose exec -T -u www-data app php artisan <command>` |
 
+## Workspace JSON export/import
+
+Open **Settings → Data export/import** to download workspace content and history as JSON. Import validates and previews an archive, then restores it transactionally into an **empty workspace only** after confirmation. Existing records are never overwritten or merged. Accounts, credentials, claims and runtime queues are excluded. See [workspace transfer](docs/workspace-transfer.md) for scope, limits and restore instructions.
+
 ## Learn more
 
 - [`docs/architecture.md`](docs/architecture.md) — data model and sync design
@@ -415,7 +419,3 @@ raw form shown beside each.
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-## Workspace JSON export/import
-
-Open **Settings → Data export/import** to download workspace content and history as JSON. Import validates and previews an archive, then restores it transactionally into an **empty workspace only** after confirmation. Existing records are never overwritten or merged. Accounts, credentials, claims and runtime queues are excluded. See [workspace transfer](docs/workspace-transfer.md) for scope, limits and restore instructions.
