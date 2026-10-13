@@ -5,15 +5,20 @@ declare(strict_types=1);
 function githubConfigWithProjectNumbers(?string $raw): array
 {
     $previous = [$_ENV['GITHUB_PROJECT_NUMBERS'] ?? null, $_SERVER['GITHUB_PROJECT_NUMBERS'] ?? null];
+    // env() also reads the process environment, which a container's env_file populates.
+    $previousProcess = getenv('GITHUB_PROJECT_NUMBERS');
     unset($_ENV['GITHUB_PROJECT_NUMBERS'], $_SERVER['GITHUB_PROJECT_NUMBERS']);
+    putenv('GITHUB_PROJECT_NUMBERS');
     if ($raw !== null) {
         $_ENV['GITHUB_PROJECT_NUMBERS'] = $_SERVER['GITHUB_PROJECT_NUMBERS'] = $raw;
+        putenv('GITHUB_PROJECT_NUMBERS='.$raw);
     }
 
     try {
         return require base_path('config/github.php');
     } finally {
         unset($_ENV['GITHUB_PROJECT_NUMBERS'], $_SERVER['GITHUB_PROJECT_NUMBERS']);
+        putenv($previousProcess === false ? 'GITHUB_PROJECT_NUMBERS' : 'GITHUB_PROJECT_NUMBERS='.$previousProcess);
         if ($previous[0] !== null) {
             $_ENV['GITHUB_PROJECT_NUMBERS'] = $previous[0];
         }

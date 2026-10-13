@@ -6,6 +6,7 @@ use App\Mcp\Servers\TodoServer;
 use App\Mcp\Tools\ReviseTodoTask;
 use App\Models\GitHubProject;
 use App\Models\Issue;
+use App\Models\Label;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
@@ -71,4 +72,66 @@ it('returns a structured error when setting a Group on an issue with no area ass
 
     TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'groupId' => $group->id])
         ->assertHasErrors();
+});
+
+it('adds and removes labels by name through the tool and returns them in the detail', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $old = Label::factory()->for($issue->repository, 'repository')->create(['name' => 'today']);
+    $issue->labels()->attach($old);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => ['Next', 'lesson'], 'removeLabels' => ['today', 'not there']])
+        ->assertOk()
+        ->assertHasNoErrors()
+        ->assertSee('"conflict":false')
+        ->assertSee('lesson');
+
+    expect($issue->labels()->pluck('name')->sort()->values()->all())->toBe(['lesson', 'next']);
+});
+
+it('returns a structured error for a blank or contradictory label change', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => ['bug'], 'removeLabels' => ['bug']])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => ['']])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => 'bug'])->assertHasErrors();
+
+    expect($issue->fresh()->revision)->toBe(1)->and($issue->labels()->count())->toBe(0);
+});
+
+it('reports a conflict instead of changing labels on a stale revision', function (): void {
+    $issue = Issue::factory()->create(['revision' => 2]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLabels' => ['bug']])
+        ->assertOk()
+        ->assertSee('"conflict":true');
+
+    expect($issue->labels()->count())->toBe(0);
+});
+
+it('changes the parent and Group by name, and clears them, through the tool', function (): void {
+    $project = GitHubProject::factory()->create();
+    ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $parent = Issue::factory()->create();
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'parentId' => $parent->id, 'newGroupName' => 'Homelab'])
+        ->assertOk()->assertHasNoErrors()->assertSee('"conflict":false');
+    expect($issue->fresh()->parent_issue_id)->toBe($parent->id)->and($item->fresh()->group_option_id)->not->toBeNull();
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 2, 'clearParent' => true, 'clearGroup' => true])
+        ->assertOk()->assertHasNoErrors();
+    expect($issue->fresh()->parent_issue_id)->toBeNull()->and($item->fresh()->group_option_id)->toBeNull();
+});
+
+it('returns structured errors for contradictory or invalid parent and Group arguments', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'parentId' => $issue->id])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'parentId' => 0])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'parentId' => 5, 'clearParent' => true])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'groupId' => 5, 'clearGroup' => true])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'clearGroup' => 'yes'])->assertHasErrors();
+
+    expect($issue->fresh()->revision)->toBe(1);
 });

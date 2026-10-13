@@ -801,7 +801,7 @@ new class extends Component
         $deletedRows = $this->view === 'deleted'
             ? Issue::query()->where('is_available', false)
                 ->when($this->search !== '', fn ($query) => $query->where(function ($matches): void {
-                    $matches->where('title', 'like', '%'.$this->search.'%')->orWhere('github_number', $this->search);
+                    $matches->where('title', 'like', '%'.$this->search.'%')->orWhere('github_number', ltrim($this->search, '#'))->orWhere('id', ltrim($this->search, '#'));
                 }))->orderByDesc('updated_at')->limit(100)->get(['id', 'github_number', 'title', 'updated_at'])
             : null;
 
@@ -920,7 +920,7 @@ new class extends Component
                         <flux:button type="button" wire:click="openCapture" icon="plus" size="sm" class="bg-teal-700! text-white! hover:bg-teal-600! dark:bg-teal-600! dark:hover:bg-teal-500!">{{ __('Add task') }}</flux:button>
                     </div>
                 </div>
-                <div class="mt-3"><flux:input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="Search titles, notes, or #number" aria-label="Search tasks" /></div>
+                <div class="mt-3"><flux:input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="Search titles, notes, id or #number" aria-label="Search tasks" /></div>
             </div>
             @if ($view !== 'deleted')
             <div class="mb-4 space-y-3">
@@ -970,7 +970,7 @@ new class extends Component
                             <div wire:key="deleted-row-{{ $row->id }}" role="listitem" class="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 last:border-0 dark:border-slate-800/70">
                                 <div class="min-w-0">
                                     <span class="block truncate text-sm text-slate-500 line-through dark:text-slate-400">{{ $row->title }}</span>
-                                    <span class="text-[11px] text-slate-500" title="{{ $row->updated_at->diffForHumans() }}">{{ \App\Support\IssueNumber::label($row->github_number) }}{{ $row->github_number !== null ? ' · ' : '' }}{{ __('Deleted :date', ['date' => $row->updated_at->copy()->timezone((string) config('dibs.timezone'))->format('M j, Y')]) }}</span>
+                                    <span class="text-[11px] text-slate-500" title="{{ $row->updated_at->diffForHumans() }}">{{ __('id :id', ['id' => $row->id]) }} · {{ \App\Support\IssueNumber::label($row->github_number) }}{{ $row->github_number !== null ? ' · ' : '' }}{{ __('Deleted :date', ['date' => $row->updated_at->copy()->timezone((string) config('dibs.timezone'))->format('M j, Y')]) }}</span>
                                 </div>
                                 <flux:button type="button" wire:click="restoreIssue({{ $row->id }})" size="sm">{{ __('Restore') }}</flux:button>
                             </div>
@@ -1028,6 +1028,7 @@ new class extends Component
                                     <div class="min-w-0 flex-1 py-2 text-left">
                                         <span @class(['block break-words text-sm leading-6', 'font-medium' => $row['container'], 'text-slate-500 dark:text-slate-400' => $row['context'], 'line-through opacity-70' => $row['state'] === 'CLOSED'])>{{ $row['title'] }}</span>
                                         <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                            <span title="{{ __('Local id (used by MCP tools)') }}">{{ __('id :id', ['id' => $row['id']]) }}</span>
                                             @if ($row['number'] !== null)<span>{{ \App\Support\IssueNumber::label($row['number']) }}</span>@endif
                                             @if ($row['claim'])
                                                 <span data-claim-pill="{{ $row['id'] }}" title="{{ __('Claimed by :agent', ['agent' => $row['claim']['agentName']]) }}" @class(['inline-flex items-center rounded-full border px-1.5 py-0.5 font-medium', 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400' => $row['claim']['isExpired'], 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400' => ! $row['claim']['isExpired'] && $row['claim']['displayAlive'] === false, 'border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-400' => ! $row['claim']['isExpired'] && $row['claim']['displayAlive'] !== false])>{{ $row['claim']['agentName'] }}</span>

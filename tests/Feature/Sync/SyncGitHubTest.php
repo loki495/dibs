@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\ApplyGitHubSnapshot;
 use App\Actions\SyncGitHub;
+use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
 use App\Models\SyncState;
 use App\Services\GitHub\FetchGitHubSnapshot;
@@ -71,4 +72,38 @@ it('does not fetch while another sync owns the lock', function (): void {
 it('fails clearly when no GitHub credential is provided', function (): void {
     config(['github.token' => null]);
     $this->artisan('todo:sync')->expectsOutput('Supply GITHUB_TOKEN or use the scripts/github-pull wrapper with your gh login.')->assertFailed();
+});
+
+it('pulls normally when the push queue holds only pushed rows', function (): void {
+    GitHubPushQueueItem::factory()->create(['status' => 'pushed']);
+    $fetch = Mockery::mock(FetchGitHubSnapshot::class);
+    $fetch->shouldReceive('handle')->once()->andReturn(['repository' => ['id' => 'R_1'], 'labels' => [], 'issues' => [], 'projects' => []]);
+    $apply = Mockery::mock(ApplyGitHubSnapshot::class);
+    $apply->shouldReceive('handle')->once();
+
+    (new SyncGitHub($fetch, $apply))->handle('test-token');
+
+    expect(SyncState::query()->sole()->last_success_at)->not->toBeNull();
+});
+
+it('refuses to pull while unpushed local changes are queued', function (string $status): void {
+    $issue = Issue::factory()->create(['title' => 'Local edit']);
+    GitHubPushQueueItem::factory()->create(['status' => $status, 'target_type' => 'issue', 'target_id' => $issue->id]);
+    $fetch = Mockery::mock(FetchGitHubSnapshot::class);
+    $fetch->shouldNotReceive('handle');
+    $apply = Mockery::mock(ApplyGitHubSnapshot::class);
+    $apply->shouldNotReceive('handle');
+
+    expect(fn () => (new SyncGitHub($fetch, $apply))->handle('test-token'))
+        ->toThrow(GitHubSyncException::class, 'unpushed local change');
+
+    expect($issue->fresh()->title)->toBe('Local edit')
+        ->and(SyncState::query()->count())->toBe(0)
+        ->and(Cache::lock('github:'.config('github.owner').'/'.config('github.repository'), 900)->get())->toBeTrue();
+})->with(['pending', 'failed', 'needs_attention']);
+
+it('reports the unpushed-changes refusal from todo:sync as a handled error', function (): void {
+    GitHubPushQueueItem::factory()->create(['status' => 'pending']);
+    config(['github.token' => 'test-token']);
+    $this->artisan('todo:sync')->expectsOutputToContain('unpushed local change')->assertFailed();
 });
