@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions;
 
+use App\Models\GitHubPushQueueItem;
 use App\Models\SyncState;
 use App\Services\GitHub\FetchGitHubSnapshot;
 use App\Services\GitHub\GitHubClient;
@@ -22,6 +23,10 @@ class SyncGitHub
     {
         if (! GitHubMirror::enabled()) {
             throw new GitHubSyncException('GitHub mirroring is not configured. Set DIBS_GITHUB_OWNER and DIBS_GITHUB_REPO to import from GitHub.');
+        }
+        $unpushed = GitHubPushQueueItem::query()->whereIn('status', ['pending', 'failed', 'needs_attention'])->count();
+        if ($unpushed > 0) {
+            throw new GitHubSyncException("Cannot pull: {$unpushed} unpushed local change(s) are still in the push queue, and a pull would overwrite them. Drain the push queue or resolve its needs-attention rows first.");
         }
         $key = 'github:'.GitHubMirror::fullName();
         $lock = Cache::lock($key, 900);

@@ -21,7 +21,10 @@ tool read SQLite only and never call GitHub directly.
 
 There are no inbound webhooks and no scheduled freshness polling. The only path for GitHub → local data is a manual pull
 (`scripts/github-pull`, `php artisan todo:sync`), used for initial import, disaster recovery,
-and bringing a second instance in sync. It never overwrites unpushed local changes.
+and bringing a second instance in sync. It refuses to run while the push queue holds
+pending, failed or needs-attention rows (`SyncGitHub`, the one entry point for the command, the script
+and the top-bar refresh), because the pull replaces issue and comment text with GitHub's; drain or
+resolve the queue first.
 
 **Local-only mode.** Mirroring is optional. Whether writes are mirrored is decided from the
 database, not from each process's environment: they are once a repository has been imported (a
