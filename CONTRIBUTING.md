@@ -35,7 +35,7 @@ docker compose exec -T -u www-data app vendor/bin/pest
 docker compose --profile test run --rm app-test vendor/bin/pest tests/Browser
 ```
 
-The browser suite runs in its own `app-test` container (Node.js and Chromium), built the first time you run it.
+The browser suite runs in its own `app-test` container (Node.js and Chromium), built the first time you run it. It needs the `test` profile build of that image (`docker compose --profile test build app-test`); a plain `docker compose up` never builds it.
 
 ## What a good PR contains
 
