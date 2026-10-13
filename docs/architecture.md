@@ -21,7 +21,10 @@ tool read SQLite only and never call GitHub directly.
 
 There are no inbound webhooks and no scheduled freshness polling. The only path for GitHub → local data is a manual pull
 (`scripts/github-pull`, `php artisan todo:sync`), used for initial import, disaster recovery,
-and bringing a second instance in sync. It never overwrites unpushed local changes.
+and bringing a second instance in sync. It refuses to run while the push queue holds
+pending, failed or needs-attention rows (`SyncGitHub`, the one entry point for the command, the script
+and the top-bar refresh), because the pull replaces issue and comment text with GitHub's; drain or
+resolve the queue first.
 
 **Local-only mode.** Mirroring is optional. Whether writes are mirrored is decided from the
 database, not from each process's environment: they are once a repository has been imported (a
@@ -209,9 +212,9 @@ logs scheduler` showing repeated "No scheduled commands are ready to run" while 
 schedule:list`/`schedule:run` correctly see the job as due confirms it; `docker compose restart
 scheduler` is the known recovery.
 
-A push-time conflict (GitHub edited directly, or by another instance, since the local record
-was last pushed) does not block or roll back the local write — it marks the row
-`needs_attention` for human review. The push-queue UI (`/push-queue`, gated by
+Pushes are last-local-write-wins: an update is sent as-is with no comparison against the remote
+copy, so a remote edit made since the last pull is overwritten. A rejected push does not block or
+roll back the local write — it marks the row `needs_attention` for human review. The push-queue UI (`/push-queue`, gated by
 `config('dibs.push_queue_ui_enabled')`) shows pending/failed/needs-attention/pushed counts and
 per-item detail; `DescribeGitHubPushQueue::counts()['actionable']` is `failed + needs_attention`
 — the count that actually needs a human, as opposed to `pending`, which is just queue depth.

@@ -17,7 +17,7 @@ You should receive an acknowledgement within a few days. Please don't disclose t
 
 ## Scope
 
-This is a personal-use, self-hosted application. `GITHUB_TOKEN` is read server-side only and never appears in a tool argument, MCP response, or browser bundle — see the README's "Connecting to GitHub" section for the exact least-privilege scopes it needs. Reports involving GitHub token exposure, MCP tool authorization/claim identity spoofing, or push-queue conflict handling are especially appreciated.
+This is a personal-use, self-hosted application. `GITHUB_TOKEN` is read server-side only and never appears in a tool argument, MCP response, or browser bundle — see the README's "Connecting to GitHub" section for the exact least-privilege scopes it needs. Reports involving GitHub token exposure, MCP tool authorization/claim identity spoofing, or push-queue handling are especially appreciated.
 
 ## Trust model
 
