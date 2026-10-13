@@ -265,7 +265,7 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
   reason.
 - **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
   plan up front and keep it current as work progresses (`todo_revise` edits a record's title, body,
-  Group and labels with a stale-write check), so the plan itself — not a chat transcript
+  Group, parent and labels with a stale-write check), so the plan itself — not a chat transcript
   — is the durable record.
 - **Project knowledge** — research, lessons, and decisions get saved as their own records
   (`todo_create` with a knowledge label), discoverable later instead of buried in a comment

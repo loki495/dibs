@@ -212,9 +212,9 @@ logs scheduler` showing repeated "No scheduled commands are ready to run" while 
 schedule:list`/`schedule:run` correctly see the job as due confirms it; `docker compose restart
 scheduler` is the known recovery.
 
-A push-time conflict (GitHub edited directly, or by another instance, since the local record
-was last pushed) does not block or roll back the local write — it marks the row
-`needs_attention` for human review. The push-queue UI (`/push-queue`, gated by
+Pushes are last-local-write-wins: an update is sent as-is with no comparison against the remote
+copy, so a remote edit made since the last pull is overwritten. A rejected push does not block or
+roll back the local write — it marks the row `needs_attention` for human review. The push-queue UI (`/push-queue`, gated by
 `config('dibs.push_queue_ui_enabled')`) shows pending/failed/needs-attention/pushed counts and
 per-item detail; `DescribeGitHubPushQueue::counts()['actionable']` is `failed + needs_attention`
 — the count that actually needs a human, as opposed to `pending`, which is just queue depth.
