@@ -36,6 +36,12 @@ the only layout where a compromised web tier stays inside a container.
   replaced by a "withheld" note with `withheld: true`; ids, state, labels and the author's login stay
   visible. Text from deleted GitHub accounts is stored as `ghost` and withheld too. The web UI still
   shows everything, for you to read.
+- **Known gap: search matches withheld text.** `todo_search` matches the query against every issue's
+  title and body, including those withheld from an untrusted author, and only blanks the excerpt. An
+  agent can therefore tell whether a withheld issue contains a term by trying terms and watching which
+  issues match. The text itself is never returned. The probing is read-only, local to your instance and
+  slow to learn anything from, so it is accepted for now; restricting withheld issues to a title-only
+  match would close it.
 - **What to do.** Keep `DIBS_TRUSTED_GITHUB_AUTHORS` to people you'd let instruct your agents. If your
   token's account isn't the repository owner, add it, or your own text is withheld after it round-trips
   through GitHub. Labels are still shown to agents, so on a public repository don't give triage rights to
