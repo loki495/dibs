@@ -17,7 +17,7 @@ local SQLite is authoritative.
 
 **Stack:** Laravel 13, Livewire 4, PHP 8.5, SQLite, Tailwind 4, Flux UI.
 
-> **Status: experimental alpha** (`v0.1.0-alpha.2`). Dibs has run the author's own task list, driven
+> **Status: experimental alpha** (see [Releases](https://github.com/loki495/dibs/releases)). Dibs has run the author's own task list, driven
 > by coding agents over MCP, for about a month. It is suitable for personal, self-hosted use. Expect
 > rough edges, schema changes between alpha releases, and the [known limitations](#known-limitations)
 > below. A [public demo](https://dibs-demo.ac495.net) with throwaway data is the quickest way to look around.
@@ -366,6 +366,9 @@ afterwards.
 - **No built-in backup tooling.** Back up `database/database.sqlite` yourself (see above).
 - **Areas, Groups and Priority come only from GitHub Projects.** A local-only instance has none and
   organizes work with labels and parent tasks.
+- **GitHub pushes are last-local-write-wins.** An update is sent as-is, so an edit made on GitHub since the
+  last pull is overwritten. A pull refuses to run while the push queue has pending, failed or
+  needs-attention rows, so it cannot overwrite unpushed local edits.
 - **Auto-login is LAN-only.** Optional owner auto-login applies to private-network requests and never to
   traffic that arrives through Cloudflare, which always uses the normal login.
 
