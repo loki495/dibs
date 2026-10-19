@@ -41,7 +41,8 @@ See `AutoLoginForTrustedRequests`.
 
 - **Per-visitor database isolation**, not one shared database: `ResolveDemoDatabase`
   (`app/Http/Middleware/ResolveDemoDatabase.php`) gives each visitor a private
-  SQLite copy of a template, identified by a signed cookie (`demo_instance_id`).
+  SQLite copy of a template, identified by an encrypted cookie (`demo_instance_id`) holding a random
+  40-character id.
   Two people clicking around the demo at once never see or clobber each other's
   edits. There is no shared mutable state to reset or protect.
 - **The template** (`storage/demo-template.sqlite`) is rebuilt automatically on

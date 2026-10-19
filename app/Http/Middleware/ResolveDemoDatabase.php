@@ -17,7 +17,8 @@ use Symfony\Component\HttpFoundation\Response;
  * clicking around at once never see or clobber each other's edits. Adapted from a sibling
  * project's (homie) equivalent middleware -- see docs/demo-hosting.md for the comparison.
  *
- * Registered *prepended* to the 'web' group (bootstrap/app.php), unlike homie's version:
+ * Appended to the 'web' group, then ordered between EncryptCookies and StartSession by the
+ * middleware priority list (bootstrap/app.php), unlike homie's version:
  * Dibs authenticates with a real session-backed login, not stateless Basic Auth, so the
  * sqlite connection must already point at this visitor's own database *before*
  * StartSession ever reads or writes a session row -- otherwise a demo visitor's login
