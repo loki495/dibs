@@ -1,5 +1,7 @@
 # Dibs — project context and conventions
 
+Delivery: PR. The default branch has required status checks, so changes land through a throwaway-branch PR (git-workflow skill, GH006); the remote branch name doesn't matter. Commit on the default branch locally; push only after explicit confirmation.
+
 ## What this is
 
 Dibs is a self-hosted task and knowledge tracker built for AI agents as first-class users. Optionally mirrored to GitHub Issues and Projects. Local SQLite is always authoritative — GitHub is a mostly-read-only mirror reached through a durable outbound push queue, not a live sync source. It's built MCP-native: a host-local stdio MCP server exposes the same task/plan/claim operations to AI agents that the web UI uses. Three things that fall out of that: any agent — including one starting a session with zero prior context — can ask "what's open?" (globally or scoped to one project) and pick up work cold; agents can save plans and keep them current as multi-step work progresses; and agents can record project-specific research/lessons/decisions as durable knowledge instead of losing it in a chat transcript. A claim/heartbeat/release/complete lifecycle keeps multiple agents (or the same agent across sessions) from duplicating or colliding on the same task. Use it solo as a todo list, or let agents work alongside you.
