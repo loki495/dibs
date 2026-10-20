@@ -35,3 +35,17 @@ it('refuses to renew a claim the caller does not hold', function (): void {
 it('rejects a call missing required arguments', function (): void {
     TodoServer::tool(HeartbeatTodoTask::class, [])->assertHasErrors();
 });
+
+it('heartbeats a claim bound through DIBS_CLIENT_PID and refuses once that pid no longer resolves', function (): void {
+    $issue = Issue::factory()->create();
+    $result = app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 5);
+    putenv('DIBS_CLIENT_PID='.getmypid());
+
+    try {
+        TodoServer::tool(HeartbeatTodoTask::class, ['issueId' => $issue->id, 'capabilityToken' => $result['capability_token']])->assertOk()->assertHasNoErrors();
+        putenv('DIBS_CLIENT_PID=4194999');
+        TodoServer::tool(HeartbeatTodoTask::class, ['issueId' => $issue->id, 'capabilityToken' => $result['capability_token']])->assertHasErrors();
+    } finally {
+        putenv('DIBS_CLIENT_PID');
+    }
+});

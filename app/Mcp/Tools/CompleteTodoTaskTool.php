@@ -9,6 +9,7 @@ use App\Actions\CompleteTodoTask;
 use App\Actions\DescribeTodoIssue;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoValidationException;
+use App\Mcp\CallerPid;
 use DomainException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -24,7 +25,7 @@ class CompleteTodoTaskTool extends Tool implements Errable
 {
     protected string $name = 'todo_complete';
 
-    public function handle(Request $request, CompleteTodoTask $complete, DescribeTodoIssue $describe): Response|ResponseFactory
+    public function handle(Request $request, CompleteTodoTask $complete, DescribeTodoIssue $describe, CallerPid $callerPid): Response|ResponseFactory
     {
         $arguments = $request->validate([
             'issueId' => ['required', 'integer', 'min:1'],
@@ -38,7 +39,7 @@ class CompleteTodoTaskTool extends Tool implements Errable
         try {
             $issue = $complete->handle(
                 issueId: $arguments['issueId'],
-                pid: posix_getppid(),
+                pid: $callerPid->resolve(),
                 capabilityToken: $arguments['capabilityToken'],
                 summary: $arguments['summary'] ?? null,
                 reason: $arguments['reason'] ?? null,

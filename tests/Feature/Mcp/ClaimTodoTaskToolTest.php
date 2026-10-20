@@ -46,3 +46,29 @@ it('refuses to claim a task another live session already holds', function (): vo
 it('rejects a call missing required arguments', function (): void {
     TodoServer::tool(ClaimTodoTask::class, [])->assertHasErrors();
 });
+
+it('binds the claim to the PID in DIBS_CLIENT_PID when that process exists', function (): void {
+    $issue = Issue::factory()->create();
+    putenv('DIBS_CLIENT_PID='.getmypid());
+
+    try {
+        TodoServer::tool(ClaimTodoTask::class, ['issueId' => $issue->id, 'agentName' => 'codex'])->assertOk()->assertHasNoErrors();
+    } finally {
+        putenv('DIBS_CLIENT_PID');
+    }
+
+    expect(TaskClaim::query()->sole()->agentSession->pid)->toBe(getmypid());
+});
+
+it('falls back to the parent process when DIBS_CLIENT_PID is dead or malformed', function (string $value): void {
+    $issue = Issue::factory()->create();
+    putenv('DIBS_CLIENT_PID='.$value);
+
+    try {
+        TodoServer::tool(ClaimTodoTask::class, ['issueId' => $issue->id, 'agentName' => 'codex'])->assertOk()->assertHasNoErrors();
+    } finally {
+        putenv('DIBS_CLIENT_PID');
+    }
+
+    expect(TaskClaim::query()->sole()->agentSession->pid)->toBe(posix_getppid());
+})->with(['nonexistent pid' => '4194999', 'not a number' => 'abc', 'zero' => '0', 'negative' => '-5']);

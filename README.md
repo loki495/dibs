@@ -178,16 +178,17 @@ launches it as a child process through the `app` service, which is the one that 
 namespace (claim liveness needs that; `web` only serves HTTP). The command is the same for every client:
 
 ```bash
-docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data app php artisan mcp:start todo
+sh -c 'exec docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data -e DIBS_CLIENT_PID=$PPID app php artisan mcp:start todo'
 ```
 
-Use an absolute path to your checkout, and make sure the containers are up (`docker compose up -d`).
+`DIBS_CLIENT_PID=$PPID` gives the server the agent's own PID, so a claim's liveness follows the agent
+(without it the claim tracks the container's shim and only expires by lease). Use an absolute path to your checkout, and make sure the containers are up (`docker compose up -d`).
 `-T` is required: stdio carries the JSON-RPC stream, so no TTY may be allocated.
 
 **Claude Code**
 
 ```bash
-claude mcp add dibs -- docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data app php artisan mcp:start todo
+claude mcp add dibs -- sh -c 'exec docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data -e DIBS_CLIENT_PID=$PPID app php artisan mcp:start todo'
 ```
 
 Or commit/share it as a `.mcp.json`:
@@ -197,8 +198,8 @@ Or commit/share it as a `.mcp.json`:
   "mcpServers": {
     "dibs": {
       "type": "stdio",
-      "command": "docker",
-      "args": ["compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u", "www-data", "app", "php", "artisan", "mcp:start", "todo"]
+      "command": "sh",
+      "args": ["-c", "exec docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data -e DIBS_CLIENT_PID=$PPID app php artisan mcp:start todo"]
     }
   }
 }
@@ -212,7 +213,7 @@ Or commit/share it as a `.mcp.json`:
   "mcp": {
     "dibs": {
       "type": "local",
-      "command": ["docker", "compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u", "www-data", "app", "php", "artisan", "mcp:start", "todo"],
+      "command": ["sh", "-c", "exec docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data -e DIBS_CLIENT_PID=$PPID app php artisan mcp:start todo"],
       "enabled": true
     }
   }
@@ -223,8 +224,8 @@ Or commit/share it as a `.mcp.json`:
 
 ```toml
 [mcp_servers.dibs]
-command = "docker"
-args = ["compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u", "www-data", "app", "php", "artisan", "mcp:start", "todo"]
+command = "sh"
+args = ["-c", "exec docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data -e DIBS_CLIENT_PID=$PPID app php artisan mcp:start todo"]
 ```
 
 **Antigravity** (`agy`; `~/.gemini/config/mcp_config.json`)
@@ -233,8 +234,8 @@ args = ["compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u",
 {
   "mcpServers": {
     "dibs": {
-      "command": "docker",
-      "args": ["compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u", "www-data", "app", "php", "artisan", "mcp:start", "todo"],
+      "command": "sh",
+      "args": ["-c", "exec docker compose -f /path/to/dibs/docker-compose.yml exec -T -u www-data -e DIBS_CLIENT_PID=$PPID app php artisan mcp:start todo"],
       "disabled": false
     }
   }
@@ -242,7 +243,7 @@ args = ["compose", "-f", "/path/to/dibs/docker-compose.yml", "exec", "-T", "-u",
 ```
 
 **Any other MCP client** that can launch a stdio server: give it that same command (executable
-`docker`, the rest as arguments). The `dibs` label is yours to choose; the tools are always `todo_*`.
+`sh`, the rest as arguments). The `dibs` label is yours to choose; the tools are always `todo_*`.
 
 Agent sessions must reconnect after the `app` container restarts (a rebuild, `docker compose restart`,
 an upgrade): the MCP server is a process inside it, so a restart drops the connection. Call `todo_status`

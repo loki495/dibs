@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Actions\ClaimTaskForAgent;
+use App\Mcp\CallerPid;
 use App\Models\Issue;
 use DomainException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -17,12 +18,12 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Claims a task for the calling agent process, so other agents cannot pick up the same work. The caller\'s own OS process is identified automatically — an MCP server\'s parent process IS the connecting agent, so no pid argument is needed. Returns a capability token: keep it in memory and pass it to todo_heartbeat, todo_release, and todo_complete for this same claim. A task already claimed by a live process cannot be claimed again.')]
+#[Description('Claims a task for the calling agent process, so other agents cannot pick up the same work. The caller\'s own OS process is identified automatically — the connecting agent is found from the client-supplied DIBS_CLIENT_PID or the server\'s parent process, so no pid argument is needed. Returns a capability token: keep it in memory and pass it to todo_heartbeat, todo_release, and todo_complete for this same claim. A task already claimed by a live process cannot be claimed again.')]
 class ClaimTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_claim';
 
-    public function handle(Request $request, ClaimTaskForAgent $claim): Response|ResponseFactory
+    public function handle(Request $request, ClaimTaskForAgent $claim, CallerPid $callerPid): Response|ResponseFactory
     {
         $arguments = $request->validate([
             'issueId' => ['required', 'integer', 'min:1'],
@@ -36,7 +37,7 @@ class ClaimTodoTask extends Tool implements Errable
         }
 
         try {
-            $result = $claim->handle($issue, $arguments['agentName'], posix_getppid(), $arguments['minutes'] ?? 30);
+            $result = $claim->handle($issue, $arguments['agentName'], $callerPid->resolve(), $arguments['minutes'] ?? 30);
         } catch (DomainException $exception) {
             return Response::error($exception->getMessage());
         }
