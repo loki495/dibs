@@ -82,8 +82,8 @@ php /path/to/dibs/artisan mcp:start todo
 
 For example `claude mcp add dibs -- php /path/to/dibs/artisan mcp:start todo`, or the same command in
 the `.mcp.json` / `opencode.json` shapes the README shows for Docker (`"command": "php"`, the rest as
-arguments). The server identifies the claiming agent as its own parent process, so it must be started
-by the agent directly, on the same host.
+arguments). The server identifies the claiming agent as its own parent process (or the PID in `DIBS_CLIENT_PID`, if set
+and alive), so it must be started by the agent directly, on the same host.
 
 ## Claim liveness
 

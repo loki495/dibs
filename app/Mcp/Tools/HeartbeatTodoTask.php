@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Actions\HeartbeatTaskClaim;
+use App\Mcp\CallerPid;
 use DomainException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -21,7 +22,7 @@ class HeartbeatTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_heartbeat';
 
-    public function handle(Request $request, HeartbeatTaskClaim $heartbeat): Response|ResponseFactory
+    public function handle(Request $request, HeartbeatTaskClaim $heartbeat, CallerPid $callerPid): Response|ResponseFactory
     {
         $arguments = $request->validate([
             'issueId' => ['required', 'integer', 'min:1'],
@@ -30,7 +31,7 @@ class HeartbeatTodoTask extends Tool implements Errable
         ]);
 
         try {
-            $claim = $heartbeat->handle($arguments['issueId'], posix_getppid(), $arguments['capabilityToken'], $arguments['minutes'] ?? 30);
+            $claim = $heartbeat->handle($arguments['issueId'], $callerPid->resolve(), $arguments['capabilityToken'], $arguments['minutes'] ?? 30);
         } catch (DomainException $exception) {
             return Response::error($exception->getMessage());
         }

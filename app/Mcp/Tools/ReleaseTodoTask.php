@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Actions\ReleaseTaskClaim;
+use App\Mcp\CallerPid;
 use DomainException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -20,7 +21,7 @@ class ReleaseTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_release';
 
-    public function handle(Request $request, ReleaseTaskClaim $release): Response|ResponseFactory
+    public function handle(Request $request, ReleaseTaskClaim $release, CallerPid $callerPid): Response|ResponseFactory
     {
         $arguments = $request->validate([
             'issueId' => ['required', 'integer', 'min:1'],
@@ -28,7 +29,7 @@ class ReleaseTodoTask extends Tool implements Errable
         ]);
 
         try {
-            $claim = $release->handle($arguments['issueId'], posix_getppid(), $arguments['capabilityToken']);
+            $claim = $release->handle($arguments['issueId'], $callerPid->resolve(), $arguments['capabilityToken']);
         } catch (DomainException $exception) {
             return Response::error($exception->getMessage());
         }
