@@ -47,13 +47,16 @@ it('rejects a reason GitHub does not recognize before touching the claim or the 
     expect(TaskClaim::query()->sole()->released_at)->toBeNull();
 });
 
-it('completes without a summary and posts no comment', function (): void {
+it('refuses to complete without a summary, leaving the issue open, the claim held and no comment', function (): void {
     $issue = Issue::factory()->create(['state' => 'OPEN']);
     $result = app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
 
-    app(CompleteTodoTask::class)->handle($issue->id, getmypid(), $result['capability_token']);
+    expect(fn () => app(CompleteTodoTask::class)->handle($issue->id, getmypid(), $result['capability_token']))
+        ->toThrow(TodoValidationException::class, 'summary');
 
-    expect(Comment::query()->where('issue_id', $issue->id)->count())->toBe(0);
+    expect($issue->fresh()->state)->toBe('OPEN')
+        ->and(TaskClaim::query()->sole()->released_at)->toBeNull()
+        ->and(Comment::query()->where('issue_id', $issue->id)->count())->toBe(0);
 });
 
 it('rejects completion from a process that does not hold the claim — a worker cannot impersonate another', function (): void {

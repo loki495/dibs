@@ -44,6 +44,21 @@ return [
     'agent_report_group_id' => $optionalId(env('DIBS_AGENT_REPORT_GROUP_ID')),
     'agent_report_parent_id' => $optionalId(env('DIBS_AGENT_REPORT_PARENT_ID')),
 
+    // Completion guards on todo_complete (App\Actions\CheckCompletionGuards): how much evidence an agent
+    // must give to close a task. Profiles: floor (a summary), standard (summary; commit for agent tasks,
+    // bugs and plan steps; tests and docs whenever a commit is given; Done-when for plan steps), strict
+    // (standard, and "none: <why>" is refused for tests and docs). The most specific setting wins: a
+    // `Guards: <profile>` line in the task body, then in its parent plan's body, then the task's Group
+    // here (comma-separated Name=profile, e.g. "Homelab=floor,Dibs=strict"), then the default.
+    'guards' => [
+        'default' => env('DIBS_GUARDS_DEFAULT', 'standard'),
+        'groups' => collect(explode(',', (string) env('DIBS_GUARDS_GROUPS', '')))
+            ->map(fn (string $pair): array => array_map(trim(...), explode('=', $pair, 2)))
+            ->filter(fn (array $pair): bool => count($pair) === 2 && $pair[0] !== '')
+            ->mapWithKeys(fn (array $pair): array => [mb_strtolower($pair[0]) => mb_strtolower($pair[1])])
+            ->all(),
+    ],
+
     // Activity log (MCP call log + change log). Retention is in days per log; 0 keeps rows forever.
     // Stored argument/diff values longer than max_value_bytes are truncated, and any key containing
     // one of redact_keys (case-insensitive) is replaced with a placeholder before it is stored.

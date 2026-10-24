@@ -96,7 +96,7 @@ class DescribeTodoIssue
      * closing an issue again leaves its earlier closing comments in history but reports only the
      * latest one here, alongside the current `state_reason`.
      *
-     * @return array{reason: ?string, note: ?string, references: ?list<string>, closedAt: string}|null
+     * @return array{reason: ?string, note: ?string, references: ?list<string>, result: ?array<string, mixed>, closedAt: string}|null
      */
     private function closing(Issue $issue): ?array
     {
@@ -110,6 +110,7 @@ class DescribeTodoIssue
             'reason' => $issue->state_reason,
             'note' => $note !== null && $this->trust->allows($note->author_login) ? $note->body : null,
             'references' => $note?->references,
+            'result' => $note?->result,
             'closedAt' => ($issue->closed_at ?? ($note !== null ? $note->created_at : $issue->updated_at))->toIso8601String(),
         ];
     }

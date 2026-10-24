@@ -10,7 +10,7 @@ final class WorkspaceArchive
 {
     public const string FORMAT = 'dibs-workspace';
 
-    public const int VERSION = 2;
+    public const int VERSION = 3;
 
     /** @var list<string> */
     public const array TABLES = [

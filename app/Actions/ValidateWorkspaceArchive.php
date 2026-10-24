@@ -159,7 +159,7 @@ class ValidateWorkspaceArchive
         }
         $jsonColumns = [
             'project_fields' => ['configuration_json'], 'project_items' => ['raw_fields_json'],
-            'comments' => ['references'], 'capture_settings' => ['enabled_agents'],
+            'comments' => ['references', 'result'], 'capture_settings' => ['enabled_agents'],
             'todo_capture_requests' => ['draft'], 'mcp_call_logs' => ['arguments'], 'change_logs' => ['changes'],
         ];
         foreach ($jsonColumns[$table] ?? [] as $name) {
@@ -180,7 +180,7 @@ class ValidateWorkspaceArchive
                 if (json_last_error() !== JSON_ERROR_NONE || ($value !== null && ! is_array($value))) {
                     $this->invalid(__('Structured archive fields must contain objects or lists.'));
                 }
-                if ($table === 'comments' && $value !== null && (! array_is_list($value) || ! array_all($value, fn (mixed $reference): bool => is_string($reference)))) {
+                if ($table === 'comments' && $name === 'references' && $value !== null && (! array_is_list($value) || ! array_all($value, fn (mixed $reference): bool => is_string($reference)))) {
                     $this->invalid(__('Closing references must be a list of strings.'));
                 }
             }

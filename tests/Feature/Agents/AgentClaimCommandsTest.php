@@ -33,7 +33,7 @@ it('completes a claim, heartbeat, release lifecycle end to end via the CLI', fun
     Artisan::call('todo:agent:heartbeat', ['issue' => $issue->id, '--pid' => (string) getmypid(), '--token' => $token, '--minutes' => 45]);
     expect(Artisan::output())->toContain('claim_id');
 
-    $this->artisan('todo:agent:release', ['issue' => $issue->id, '--pid' => (string) getmypid(), '--token' => $token])
+    $this->artisan('todo:agent:release', ['issue' => $issue->id, '--pid' => (string) getmypid(), '--token' => $token, '--left' => 'Write the tests next.'])
         ->assertExitCode(0);
     expect(TaskClaim::query()->sole()->released_at)->not->toBeNull();
 });

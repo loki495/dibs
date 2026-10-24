@@ -10,6 +10,7 @@ use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
+use App\Mcp\Tools\Concerns\ReplaceArgument;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -31,6 +32,10 @@ class ReviseTodoTask extends Tool implements Errable
             'expectedRevision' => ['required', 'integer', 'min:1'],
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'body' => ['sometimes', 'nullable', 'string', 'max:65535'],
+            'replace' => ['sometimes', 'array', 'min:1', 'max:50'],
+            'replace.*.from' => ['required', 'string', 'max:65535'],
+            'replace.*.to' => ['present', 'nullable', 'string', 'max:65535'],
+            'replace.*.all' => ['sometimes', 'boolean'],
             'groupId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'newGroupName' => ['sometimes', 'nullable', 'string', 'max:100'],
             'clearGroup' => ['sometimes', 'boolean'],
@@ -67,6 +72,7 @@ class ReviseTodoTask extends Tool implements Errable
                 clearGroup: $arguments['clearGroup'] ?? false,
                 addLinks: $arguments['addLinks'] ?? [],
                 removeLinks: $arguments['removeLinks'] ?? [],
+                replace: ReplaceArgument::normalize($arguments['replace'] ?? []),
             );
         } catch (TodoStaleRevisionException $exception) {
             return Response::structured([
@@ -76,6 +82,10 @@ class ReviseTodoTask extends Tool implements Errable
             ]);
         } catch (TodoRecordNotFoundException|TodoRecordUnavailableException|TodoValidationException $exception) {
             return Response::error($exception->getMessage());
+        }
+
+        if (isset($arguments['replace'])) {
+            return Response::structured(['conflict' => false, 'id' => $issue->id, 'revision' => $issue->revision]);
         }
 
         return Response::structured(['conflict' => false] + $describe->handle($issue->id));
@@ -89,6 +99,7 @@ class ReviseTodoTask extends Tool implements Errable
             'expectedRevision' => $schema->integer()->required()->description('The `revision` value last read for this issue.'),
             'title' => $schema->string()->nullable()->description('The new title, if changing it.'),
             'body' => $schema->string()->nullable()->description('The new canonical body, if changing it.'),
+            'replace' => ReplaceArgument::schema($schema, 'body'),
             'groupId' => $schema->integer()->nullable()->description('A Group id within the issue\'s existing area, if moving it to a different Group. The issue must already belong to an area/Project.'),
             'newGroupName' => $schema->string()->nullable()->description('Move the issue to the Group with this name in its area, creating it if missing (case-insensitive). The issue must already belong to an area. Use at most one of groupId, newGroupName, clearGroup.'),
             'clearGroup' => $schema->boolean()->description('Remove the issue from its Group.'),

@@ -70,12 +70,12 @@ it('releases a claim only when the exact capability token and pid match', functi
     $issue = Issue::factory()->create();
     $result = app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
 
-    expect(fn () => app(ReleaseTaskClaim::class)->handle($issue->id, getmypid(), 'wrong-token'))
+    expect(fn () => app(ReleaseTaskClaim::class)->handle($issue->id, getmypid(), 'wrong-token', 'Next: finish it.'))
         ->toThrow(DomainException::class, 'No live claim');
-    expect(fn () => app(ReleaseTaskClaim::class)->handle($issue->id, 999_999, $result['capability_token']))
+    expect(fn () => app(ReleaseTaskClaim::class)->handle($issue->id, 999_999, $result['capability_token'], 'Next: finish it.'))
         ->toThrow(DomainException::class, 'No live claim');
 
-    $released = app(ReleaseTaskClaim::class)->handle($issue->id, getmypid(), $result['capability_token']);
+    $released = app(ReleaseTaskClaim::class)->handle($issue->id, getmypid(), $result['capability_token'], 'Next: finish it.');
     expect($released->released_at)->not->toBeNull();
 });
 

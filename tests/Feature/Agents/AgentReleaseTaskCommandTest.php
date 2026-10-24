@@ -12,6 +12,7 @@ it('releases a live claim and prints the result as json', function (): void {
 
     $exitCode = Artisan::call('todo:agent:release', [
         'issue' => (string) $issue->id, '--pid' => (string) posix_getppid(), '--token' => $result['capability_token'],
+        '--left' => 'Write the tests next.',
     ]);
     $output = json_decode(Artisan::output(), true);
 
@@ -47,4 +48,15 @@ it('surfaces a domain exception for a wrong token as a clean error', function ()
     ]);
 
     expect($exitCode)->toBe(1);
+});
+
+it('refuses a release without --left and keeps the claim', function (): void {
+    $issue = Issue::factory()->create();
+    $result = app(ClaimTaskForAgent::class)->handle($issue, 'codex', posix_getppid(), 5);
+
+    $exitCode = Artisan::call('todo:agent:release', ['issue' => (string) $issue->id, '--pid' => (string) posix_getppid(), '--token' => $result['capability_token']]);
+
+    expect($exitCode)->toBe(1)
+        ->and(Artisan::output())->toContain('what is left')
+        ->and($result['claim']->fresh()->released_at)->toBeNull();
 });

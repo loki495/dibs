@@ -17,8 +17,11 @@ class CreateClosingComment
 {
     public function __construct(private readonly EnqueueGitHubPush $enqueue) {}
 
-    /** @param  list<string>  $references */
-    public function handle(int $issueId, ?string $note, array $references = []): ?Comment
+    /**
+     * @param  list<string>  $references
+     * @param  array<string, mixed>  $result  completion evidence (see CheckCompletionGuards), kept as data like $references
+     */
+    public function handle(int $issueId, ?string $note, array $references = [], array $result = []): ?Comment
     {
         $note = trim((string) $note);
         $references = array_values(array_filter(array_map(trim(...), $references), fn (string $reference): bool => $reference !== ''));
@@ -35,6 +38,7 @@ class CreateClosingComment
             'body' => $note,
             'kind' => Comment::KIND_CLOSING,
             'references' => $references === [] ? null : $references,
+            'result' => $result === [] ? null : $result,
             'revision' => 1,
             'is_available' => true,
             'last_seen_at' => now(),
