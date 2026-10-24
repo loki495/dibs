@@ -66,6 +66,12 @@ class Issue extends Model
         return $this->hasMany(IssueLink::class, 'to_issue_id')->orderBy('id');
     }
 
+    /** @return BelongsToMany<Issue, $this> the sibling steps that must close before this one may start */
+    public function blockedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'step_blockers', 'issue_id', 'blocked_by_issue_id')->withTimestamps()->orderBy('sibling_position');
+    }
+
     /** @return HasMany<Comment, $this> */
     public function comments(): HasMany
     {

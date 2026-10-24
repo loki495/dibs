@@ -7,6 +7,7 @@ namespace App\Mcp\Tools;
 use App\Actions\DescribeTodoIssue;
 use App\Actions\ScaffoldTodoPlan as ScaffoldTodoPlanAction;
 use App\Exceptions\TodoValidationException;
+use App\Mcp\Tools\Concerns\StepArgument;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -42,6 +43,7 @@ class ScaffoldTodoPlan extends Tool implements Errable
             'children.*.addLinks' => ['sometimes', 'array', 'max:50'],
             'children.*.addLinks.*.issueId' => ['required', 'integer', 'min:1'],
             'children.*.addLinks.*.commentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            ...StepArgument::rules('children.*.'),
             'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
 
@@ -54,7 +56,7 @@ class ScaffoldTodoPlan extends Tool implements Errable
                 priorityId: $arguments['priorityId'] ?? null,
                 labelIds: $arguments['labelIds'] ?? [],
                 newLabelName: $arguments['newLabelName'] ?? null,
-                children: $arguments['children'] ?? [],
+                children: array_map(fn (array $child): array => [...$child, ...array_filter(StepArgument::normalize($child), fn (mixed $value): bool => $value !== null)], $arguments['children'] ?? []),
                 idempotencyKey: $arguments['idempotencyKey'] ?? null,
             );
         } catch (TodoValidationException $exception) {
@@ -82,6 +84,7 @@ class ScaffoldTodoPlan extends Tool implements Errable
                 'priorityId' => $schema->integer()->nullable(),
                 'labelIds' => $schema->array()->items($schema->integer()),
                 'addLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Explicit links for this child, same shape as todo_create addLinks.'),
+                ...StepArgument::schema($schema, 'Positions (0-based) of EARLIER children in this same call that this step waits on; it is not ready until they all close.'),
             ]))->description('Initial child task issues, each nested under the new plan.'),
             'idempotencyKey' => $schema->string()->nullable()->description('A caller-chosen key; retrying the same key returns the original plan instead of duplicating it.'),
         ];

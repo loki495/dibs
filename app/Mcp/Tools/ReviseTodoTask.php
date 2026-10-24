@@ -11,6 +11,7 @@ use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
 use App\Mcp\Tools\Concerns\ReplaceArgument;
+use App\Mcp\Tools\Concerns\StepArgument;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -20,7 +21,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Revises an issue\'s canonical title, body, Group (groupId, newGroupName or clearGroup), parent (parentId or clearParent), labels (addLabels/removeLabels deltas by name) and/or explicit links (addLinks/removeLinks) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its existing area (the issue must already belong to an area/Project — set one via todo_create/todo_scaffold_plan first); use clearGroup to remove it. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
+#[Description('Revises an issue\'s canonical title, body, Group (groupId, newGroupName or clearGroup), parent (parentId or clearParent), labels (addLabels/removeLabels deltas by name), explicit links (addLinks/removeLinks) and/or plan step fields (step, blockedBy) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its existing area (the issue must already belong to an area/Project — set one via todo_create/todo_scaffold_plan first); use clearGroup to remove it. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
 class ReviseTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_revise';
@@ -53,7 +54,9 @@ class ReviseTodoTask extends Tool implements Errable
             'removeLinks.*.commentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'note' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
+            ...StepArgument::rules(),
         ]);
+        $stepArguments = StepArgument::normalize($arguments);
 
         try {
             $issue = $revise->handle(
@@ -73,6 +76,8 @@ class ReviseTodoTask extends Tool implements Errable
                 addLinks: $arguments['addLinks'] ?? [],
                 removeLinks: $arguments['removeLinks'] ?? [],
                 replace: ReplaceArgument::normalize($arguments['replace'] ?? []),
+                step: $stepArguments['step'],
+                blockedBy: $stepArguments['blockedBy'],
             );
         } catch (TodoStaleRevisionException $exception) {
             return Response::structured([
@@ -111,6 +116,7 @@ class ReviseTodoTask extends Tool implements Errable
             'removeLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Links to remove, same shape as addLinks; removing a link that does not exist is ignored.'),
             'note' => $schema->string()->nullable()->description('An optional concise note explaining the revision, added as a comment.'),
             'idempotencyKey' => $schema->string()->nullable()->description('A caller-chosen key; retrying the same key returns the original result instead of revising again.'),
+            ...StepArgument::schema($schema),
         ];
     }
 }

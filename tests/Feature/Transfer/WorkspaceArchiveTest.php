@@ -32,7 +32,7 @@ it('exports archived content and relationships without accounts or capability to
     $archive = app(ExportWorkspaceArchive::class)->handle();
 
     expect($archive['format'])->toBe('dibs-workspace')
-        ->and($archive['version'])->toBe(3)
+        ->and($archive['version'])->toBe(4)
         ->and($archive['data']['issues'])->toHaveCount(2)
         ->and($archive['data']['issue_label'])->toHaveCount(1)
         ->and($archive['data']['comments'][0]['body'])->toBe('Saved note')

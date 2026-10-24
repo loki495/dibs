@@ -22,12 +22,15 @@ class CreateTodoIssue
         private readonly ActivityRecorder $recorder,
         private readonly ResolveActiveRepository $activeRepository,
         private readonly SyncIssueLinks $syncLinks,
+        private readonly SyncStepFields $syncStep,
     ) {}
 
     /**
      * @param  list<int>  $labelIds
      * @param  list<string>  $newLabelNames
      * @param  list<array{issueId: int, commentId?: ?int}>  $addLinks
+     * @param  array<string, ?string>  $step  step fields (see SyncStepFields)
+     * @param  list<int>|null  $blockedBy  sibling steps this one waits on; needs a parent
      */
     public function handle(
         string $title,
@@ -41,8 +44,10 @@ class CreateTodoIssue
         array $newLabelNames = [],
         ?string $idempotencyKey = null,
         array $addLinks = [],
+        array $step = [],
+        ?array $blockedBy = null,
     ): Issue {
-        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks): Issue {
+        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy): Issue {
             if ($newGroupName !== null && trim($newGroupName) !== '' && ($area === null || $area === 0)) {
                 throw new TodoValidationException('Choose an area before creating a Group.');
             }
@@ -70,7 +75,7 @@ class CreateTodoIssue
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks): Issue {
+            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy): Issue {
                 if ($newGroupName !== null && trim($newGroupName) !== '') {
                     $group = $this->resolveGroup->handle($project, $newGroupName);
                 }
@@ -119,6 +124,7 @@ class CreateTodoIssue
                 }
 
                 $this->syncLinks->handle($issue, $addLinks, []);
+                $this->syncStep->handle($issue, $step, $blockedBy);
 
                 $assigned = array_filter([
                     'area' => $project?->title,

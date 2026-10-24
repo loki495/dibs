@@ -131,6 +131,17 @@
                     @endif
                 </section>
             @endif
+            @if ($detail['step'] !== [] || $detail['blockedBy'] !== [])
+                <section aria-label="{{ __('Step') }}" class="rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-950/60">
+                    <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-2 text-xs">
+                        @foreach ($detail['step'] as $key => $value)<dt class="text-slate-500">{{ $key }}</dt><dd class="whitespace-pre-line break-words">{{ $value }}</dd>@endforeach
+                        @if ($detail['blockedBy'] !== [])
+                            <dt class="text-slate-500">{{ __('Blocked by') }}</dt>
+                            <dd class="space-y-1">@foreach ($detail['blockedBy'] as $blocker)<button type="button" wire:click="$set('selected', {{ $blocker['id'] }})" class="block text-left hover:underline">{{ $blocker['title'] }}@if ($blocker['state'] === 'CLOSED') <span class="text-slate-500">({{ __('done') }})</span>@endif</button>@endforeach</dd>
+                        @endif
+                    </dl>
+                </section>
+            @endif
             @if ($detail['issue']->projectItems->contains(fn ($membership) => $membership->priorityOption || $membership->planned_on || $membership->due_on || $membership->repeat_rule))
                 <div class="space-y-3">
                     @foreach ($detail['issue']->projectItems as $membership)

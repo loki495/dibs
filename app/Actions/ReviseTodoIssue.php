@@ -27,6 +27,7 @@ class ReviseTodoIssue
         private readonly MoveIssueUnderParent $moveUnderParent,
         private readonly ResolveGroupOption $resolveGroup,
         private readonly SyncIssueLinks $syncLinks,
+        private readonly SyncStepFields $syncStep,
     ) {}
 
     /**
@@ -35,6 +36,8 @@ class ReviseTodoIssue
      * @param  list<array{issueId: int, commentId?: ?int}>  $addLinks
      * @param  list<array{issueId: int, commentId?: ?int}>  $removeLinks
      * @param  list<array{from: string, to: string, all?: bool}>  $replace  exact-string edits of the current body, instead of a whole new $body
+     * @param  array<string, ?string>  $step  step fields to set (see SyncStepFields); the body is untouched
+     * @param  list<int>|null  $blockedBy  the step's whole new blocked-by list; null leaves it alone
      */
     public function handle(
         int $id,
@@ -53,13 +56,16 @@ class ReviseTodoIssue
         array $addLinks = [],
         array $removeLinks = [],
         array $replace = [],
+        array $step = [],
+        ?array $blockedBy = null,
     ): Issue {
         if ($body !== null && $replace !== []) {
             throw new TodoValidationException('Provide either a new body or replace edits, not both.');
         }
         if ($title === null && $body === null && $replace === [] && $groupId === null && $addLabels === [] && $removeLabels === []
-            && $parentId === null && ! $clearParent && $newGroupName === null && ! $clearGroup && $addLinks === [] && $removeLinks === []) {
-            throw new TodoValidationException('Provide a title, a body, a groupId, a Group name, a parent, label or link changes, or a combination to revise.');
+            && $parentId === null && ! $clearParent && $newGroupName === null && ! $clearGroup && $addLinks === [] && $removeLinks === []
+            && $step === [] && $blockedBy === null) {
+            throw new TodoValidationException('Provide a title, a body, a groupId, a Group name, a parent, label, link or step field changes, or a combination to revise.');
         }
         if (count(array_filter([$groupId !== null, $newGroupName !== null, $clearGroup])) > 1) {
             throw new TodoValidationException('Choose only one of groupId, newGroupName or clearGroup.');
@@ -77,7 +83,7 @@ class ReviseTodoIssue
             throw new TodoValidationException('A label cannot be both added and removed in one revision.');
         }
 
-        $revise = function () use ($id, $expectedRevision, $title, $body, $replace, $groupId, $note, $addLabels, $removeLabels, $parentId, $clearParent, $newGroupName, $clearGroup, $addLinks, $removeLinks): Issue {
+        $revise = function () use ($id, $expectedRevision, $title, $body, $replace, $groupId, $note, $addLabels, $removeLabels, $parentId, $clearParent, $newGroupName, $clearGroup, $addLinks, $removeLinks, $step, $blockedBy): Issue {
             $issue = Issue::query()->with(['projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')])->find($id);
             if (! $issue instanceof Issue) {
                 throw new TodoRecordNotFoundException("No Todo issue with local id [{$id}].");
@@ -116,7 +122,7 @@ class ReviseTodoIssue
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-            return DB::transaction(function () use ($issue, $title, $body, $item, $groupId, $note, $addLabels, $removeLabels, $parent, $clearParent, $newGroupName, $addLinks, $removeLinks): Issue {
+            return DB::transaction(function () use ($issue, $title, $body, $item, $groupId, $note, $addLabels, $removeLabels, $parent, $clearParent, $newGroupName, $addLinks, $removeLinks, $step, $blockedBy): Issue {
                 $changes = array_filter(['title' => $title, 'body' => $body], fn ($value): bool => $value !== null);
                 $issue->update([...$changes, 'revision' => $issue->revision + 1]);
                 $this->recorder->changeModel('ReviseTodoIssue', $issue, 'Revised');
@@ -149,6 +155,7 @@ class ReviseTodoIssue
                     $this->syncLabels->handle($issue, $this->resolveLabels->handle($issue->repository, $kept, $addLabels));
                 }
                 $this->syncLinks->handle($issue, $addLinks, $removeLinks);
+                $this->syncStep->handle($issue, $step, $blockedBy);
                 if ($note !== null && trim($note) !== '') {
                     app(CreateTodoComment::class)->handle($issue->id, '**Revision note:** '.trim($note));
                 }

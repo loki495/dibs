@@ -85,8 +85,8 @@ class CheckCompletionGuards
         }
 
         if ($isStep) {
-            if (in_array('Done-when', StepTemplate::missing($issue->body), true)) {
-                $missing[] = 'the step body has no Done-when: line; add one with todo_revise before completing';
+            if (in_array('Done-when', StepTemplate::missing($issue->body, $issue), true)) {
+                $missing[] = 'the step has no Done-when (field or body line); set step.doneWhen with todo_revise before completing';
             }
             if (($result['done_when_held'] ?? null) !== true) {
                 $missing[] = 'result.done_when_held: pass true once the step\'s Done-when holds';
