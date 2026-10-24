@@ -41,7 +41,7 @@ class DescribeIssueLinks
      */
     private function describe($query, string $end, bool $forAgent): array
     {
-        $links = $query->get()->filter(fn (IssueLink $link): bool => $link->{$end}?->is_available === true)->take(self::MAX_LINKS);
+        $links = $query->get()->filter(fn (IssueLink $link): bool => $link->{$end}?->is_available === true && ($end === 'from' || $link->to_comment_id === null || $link->comment?->is_available === true))->take(self::MAX_LINKS);
 
         return $links->map(function (IssueLink $link) use ($end, $forAgent): array {
             $target = $link->{$end};
