@@ -87,6 +87,18 @@ it('lists overlapping live claims through the todo:agent:claims command', functi
     $this->artisan('todo:agent:claims', ['--path' => ['relative']])->assertExitCode(1);
 });
 
+it('lists every live claim a conversation holds, with or without paths, through --held-by', function (): void {
+    $mine = Issue::factory()->create();
+    app(ClaimTaskForAgent::class)->handle($mine, 'claude:a:sess-9', getmypid(), 30);
+    app(ClaimTaskForAgent::class)->handle(Issue::factory()->create(), 'claude:b:other', getmypid(), 30, ['/srv/y']);
+    $released = app(ClaimTaskForAgent::class)->handle(Issue::factory()->create(), 'claude:a:sess-9', getmypid(), 30);
+    $released['claim']->update(['released_at' => now()]);
+
+    expect(app(FindClaimPathOverlaps::class)->heldBy('sess-9'))->toBe([['issueId' => $mine->id, 'agentName' => 'claude:a:sess-9', 'paths' => []]]);
+    $this->artisan('todo:agent:claims', ['--held-by' => 'sess-9'])->expectsOutputToContain((string) $mine->id)->assertExitCode(0);
+    $this->artisan('todo:agent:claims', ['--held-by' => 'nobody'])->expectsOutput('[]')->assertExitCode(0);
+});
+
 it('claims through todo:agent:claim with --path options', function (): void {
     $issue = Issue::factory()->create();
 
