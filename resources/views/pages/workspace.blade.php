@@ -19,6 +19,7 @@ use App\Actions\RenameLabel;
 use App\Actions\ReopenTodoIssue;
 use App\Actions\RestoreTodoIssue;
 use App\Actions\ReviseTodoComment;
+use App\Actions\SyncIssueLinks;
 use App\Actions\UpdateProjectSettings;
 use App\Actions\UpdateTodoIssue;
 use App\Exceptions\TodoRecordNotFoundException;
@@ -103,6 +104,10 @@ new class extends Component
     public int $editRevision = 0;
 
     public string $editParentSearch = '';
+
+    public string $linkSearch = '';
+
+    public ?string $linkError = null;
 
     public string $newCommentBody = '';
 
@@ -201,7 +206,7 @@ new class extends Component
     public function updatedSelected(): void
     {
         $this->captureParent = $this->selectedParentId();
-        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabels', 'editLabelSearch', 'editParent', 'editParentSearch', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision', 'claimError');
+        $this->reset('editingIssue', 'editTitle', 'editBody', 'editError', 'editArea', 'editGroup', 'editPriority', 'editLabels', 'editNewGroup', 'editGroupSearch', 'editNewLabels', 'editLabelSearch', 'editParent', 'editParentSearch', 'linkSearch', 'linkError', 'newCommentBody', 'commentError', 'editingComment', 'editCommentBody', 'editCommentRevision', 'claimError');
     }
 
     public function chooseArea(int $id): void
@@ -606,6 +611,37 @@ new class extends Component
         $this->cancelEdit();
     }
 
+    public function addLink(int $targetId): void
+    {
+        $this->changeLinks(add: [['issueId' => $targetId]]);
+        $this->reset('linkSearch');
+    }
+
+    public function removeLink(int $targetId, int $commentId = 0): void
+    {
+        $this->changeLinks(remove: [['issueId' => $targetId, 'commentId' => $commentId > 0 ? $commentId : null]]);
+    }
+
+    /**
+     * @param  list<array{issueId: int, commentId?: ?int}>  $add
+     * @param  list<array{issueId: int, commentId?: ?int}>  $remove
+     */
+    private function changeLinks(array $add = [], array $remove = []): void
+    {
+        $this->reset('linkError');
+        $issue = Issue::query()->where('is_available', true)->find($this->selected);
+        if (! $issue instanceof Issue) {
+            $this->selected = 0;
+
+            return;
+        }
+        try {
+            app(SyncIssueLinks::class)->handle($issue, $add, $remove);
+        } catch (TodoValidationException $exception) {
+            $this->linkError = $exception->getMessage();
+        }
+    }
+
     public function closeIssue(): void
     {
         $this->reset('editError');
@@ -792,6 +828,12 @@ new class extends Component
             ->when($this->editParentSearch !== '', fn ($query) => $query->where(function ($matches): void {
                 $matches->where('title', 'like', '%'.$this->editParentSearch.'%')->orWhere('github_number', $this->editParentSearch);
             }))->orderBy('title')->limit(100)->get(['id', 'github_number', 'title']);
+        $linkChoices = $this->selected > 0 && trim($this->linkSearch) !== ''
+            ? Issue::query()->where('is_available', true)->whereKeyNot($this->selected)
+                ->where(function ($matches): void {
+                    $matches->where('title', 'like', '%'.trim($this->linkSearch).'%')->orWhere('github_number', ltrim(trim($this->linkSearch), '#'))->orWhere('id', ltrim(trim($this->linkSearch), '#'));
+                })->orderBy('title')->limit(8)->get(['id', 'github_number', 'title'])
+            : collect();
         $editGroups = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'group')->where('project_id', $this->editArea))->orderBy('position')->get()
             ->filter(fn (ProjectFieldOption $option): bool => $this->editGroupSearch === '' || str_contains(Str::lower($option->name), Str::lower($this->editGroupSearch)))->values();
         $editPriorities = ProjectFieldOption::query()->whereHas('field', fn ($field) => $field->where('is_available', true)->where('semantic_key', 'priority')->where('project_id', $this->editArea))->orderBy('position')->get();
@@ -824,7 +866,7 @@ new class extends Component
             'detail' => $detail,
             'deletedRows' => $deletedRows,
             'captureParents' => $captureParents, 'captureGroups' => $captureGroups, 'capturePriorities' => $capturePriorities, 'captureLabelOptions' => $captureLabelOptions,
-            'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions,
+            'linkChoices' => $linkChoices, 'editParents' => $editParents, 'editGroups' => $editGroups, 'editPriorities' => $editPriorities, 'editLabelOptions' => $editLabelOptions,
             'projectSettingsGroups' => $projectSettingsGroups,
             'bulkGroups' => $bulkGroups, 'bulkParents' => $bulkParents, 'bulkLabelOptions' => $bulkLabelOptions];
     }

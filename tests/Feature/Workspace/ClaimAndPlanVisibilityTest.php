@@ -73,20 +73,34 @@ it('navigates to a parent and child task from the detail panel', function (): vo
         ->call('$set', 'selected', $child->id)->assertSet('selected', $child->id);
 });
 
-it('surfaces a related knowledge issue from a sibling task', function (): void {
-    $parent = Issue::factory()->create();
-    $issue = Issue::factory()->for($parent, 'parent')->create();
-    $knowledge = Issue::factory()->for($parent, 'parent')->create(['title' => 'How this website deploys']);
-    $knowledge->labels()->attach(Label::factory()->for($issue->repository, 'repository')->create(['name' => 'guide']));
-
-    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
-        ->assertSee('Related knowledge')->assertSee('How this website deploys');
-});
-
 it('shows a pending push-queue badge linking to the push-queue page', function (): void {
     $issue = Issue::factory()->create();
     GitHubPushQueueItem::factory()->create(['target_type' => 'issue', 'target_id' => $issue->id, 'status' => 'needs_attention']);
 
     Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
         ->assertSee('Pending GitHub sync')->assertSeeHtml(route('push-queue'));
+});
+
+it('lists explicit links, adds one from a search and removes it from the detail panel', function (): void {
+    $issue = Issue::factory()->create();
+    $guide = Issue::factory()->create(['title' => 'How this website deploys']);
+    $guide->labels()->attach(Label::factory()->for($issue->repository, 'repository')->create(['name' => 'guide']));
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertSee('No links yet.')
+        ->set('linkSearch', 'deploys')->assertSee('How this website deploys')
+        ->call('addLink', $guide->id)->assertSee('How this website deploys')->assertDontSee('No links yet.')->assertSet('linkSearch', '')
+        ->call('removeLink', $guide->id)->assertSee('No links yet.');
+
+    expect($issue->links()->count())->toBe(0);
+});
+
+it('shows the incoming side of a link and a handled error for a bad link', function (): void {
+    $issue = Issue::factory()->create();
+    $source = Issue::factory()->create(['title' => 'Points at me']);
+    $source->links()->create(['to_issue_id' => $issue->id]);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $issue->id)
+        ->assertSee('Linked from')->assertSee('Points at me')
+        ->call('addLink', 999999)->assertSee('does not exist');
 });

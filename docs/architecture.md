@@ -90,6 +90,8 @@ because those fields are Project-specific. `project_fields.semantic_key` maps a 
 field IDs to the meanings the app understands (status/group/priority/planned/due/repeat) so a
 renamed GitHub field doesn't silently break the mapping.
 
+`issue_links` (`from_issue_id`, `to_issue_id`, nullable `to_comment_id`, unique on the triple; all three cascade on delete) is local-only: explicit links between records, with the target's kind read from its labels rather than stored. Because NULLs are distinct in a unique index, `SyncIssueLinks` also checks for an existing issue-level link before inserting. It is part of the workspace archive (format version 2).
+
 `comments.kind` is nullable and only ever `null` or `Comment::KIND_CLOSING`; a closing-note comment is
 an ordinary comment for GitHub's purposes (the `kind` column is local-only bookkeeping so the app can
 find and highlight it). `CloseTodoIssue` creates one via `CreateClosingComment` when an issue is closed

@@ -17,7 +17,7 @@ it('returns null claim, parent, and empty children/knowledge for a standalone is
     expect($detail['claim'])->toBeNull()
         ->and($detail['parent'])->toBeNull()
         ->and($detail['children'])->toBe([])
-        ->and($detail['knowledge'])->toBe([])
+        ->and($detail['links'])->toBe([])
         ->and($detail['pushQueuePending'])->toBeFalse();
 });
 
@@ -53,22 +53,16 @@ it('flags a knowledge-labeled child in the children list, not the sibling knowle
 
     expect($detail['children'])->toHaveCount(1)
         ->and($detail['children'][0]['isKnowledge'])->toBeTrue()
-        ->and($detail['knowledge'])->toBe([]);
+        ->and($detail['links'])->toBe([]);
 });
 
-it('surfaces sibling knowledge issues without duplicating knowledge children', function (): void {
+it('does not treat sibling knowledge issues as links', function (): void {
     $parent = Issue::factory()->create();
     $issue = Issue::factory()->for($parent, 'parent')->create();
-    $knowledgeSibling = Issue::factory()->for($parent, 'parent')->create(['title' => 'Sibling research']);
-    $knowledgeSibling->labels()->attach(Label::factory()->for($issue->repository, 'repository')->create(['name' => 'research']));
-    $plainSibling = Issue::factory()->for($parent, 'parent')->create();
+    $sibling = Issue::factory()->for($parent, 'parent')->create();
+    $sibling->labels()->attach(Label::factory()->for($issue->repository, 'repository')->create(['name' => 'research']));
 
-    $detail = app(GetIssueDetails::class)->handle($issue->id);
-
-    $titles = array_column($detail['knowledge'], 'title');
-    expect($titles)->toContain('Sibling research')
-        ->and($titles)->not->toContain($plainSibling->title)
-        ->and(count($titles))->toBe(1);
+    expect(app(GetIssueDetails::class)->handle($issue->id)['links'])->toBe([]);
 });
 
 it('flags a pending or needs-attention push-queue entry for the issue', function (): void {

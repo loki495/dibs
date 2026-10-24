@@ -13,7 +13,7 @@ use App\Support\TrustedAuthors;
 
 class DescribeTodoIssue
 {
-    public function __construct(private readonly TrustedAuthors $trust) {}
+    public function __construct(private readonly TrustedAuthors $trust, private readonly DescribeIssueLinks $links) {}
 
     public const MAX_COMMENTS_PER_PAGE = 50;
 
@@ -61,6 +61,8 @@ class DescribeTodoIssue
                 'planned' => $item->planned_on?->toDateString(),
                 'due' => $item->due_on?->toDateString(),
             ])->all(),
+            'links' => $this->links->outgoing($issue),
+            'linkedBy' => $this->links->incoming($issue),
             'closing' => $this->closing($issue),
         ];
 
