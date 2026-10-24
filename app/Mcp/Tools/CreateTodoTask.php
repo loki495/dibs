@@ -37,6 +37,9 @@ class CreateTodoTask extends Tool implements Errable
             'labelNames' => ['sometimes', 'array'],
             'labelNames.*' => ['string', 'max:50'],
             'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'addLinks' => ['sometimes', 'array', 'max:50'],
+            'addLinks.*.issueId' => ['required', 'integer', 'min:1'],
+            'addLinks.*.commentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ]);
 
         try {
@@ -54,6 +57,7 @@ class CreateTodoTask extends Tool implements Errable
                     $arguments['newLabelName'] ?? null,
                 ], is_string(...))),
                 idempotencyKey: $arguments['idempotencyKey'] ?? null,
+                addLinks: $arguments['addLinks'] ?? [],
             );
         } catch (TodoValidationException $exception) {
             return Response::error($exception->getMessage());
@@ -76,6 +80,7 @@ class CreateTodoTask extends Tool implements Errable
             'newGroupName' => $schema->string()->nullable()->description('Create (or reuse, case-insensitively) a Group by name within `area`. Requires `area`.'),
             'newLabelName' => $schema->string()->nullable()->description('Create (or reuse, case-insensitively) a label by name.'),
             'labelNames' => $schema->array()->items($schema->string())->description('Label names to attach, e.g. ["bug", "agent task"]. Each is matched case-insensitively against existing labels and created if missing.'),
+            'addLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Explicit links to records that apply to this one: each {issueId} links an issue (a rule, lesson, research, decision, guide or task; its kind is read from its labels), {issueId, commentId} links one comment of it. Duplicates are ignored; a missing or self target is an error.'),
             'idempotencyKey' => $schema->string()->nullable()->description('A caller-chosen key; retrying the same key returns the original result instead of creating a duplicate.'),
         ];
     }

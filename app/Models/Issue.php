@@ -54,6 +54,18 @@ class Issue extends Model
         return $this->belongsToMany(Label::class, 'issue_label');
     }
 
+    /** @return HasMany<IssueLink, $this> */
+    public function links(): HasMany
+    {
+        return $this->hasMany(IssueLink::class, 'from_issue_id')->orderBy('id');
+    }
+
+    /** @return HasMany<IssueLink, $this> */
+    public function linkedBy(): HasMany
+    {
+        return $this->hasMany(IssueLink::class, 'to_issue_id')->orderBy('id');
+    }
+
     /** @return HasMany<Comment, $this> */
     public function comments(): HasMany
     {

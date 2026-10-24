@@ -9,11 +9,12 @@ use App\Exceptions\TodoRecordUnavailableException;
 use App\Models\GitHubProject;
 use App\Models\Issue;
 use App\Support\IssueSummary;
+use App\Support\StepTemplate;
 use App\Support\TrustedAuthors;
 
 class DescribeTodoIssue
 {
-    public function __construct(private readonly TrustedAuthors $trust) {}
+    public function __construct(private readonly TrustedAuthors $trust, private readonly DescribeIssueLinks $links) {}
 
     public const MAX_COMMENTS_PER_PAGE = 50;
 
@@ -61,8 +62,14 @@ class DescribeTodoIssue
                 'planned' => $item->planned_on?->toDateString(),
                 'due' => $item->due_on?->toDateString(),
             ])->all(),
+            'links' => $this->links->outgoing($issue),
+            'linkedBy' => $this->links->incoming($issue),
             'closing' => $this->closing($issue),
         ];
+
+        if ($issue->children->isNotEmpty()) {
+            $result['stepLint'] = $this->stepLint($issue);
+        }
 
         if ($withComments) {
             $commentsPerPage = max(1, min($commentsPerPage, self::MAX_COMMENTS_PER_PAGE));
@@ -105,5 +112,20 @@ class DescribeTodoIssue
             'references' => $note?->references,
             'closedAt' => ($issue->closed_at ?? ($note !== null ? $note->created_at : $issue->updated_at))->toIso8601String(),
         ];
+    }
+
+    /**
+     * Open leaf children whose body lacks a required step section (see StepTemplate).
+     *
+     * @return list<array{id: int, title: string, missing: list<string>}>
+     */
+    private function stepLint(Issue $plan): array
+    {
+        return $plan->children
+            ->filter(fn (Issue $child): bool => $child->state === 'OPEN' && $child->children_count === 0 && $this->trust->allows($child->author_login))
+            ->map(fn (Issue $child): array => ['id' => $child->id, 'title' => $child->title, 'missing' => StepTemplate::missing($child->body)])
+            ->filter(fn (array $row): bool => $row['missing'] !== [])
+            ->values()
+            ->all();
     }
 }

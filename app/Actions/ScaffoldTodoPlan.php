@@ -21,7 +21,7 @@ class ScaffoldTodoPlan
      * set of children.
      *
      * @param  list<int>  $labelIds
-     * @param  list<array{title: string, body?: ?string, groupId?: ?int, priorityId?: ?int, labelIds?: list<int>}>  $children
+     * @param  list<array{title: string, body?: ?string, groupId?: ?int, priorityId?: ?int, labelIds?: list<int>, addLinks?: list<array{issueId: int, commentId?: ?int}>}>  $children
      */
     public function handle(
         string $title,
@@ -51,6 +51,7 @@ class ScaffoldTodoPlan
                     groupId: $child['groupId'] ?? null,
                     priorityId: $child['priorityId'] ?? null,
                     labelIds: $child['labelIds'] ?? [],
+                    addLinks: $child['addLinks'] ?? [],
                 );
             }
 

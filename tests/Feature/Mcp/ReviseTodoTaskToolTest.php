@@ -135,3 +135,29 @@ it('returns structured errors for contradictory or invalid parent and Group argu
 
     expect($issue->fresh()->revision)->toBe(1);
 });
+
+it('adds and removes links through the tool and reports them in the response', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $rule = Issue::factory()->create(['title' => 'A linked rule']);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLinks' => [['issueId' => $rule->id]]])
+        ->assertOk()->assertHasNoErrors()->assertSee('A linked rule');
+    expect($issue->links()->count())->toBe(1);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 2, 'removeLinks' => [['issueId' => $rule->id]]])->assertOk();
+    expect($issue->links()->count())->toBe(0);
+});
+
+it('returns a structured error when linking to a missing record', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLinks' => [['issueId' => 999999]]])
+        ->assertHasErrors(['does not exist']);
+    expect($issue->links()->count())->toBe(0);
+});
+
+it('rejects malformed link arguments', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLinks' => [['issueId' => 'abc']]])->assertHasErrors();
+});

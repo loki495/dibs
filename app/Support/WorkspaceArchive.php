@@ -10,12 +10,12 @@ final class WorkspaceArchive
 {
     public const string FORMAT = 'dibs-workspace';
 
-    public const int VERSION = 1;
+    public const int VERSION = 2;
 
     /** @var list<string> */
     public const array TABLES = [
         'repositories', 'projects', 'project_fields', 'project_field_options',
-        'issues', 'labels', 'issue_label', 'project_items', 'comments',
+        'issues', 'labels', 'issue_label', 'project_items', 'comments', 'issue_links',
         'capture_settings', 'todo_capture_requests', 'mcp_call_logs', 'change_logs',
     ];
 
@@ -25,7 +25,7 @@ final class WorkspaceArchive
         'project_fields' => 'Project fields', 'project_field_options' => 'Groups, statuses and priorities',
         'issues' => 'Tasks and knowledge records', 'labels' => 'Labels',
         'issue_label' => 'Task label assignments', 'project_items' => 'Project memberships and schedules',
-        'comments' => 'Comments and closing notes', 'capture_settings' => 'Capture settings',
+        'comments' => 'Comments and closing notes', 'issue_links' => 'Links between tasks and knowledge records', 'capture_settings' => 'Capture settings',
         'todo_capture_requests' => 'Capture drafts', 'mcp_call_logs' => 'MCP activity history',
         'change_logs' => 'Change history',
     ];
