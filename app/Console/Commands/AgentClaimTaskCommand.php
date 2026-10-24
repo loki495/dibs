@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
 
 class AgentClaimTaskCommand extends Command
 {
-    protected $signature = 'todo:agent:claim {issue : Local Todo issue ID} {--agent= : Agent name} {--pid= : The calling agent\'s own OS process ID} {--minutes=30 : Claim duration, 1 to 480} {--context-reset : Resend the full text of every linked rule}';
+    protected $signature = 'todo:agent:claim {issue : Local Todo issue ID} {--agent= : Agent name} {--pid= : The calling agent\'s own OS process ID} {--minutes=30 : Claim duration, 1 to 480} {--context-reset : Resend the full text of every linked rule} {--path=* : Absolute file or directory the work will touch (repeatable); overlapping live claims are reported}';
 
     protected $description = 'Claim a Todo task for one host-local agent session as JSON';
 
@@ -27,7 +27,7 @@ class AgentClaimTaskCommand extends Command
             return self::FAILURE;
         }
         try {
-            $result = $claim->handle($issue, (string) $this->option('agent'), (int) $pid, (int) $this->option('minutes'));
+            $result = $claim->handle($issue, (string) $this->option('agent'), (int) $pid, (int) $this->option('minutes'), array_values((array) $this->option('path')));
         } catch (DomainException $exception) {
             $this->error($exception->getMessage());
 
@@ -39,6 +39,7 @@ class AgentClaimTaskCommand extends Command
             'expires_at' => Carbon::parse($result['claim']->expires_at)->toAtomString(),
             'capability_token' => $result['capability_token'],
             'is_verified_live' => $result['is_verified_live'],
+            'overlaps' => $result['overlaps'],
             'work_order' => $workOrder->handle($issue, (string) $this->option('agent'), (bool) $this->option('context-reset')),
         ], JSON_PRETTY_PRINT));
         if (! $result['is_verified_live']) {

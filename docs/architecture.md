@@ -144,6 +144,7 @@ the last error, read by the manual-pull path only; it drives no scheduled behavi
 below), and a unique `idempotency_key`.
 
 **`agent_sessions` / `task_claims`** — local worker identity and expiring task claims. A claim
+may carry `paths` (JSON list of absolute files/directories the work will touch), used only to warn about overlapping live claims (`FindClaimPathOverlaps`). A claim
 binds to the caller's real OS process (host, pid, process start time verified via
 `/proc/<pid>/stat`) rather than a self-reported session string, plus a server-issued capability
 token (`capability_token_hash`, SHA-256; the plaintext is returned once, at claim time, and

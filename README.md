@@ -293,7 +293,7 @@ duplicating or colliding on the same task, all without ever handling your GitHub
 write goes through the same Actions the web UI uses. Completing a task can carry a closing note,
 a reason (`COMPLETED`/`NOT_PLANNED`), and references, all visible afterward via `todo_show`; `todo_reopen` puts a closed task back to open. See
 [`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a partial JSON CLI
-fallback (`php artisan todo:agent:*`, nine commands, not the full tool set) for scripting or recovery.
+fallback (`php artisan todo:agent:*`, ten commands, not the full tool set) for scripting or recovery.
 
 To teach an agent how to use these tools well, drop [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md)
 into its skills directory (or paste it into its instructions). It's a short, generic guide in the
