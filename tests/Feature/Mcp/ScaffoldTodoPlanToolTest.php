@@ -64,3 +64,22 @@ it('sets the plan issue\'s own Group through the tool, independently of a child\
     expect($plan->projectItems->sole()->group_option_id)->toBe($planGroup->id)
         ->and($plan->children->sole()->projectItems->sole()->group_option_id)->toBe($childGroup->id);
 });
+
+it('flags scaffolded steps that lack a required section, naming it', function (): void {
+    $complete = "Objective: x\nDone-when: tests pass\nFiles likely: app/Foo.php\n**Evidence**: commit SHA";
+
+    $result = TodoServer::tool(ScaffoldTodoPlan::class, [
+        'title' => 'Plan: lint',
+        'children' => [
+            ['title' => 'Good step', 'body' => $complete],
+            ['title' => 'Bare step'],
+            ['title' => 'No done-when', 'body' => "Files likely: a\nEvidence: b\nDone-when:"],
+        ],
+    ])->assertOk();
+
+    $result->assertSee('stepLint')->assertSee('Bare step')->assertSee('Done-when')->assertSee('No done-when');
+});
+
+it('reports no stepLint on an issue without children', function (): void {
+    TodoServer::tool(ScaffoldTodoPlan::class, ['title' => 'Solo'])->assertOk()->assertDontSee('stepLint');
+});
