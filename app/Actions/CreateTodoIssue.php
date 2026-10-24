@@ -21,11 +21,13 @@ class CreateTodoIssue
         private readonly ResolveLabels $resolveLabels,
         private readonly ActivityRecorder $recorder,
         private readonly ResolveActiveRepository $activeRepository,
+        private readonly SyncIssueLinks $syncLinks,
     ) {}
 
     /**
      * @param  list<int>  $labelIds
      * @param  list<string>  $newLabelNames
+     * @param  list<array{issueId: int, commentId?: ?int}>  $addLinks
      */
     public function handle(
         string $title,
@@ -38,8 +40,9 @@ class CreateTodoIssue
         ?string $newGroupName = null,
         array $newLabelNames = [],
         ?string $idempotencyKey = null,
+        array $addLinks = [],
     ): Issue {
-        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames): Issue {
+        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks): Issue {
             if ($newGroupName !== null && trim($newGroupName) !== '' && ($area === null || $area === 0)) {
                 throw new TodoValidationException('Choose an area before creating a Group.');
             }
@@ -67,7 +70,7 @@ class CreateTodoIssue
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames): Issue {
+            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks): Issue {
                 if ($newGroupName !== null && trim($newGroupName) !== '') {
                     $group = $this->resolveGroup->handle($project, $newGroupName);
                 }
@@ -114,6 +117,8 @@ class CreateTodoIssue
                     $issue->update(['parent_issue_id' => $parent->id, 'sibling_position' => $siblingPosition]);
                     app(EnqueueGitHubPush::class)->handle('set_issue_parent', 'issue', $issue->id, ['parent_issue_id' => $parent->id], 'issue:parent:'.$issue->id);
                 }
+
+                $this->syncLinks->handle($issue, $addLinks, []);
 
                 $assigned = array_filter([
                     'area' => $project?->title,

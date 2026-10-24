@@ -39,6 +39,9 @@ class ScaffoldTodoPlan extends Tool implements Errable
             'children.*.priorityId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'children.*.labelIds' => ['sometimes', 'array'],
             'children.*.labelIds.*' => ['integer'],
+            'children.*.addLinks' => ['sometimes', 'array', 'max:50'],
+            'children.*.addLinks.*.issueId' => ['required', 'integer', 'min:1'],
+            'children.*.addLinks.*.commentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
 
@@ -78,6 +81,7 @@ class ScaffoldTodoPlan extends Tool implements Errable
                 'groupId' => $schema->integer()->nullable(),
                 'priorityId' => $schema->integer()->nullable(),
                 'labelIds' => $schema->array()->items($schema->integer()),
+                'addLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Explicit links for this child, same shape as todo_create addLinks.'),
             ]))->description('Initial child task issues, each nested under the new plan.'),
             'idempotencyKey' => $schema->string()->nullable()->description('A caller-chosen key; retrying the same key returns the original plan instead of duplicating it.'),
         ];

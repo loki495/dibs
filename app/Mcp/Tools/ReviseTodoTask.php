@@ -19,7 +19,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Revises an issue\'s canonical title, body, Group (groupId, newGroupName or clearGroup), parent (parentId or clearParent), and/or labels (addLabels/removeLabels deltas by name) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its existing area (the issue must already belong to an area/Project — set one via todo_create/todo_scaffold_plan first); use clearGroup to remove it. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
+#[Description('Revises an issue\'s canonical title, body, Group (groupId, newGroupName or clearGroup), parent (parentId or clearParent), labels (addLabels/removeLabels deltas by name) and/or explicit links (addLinks/removeLinks) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its existing area (the issue must already belong to an area/Project — set one via todo_create/todo_scaffold_plan first); use clearGroup to remove it. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
 class ReviseTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_revise';
@@ -40,6 +40,12 @@ class ReviseTodoTask extends Tool implements Errable
             'addLabels.*' => ['string', 'max:100'],
             'removeLabels' => ['sometimes', 'array', 'max:20'],
             'removeLabels.*' => ['string', 'max:100'],
+            'addLinks' => ['sometimes', 'array', 'max:50'],
+            'addLinks.*.issueId' => ['required', 'integer', 'min:1'],
+            'addLinks.*.commentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'removeLinks' => ['sometimes', 'array', 'max:50'],
+            'removeLinks.*.issueId' => ['required', 'integer', 'min:1'],
+            'removeLinks.*.commentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'note' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
@@ -59,6 +65,8 @@ class ReviseTodoTask extends Tool implements Errable
                 clearParent: $arguments['clearParent'] ?? false,
                 newGroupName: $arguments['newGroupName'] ?? null,
                 clearGroup: $arguments['clearGroup'] ?? false,
+                addLinks: $arguments['addLinks'] ?? [],
+                removeLinks: $arguments['removeLinks'] ?? [],
             );
         } catch (TodoStaleRevisionException $exception) {
             return Response::structured([
@@ -88,6 +96,8 @@ class ReviseTodoTask extends Tool implements Errable
             'clearParent' => $schema->boolean()->description('Detach the issue from its parent.'),
             'addLabels' => $schema->array()->items($schema->string())->description('Label names to attach, e.g. ["bug", "agent task"]: matched case-insensitively against existing labels and created if missing, stored lowercase. Knowledge labels (research, lesson, decision, guide) work too and move the issue to Knowledge.'),
             'removeLabels' => $schema->array()->items($schema->string())->description('Label names to detach; a label the issue does not carry is ignored. A name cannot be in both lists.'),
+            'addLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Explicit links to records that apply to this one: each {issueId} links an issue (a rule, lesson, research, decision, guide or task; its kind is read from its labels), {issueId, commentId} links one comment of it. Duplicates are ignored; a missing or self target is an error.'),
+            'removeLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Links to remove, same shape as addLinks; removing a link that does not exist is ignored.'),
             'note' => $schema->string()->nullable()->description('An optional concise note explaining the revision, added as a comment.'),
             'idempotencyKey' => $schema->string()->nullable()->description('A caller-chosen key; retrying the same key returns the original result instead of revising again.'),
         ];

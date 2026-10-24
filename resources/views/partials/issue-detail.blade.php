@@ -71,7 +71,7 @@
                 </div>
             @endif
 
-            @if ($detail['parent'] || $detail['children'] || $detail['knowledge'])
+            @if ($detail['parent'] || $detail['children'])
                 <nav aria-label="{{ __('Plan navigation') }}" class="space-y-3 text-sm">
                     @if ($detail['parent'])
                         <div>
@@ -89,17 +89,47 @@
                             </ul>
                         </div>
                     @endif
-                    @if (count($detail['knowledge']) > 0)
+                </nav>
+            @endif
+            @if (! $editingIssue)
+                <section aria-label="{{ __('Links') }}" class="space-y-3 text-sm">
+                    <p class="text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Links') }}</p>
+                    @if (count($detail['links']) > 0)
+                        <ul class="space-y-1">
+                            @foreach ($detail['links'] as $link)
+                                <li class="flex items-start gap-2">
+                                    <button type="button" wire:click="$set('selected', {{ $link['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $link['knowledge'], 'text-teal-700 dark:text-teal-400' => ! $link['knowledge'], 'line-through opacity-70' => $link['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($link['number'], $link['title']) }}</button>
+                                    @if ($link['commentId'])<span class="text-xs text-slate-500">{{ __('comment :id', ['id' => $link['commentId']]) }}</span>@endif
+                                    @foreach ($link['labels'] as $linkLabel)<span class="rounded-full border border-slate-200 px-1.5 text-xs text-slate-500 dark:border-slate-700">{{ $linkLabel }}</span>@endforeach
+                                    <button type="button" wire:click="removeLink({{ $link['id'] }}, {{ $link['commentId'] ?? 0 }})" class="ml-auto text-xs text-slate-500 hover:text-rose-600" aria-label="{{ __('Remove link') }}">×</button>
+                                </li>
+                            @endforeach
+                        </ul>
+                    @else
+                        <p class="text-xs text-slate-500">{{ __('No links yet.') }}</p>
+                    @endif
+                    <div>
+                        <input type="search" wire:model.live.debounce.300ms="linkSearch" placeholder="{{ __('Add a link: search by title, #number or id') }}" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-950" aria-label="{{ __('Add a link') }}">
+                        @if ($linkChoices->isNotEmpty())
+                            <ul class="mt-1 space-y-1">
+                                @foreach ($linkChoices as $choice)
+                                    <li><button type="button" wire:click="addLink({{ $choice->id }})" class="text-left text-teal-700 hover:underline dark:text-teal-400">{{ \App\Support\IssueNumber::withTitle($choice->github_number, $choice->title) }}</button></li>
+                                @endforeach
+                            </ul>
+                        @endif
+                        @if ($linkError)<p role="alert" class="mt-1 text-xs text-amber-700 dark:text-amber-400">{{ $linkError }}</p>@endif
+                    </div>
+                    @if (count($detail['linkedBy']) > 0)
                         <div>
-                            <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Related knowledge') }}</p>
+                            <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Linked from') }}</p>
                             <ul class="space-y-1">
-                                @foreach ($detail['knowledge'] as $item)
-                                    <li><button type="button" wire:click="$set('selected', {{ $item['id'] }})" class="text-left text-violet-700 hover:underline dark:text-violet-400">{{ \App\Support\IssueNumber::withTitle($item['number'], $item['title']) }}</button></li>
+                                @foreach ($detail['linkedBy'] as $link)
+                                    <li><button type="button" wire:click="$set('selected', {{ $link['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $link['knowledge'], 'text-teal-700 dark:text-teal-400' => ! $link['knowledge'], 'line-through opacity-70' => $link['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($link['number'], $link['title']) }}</button></li>
                                 @endforeach
                             </ul>
                         </div>
                     @endif
-                </nav>
+                </section>
             @endif
             @if ($detail['issue']->projectItems->contains(fn ($membership) => $membership->priorityOption || $membership->planned_on || $membership->due_on || $membership->repeat_rule))
                 <div class="space-y-3">

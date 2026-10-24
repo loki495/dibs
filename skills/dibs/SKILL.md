@@ -51,6 +51,7 @@ Claim the task **before** you start on it, not after: a claim is what tells othe
 ## Revising and conflicts
 
 - Change a title, body, Group (`groupId`, `newGroupName` or `clearGroup`), parent (`parentId` or `clearParent`) or labels with `todo_revise` (`addLabels` / `removeLabels` name lists; removing a label the task lacks is ignored), passing the `revision` you last read as `expectedRevision`. A stale write is not an error: it returns `{conflict: true, current: ...}`. Reread the current record, reconcile, then retry. Never overwrite blindly.
+- Link the records that apply to a task (rules, lessons, research, decisions, guides, related tasks) instead of pasting their text: `addLinks` / `removeLinks` on `todo_revise`, `addLinks` on `todo_create` and on each `todo_scaffold_plan` child. Each link is `{issueId}` or `{issueId, commentId}` (one comment of that issue); duplicates are ignored, and a missing, unavailable or self target is an error. `todo_show` returns `links` (what this issue points to) and `linkedBy` (what points at it) as capped one-line summaries with the target's labels; the kind of a record is its labels, there is no separate relation type. Read the linked records you are about to act on.
 - The issue body is the canonical document; comments are supporting discussion and evidence. Use `todo_comment` for history and `todo_revise` for the maintained text.
 - If `todo_queue_status` shows items needing attention, that is a GitHub sync conflict for a person to review. Do not try to work around it.
 

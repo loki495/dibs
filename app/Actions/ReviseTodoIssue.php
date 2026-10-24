@@ -25,11 +25,14 @@ class ReviseTodoIssue
         private readonly SyncIssueLabels $syncLabels,
         private readonly MoveIssueUnderParent $moveUnderParent,
         private readonly ResolveGroupOption $resolveGroup,
+        private readonly SyncIssueLinks $syncLinks,
     ) {}
 
     /**
      * @param  list<string>  $addLabels  names to attach; a missing label is created, matching is case-insensitive
      * @param  list<string>  $removeLabels  names to detach; one the issue does not carry is ignored
+     * @param  list<array{issueId: int, commentId?: ?int}>  $addLinks
+     * @param  list<array{issueId: int, commentId?: ?int}>  $removeLinks
      */
     public function handle(
         int $id,
@@ -45,10 +48,12 @@ class ReviseTodoIssue
         bool $clearParent = false,
         ?string $newGroupName = null,
         bool $clearGroup = false,
+        array $addLinks = [],
+        array $removeLinks = [],
     ): Issue {
         if ($title === null && $body === null && $groupId === null && $addLabels === [] && $removeLabels === []
-            && $parentId === null && ! $clearParent && $newGroupName === null && ! $clearGroup) {
-            throw new TodoValidationException('Provide a title, a body, a groupId, a Group name, a parent, label changes, or a combination to revise.');
+            && $parentId === null && ! $clearParent && $newGroupName === null && ! $clearGroup && $addLinks === [] && $removeLinks === []) {
+            throw new TodoValidationException('Provide a title, a body, a groupId, a Group name, a parent, label or link changes, or a combination to revise.');
         }
         if (count(array_filter([$groupId !== null, $newGroupName !== null, $clearGroup])) > 1) {
             throw new TodoValidationException('Choose only one of groupId, newGroupName or clearGroup.');
@@ -66,7 +71,7 @@ class ReviseTodoIssue
             throw new TodoValidationException('A label cannot be both added and removed in one revision.');
         }
 
-        $revise = function () use ($id, $expectedRevision, $title, $body, $groupId, $note, $addLabels, $removeLabels, $parentId, $clearParent, $newGroupName, $clearGroup): Issue {
+        $revise = function () use ($id, $expectedRevision, $title, $body, $groupId, $note, $addLabels, $removeLabels, $parentId, $clearParent, $newGroupName, $clearGroup, $addLinks, $removeLinks): Issue {
             $issue = Issue::query()->with(['projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')])->find($id);
             if (! $issue instanceof Issue) {
                 throw new TodoRecordNotFoundException("No Todo issue with local id [{$id}].");
@@ -102,7 +107,7 @@ class ReviseTodoIssue
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-            return DB::transaction(function () use ($issue, $title, $body, $item, $groupId, $note, $addLabels, $removeLabels, $parent, $clearParent, $newGroupName): Issue {
+            return DB::transaction(function () use ($issue, $title, $body, $item, $groupId, $note, $addLabels, $removeLabels, $parent, $clearParent, $newGroupName, $addLinks, $removeLinks): Issue {
                 $changes = array_filter(['title' => $title, 'body' => $body], fn ($value): bool => $value !== null);
                 $issue->update([...$changes, 'revision' => $issue->revision + 1]);
                 $this->recorder->changeModel('ReviseTodoIssue', $issue, 'Revised');
@@ -134,6 +139,7 @@ class ReviseTodoIssue
                         ->reject(fn (Label $label): bool => in_array(LabelName::normalize($label->name), $removeLabels, true));
                     $this->syncLabels->handle($issue, $this->resolveLabels->handle($issue->repository, $kept, $addLabels));
                 }
+                $this->syncLinks->handle($issue, $addLinks, $removeLinks);
                 if ($note !== null && trim($note) !== '') {
                     app(CreateTodoComment::class)->handle($issue->id, '**Revision note:** '.trim($note));
                 }
