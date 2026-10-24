@@ -84,7 +84,7 @@ it('reports the reason, note, references and when it closed for a closed issue',
     $closing = app(DescribeTodoIssue::class)->handle($issue->id)['closing'];
 
     expect($closing)->toBe([
-        'reason' => 'COMPLETED', 'note' => 'All done.', 'references' => ['#42'],
+        'reason' => 'COMPLETED', 'note' => 'All done.', 'references' => ['#42'], 'result' => null,
         'closedAt' => $comment->created_at->toIso8601String(),
     ]);
 });
@@ -94,7 +94,7 @@ it('reports a null reason, note and references for a closed issue that has neith
 
     $closing = app(DescribeTodoIssue::class)->handle($issue->id)['closing'];
 
-    expect($closing)->toBe(['reason' => null, 'note' => null, 'references' => null, 'closedAt' => $issue->updated_at->toIso8601String()]);
+    expect($closing)->toBe(['reason' => null, 'note' => null, 'references' => null, 'result' => null, 'closedAt' => $issue->updated_at->toIso8601String()]);
 });
 
 it('reflects the most recent closing note when an issue was closed, reopened, and closed again', function (): void {

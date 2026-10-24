@@ -14,6 +14,7 @@ use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\Activity\ActivityRecorder;
 use App\Support\LabelName;
+use App\Support\TextReplacements;
 use Illuminate\Support\Facades\DB;
 
 class ReviseTodoIssue
@@ -33,6 +34,7 @@ class ReviseTodoIssue
      * @param  list<string>  $removeLabels  names to detach; one the issue does not carry is ignored
      * @param  list<array{issueId: int, commentId?: ?int}>  $addLinks
      * @param  list<array{issueId: int, commentId?: ?int}>  $removeLinks
+     * @param  list<array{from: string, to: string, all?: bool}>  $replace  exact-string edits of the current body, instead of a whole new $body
      */
     public function handle(
         int $id,
@@ -50,8 +52,12 @@ class ReviseTodoIssue
         bool $clearGroup = false,
         array $addLinks = [],
         array $removeLinks = [],
+        array $replace = [],
     ): Issue {
-        if ($title === null && $body === null && $groupId === null && $addLabels === [] && $removeLabels === []
+        if ($body !== null && $replace !== []) {
+            throw new TodoValidationException('Provide either a new body or replace edits, not both.');
+        }
+        if ($title === null && $body === null && $replace === [] && $groupId === null && $addLabels === [] && $removeLabels === []
             && $parentId === null && ! $clearParent && $newGroupName === null && ! $clearGroup && $addLinks === [] && $removeLinks === []) {
             throw new TodoValidationException('Provide a title, a body, a groupId, a Group name, a parent, label or link changes, or a combination to revise.');
         }
@@ -71,7 +77,7 @@ class ReviseTodoIssue
             throw new TodoValidationException('A label cannot be both added and removed in one revision.');
         }
 
-        $revise = function () use ($id, $expectedRevision, $title, $body, $groupId, $note, $addLabels, $removeLabels, $parentId, $clearParent, $newGroupName, $clearGroup, $addLinks, $removeLinks): Issue {
+        $revise = function () use ($id, $expectedRevision, $title, $body, $replace, $groupId, $note, $addLabels, $removeLabels, $parentId, $clearParent, $newGroupName, $clearGroup, $addLinks, $removeLinks): Issue {
             $issue = Issue::query()->with(['projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')])->find($id);
             if (! $issue instanceof Issue) {
                 throw new TodoRecordNotFoundException("No Todo issue with local id [{$id}].");
@@ -81,6 +87,9 @@ class ReviseTodoIssue
             }
             if ($issue->revision !== $expectedRevision) {
                 throw new TodoStaleRevisionException($issue->id, "Issue #{$issue->github_number} (local id {$id}) has changed since expectedRevision was read. Reread it and reconcile before retrying.");
+            }
+            if ($replace !== []) {
+                $body = TextReplacements::apply((string) $issue->body, $replace);
             }
 
             $parent = null;

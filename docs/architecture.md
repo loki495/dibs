@@ -97,7 +97,9 @@ an ordinary comment for GitHub's purposes (the `kind` column is local-only bookk
 find and highlight it). `CloseTodoIssue` creates one via `CreateClosingComment` when an issue is closed
 with a note, never for an issue that was already closed. `comments.references` (nullable JSON, a list
 of strings such as commit or PR references) is local-only structured data for the UI/`todo_show` to
-render next to the note — it is not folded into the GitHub-pushed comment body.
+render next to the note — it is not folded into the GitHub-pushed comment body. `comments.result` (nullable JSON) is
+the same kind of local-only data: the completion evidence (`commit`, `tests`, `docs`, `done_when_held`)
+an agent passed to `todo_complete`, checked by the completion guards (`docs/agent-interface.md`).
 
 `issues.state_reason` (`CloseTodoIssue::REASONS`: `COMPLETED`, `NOT_PLANNED`, GitHub's own
 `IssueClosedStateReason` values) is set locally on close and sent to GitHub as the `close_issue` push's

@@ -6,6 +6,8 @@ use App\Actions\ClaimTaskForAgent;
 use App\Models\Comment;
 use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
+use App\Models\Label;
+use Illuminate\Support\Facades\Artisan;
 
 it('completes a claimed task through the CLI as JSON', function (): void {
     $issue = Issue::factory()->create(['state' => 'OPEN']);
@@ -42,4 +44,19 @@ it('rejects completion without a numeric --pid or --token', function (): void {
     $this->artisan('todo:agent:complete', ['issue' => $issue->id])
         ->expectsOutputToContain('numeric --pid')
         ->assertFailed();
+});
+
+it('passes --result evidence and refuses invalid JSON or a guard failure without crashing', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+    $issue->labels()->attach(Label::factory()->create(['name' => 'agent task']));
+    $claim = app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    $base = ['issue' => (string) $issue->id, '--pid' => (string) getmypid(), '--token' => $claim['capability_token'], '--summary' => 'Done.'];
+
+    expect(Artisan::call('todo:agent:complete', [...$base, '--result' => 'not json']))->toBe(1)
+        ->and(Artisan::output())->toContain('JSON object');
+    expect(Artisan::call('todo:agent:complete', $base))->toBe(1)
+        ->and(Artisan::output())->toContain('result.commit');
+
+    expect(Artisan::call('todo:agent:complete', [...$base, '--result' => '{"commit":"abc1234","tests":{"command":"pest","exit_code":0},"docs":["README.md"]}']))->toBe(0)
+        ->and(Comment::query()->sole()->result['commit'])->toBe('abc1234');
 });

@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property Carbon|null $remote_created_at
  * @property list<string>|null $references
+ * @property array<string, mixed>|null $result
  */
 class Comment extends Model
 {
@@ -34,7 +35,7 @@ class Comment extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['remote_created_at' => 'datetime', 'remote_updated_at' => 'datetime', 'last_synced_at' => 'datetime', 'is_available' => 'boolean', 'last_seen_at' => 'datetime', 'references' => 'array'];
+        return ['remote_created_at' => 'datetime', 'remote_updated_at' => 'datetime', 'last_synced_at' => 'datetime', 'is_available' => 'boolean', 'last_seen_at' => 'datetime', 'references' => 'array', 'result' => 'array'];
     }
 
     /** @return BelongsTo<Issue, $this> */

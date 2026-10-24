@@ -6,12 +6,13 @@ namespace App\Console\Commands;
 
 use App\Actions\CompleteTodoTask;
 use App\Exceptions\TodoRecordUnavailableException;
+use App\Exceptions\TodoValidationException;
 use DomainException;
 use Illuminate\Console\Command;
 
 class AgentCompleteTaskCommand extends Command
 {
-    protected $signature = 'todo:agent:complete {issue : Local Todo issue ID} {--pid= : The calling agent\'s own OS process ID} {--token= : The capability token returned by todo:agent:claim} {--summary= : An optional result summary, posted as a comment}';
+    protected $signature = 'todo:agent:complete {issue : Local Todo issue ID} {--pid= : The calling agent\'s own OS process ID} {--token= : The capability token returned by todo:agent:claim} {--summary= : The closing note, posted as a comment} {--reason= : COMPLETED or NOT_PLANNED} {--result= : Completion evidence as JSON: {"commit","tests":{"command","exit_code"},"docs","done_when_held"}} {--force : Complete despite missing evidence} {--force-reason= : Why the missing evidence does not apply}';
 
     protected $description = 'Complete a claimed host-local agent task as JSON';
 
@@ -24,9 +25,15 @@ class AgentCompleteTaskCommand extends Command
 
             return self::FAILURE;
         }
+        $result = json_decode((string) ($this->option('result') ?? '{}'), true);
+        if (! is_array($result)) {
+            $this->error('--result must be a JSON object.');
+
+            return self::FAILURE;
+        }
         try {
-            $issue = $complete->handle((int) $this->argument('issue'), (int) $pid, $token, $this->option('summary'));
-        } catch (DomainException|TodoRecordUnavailableException $exception) {
+            $issue = $complete->handle((int) $this->argument('issue'), (int) $pid, $token, $this->option('summary'), $this->option('reason'), result: $result, force: (bool) $this->option('force'), forceReason: $this->option('force-reason'));
+        } catch (DomainException|TodoRecordUnavailableException|TodoValidationException $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
