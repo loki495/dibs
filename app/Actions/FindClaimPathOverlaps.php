@@ -68,6 +68,25 @@ class FindClaimPathOverlaps
         return $found;
     }
 
+    /**
+     * Live claims, with or without paths, held by the conversation whose id ends the agent name.
+     *
+     * @return list<array{issueId: int, agentName: string, paths: list<string>}>
+     */
+    public function heldBy(string $session): array
+    {
+        $found = [];
+        $claims = TaskClaim::query()->whereNull('released_at')->where('expires_at', '>', now())->with('agentSession')->get();
+        foreach ($claims as $claim) {
+            $agent = $claim->agentSession->agent_name;
+            if (str_ends_with($agent, ':'.$session) && $this->liveness->handle($claim)['isCurrentlyAlive'] !== false) {
+                $found[] = ['issueId' => $claim->issue_id, 'agentName' => $agent, 'paths' => $claim->paths ?? []];
+            }
+        }
+
+        return $found;
+    }
+
     /** @param list<string> $paths */
     private function anyOverlap(string $held, array $paths): bool
     {
