@@ -39,13 +39,14 @@ final class StepTemplate
     /**
      * Each section's field value, else its body line.
      *
-     * @return array{objective: ?string, tier: ?string, doneWhen: ?string, evidence: ?string, filesLikely: ?string}
+     * @return array{objective: ?string, tier: ?string, repos: ?string, doneWhen: ?string, evidence: ?string, filesLikely: ?string}
      */
     public static function values(Issue $issue, ?string $body): array
     {
         return [
             'objective' => self::line($body, 'objective'),
-            'tier' => self::line($body, 'tier'),
+            'tier' => self::inline($body, 'tier'),
+            'repos' => self::inline($body, 'repos?'),
             'doneWhen' => self::filled($issue->done_when) ?? self::line($body, self::REQUIRED['Done-when']),
             'evidence' => self::filled($issue->evidence) ?? self::line($body, self::REQUIRED['Evidence']),
             'filesLikely' => self::filled($issue->files_likely) ?? self::line($body, self::REQUIRED['Files likely']),
@@ -60,6 +61,16 @@ final class StepTemplate
         }
 
         return self::filled(ltrim($match[1], '*_ '));
+    }
+
+    /** The text after "<Name>:" anywhere on a body line, up to the next ". Name:" or the end of the line. */
+    public static function inline(?string $body, string $pattern): ?string
+    {
+        if (preg_match('/(?<![\w-])(?i:'.$pattern.'):[ \t]*([^\n]*?)(?:\.[ \t]+[A-Z][\w -]*:|[ \t]*\.?[ \t]*$)/m', (string) $body, $match) !== 1) {
+            return null;
+        }
+
+        return self::filled(trim($match[1], '*_ '));
     }
 
     private static function filled(?string $value): ?string

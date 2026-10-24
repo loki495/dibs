@@ -151,7 +151,7 @@ it('sends a rule text once per agent and revision through todo_claim, again afte
 });
 
 it('leaves out rule text that does not fit the cap, without marking it delivered', function (): void {
-    $rule = ruleRecord('Rule: huge', str_repeat('long ', 2000));
+    $rule = ruleRecord('Rule: huge', str_repeat('long ', 3000));
     $plan = nextPlan([['title' => 'A', 'addLinks' => [['issueId' => $rule->id]]]]);
     $a = $plan->children->first();
 
@@ -174,4 +174,68 @@ it('caps a long body and checkpoint', function (): void {
     expect(mb_strlen((string) json_encode($order, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)))->toBeLessThanOrEqual(DescribeWorkOrder::MAX_CHARS)
         ->and($order['truncated'])->toBeTrue()
         ->and(mb_strlen($order['objective']))->toBeLessThanOrEqual(DescribeWorkOrder::OBJECTIVE_LENGTH);
+});
+
+function liveShapedRule(string $title): Issue
+{
+    return ruleRecord($title, "Rule: ALWAYS do the thing for {$title}. ".str_repeat('Detail sentence. ', 12)."\nTrigger: before commit.\nCheck: ".str_repeat('a check ', 20)."\nApplies to: all projects.\nSource: ai/RULES.md sections.\nMerged candidates: R1, R2");
+}
+
+it('sends only the rule statement, so 20 live-shaped rules fit the cap', function (): void {
+    $rules = collect(range(1, 20))->map(fn (int $n): Issue => liveShapedRule("Rule {$n}"));
+    $plan = nextPlan([['title' => 'A', 'addLinks' => $rules->map(fn (Issue $r): array => ['issueId' => $r->id])->all()]]);
+
+    $order = app(DescribeWorkOrder::class)->handle($plan->children->first(), 'claude:s:1');
+
+    expect(collect($order['rules'])->every(fn (array $r): bool => isset($r['text']) && str_starts_with($r['text'], 'Rule: ALWAYS') && ! str_contains($r['text'], 'Trigger:')))->toBeTrue()
+        ->and($order)->not->toHaveKey('rulesPending')
+        ->and($order['truncated'])->toBeFalse()
+        ->and(collect($order['rules'])->sum(fn (array $r): int => mb_strlen($r['text'])))->toBeLessThanOrEqual(DescribeWorkOrder::RULE_TEXT_MAX_CHARS);
+});
+
+it('keeps a rule without metadata whole, and a metadata-only rule as is', function (): void {
+    $plain = ruleRecord('Rule: plain', 'Just the rule.');
+    $bare = ruleRecord('Rule: bare', "Trigger: always.\nCheck: never.");
+    $plan = nextPlan([['title' => 'A', 'addLinks' => [['issueId' => $plain->id], ['issueId' => $bare->id]]]]);
+
+    $rules = app(DescribeWorkOrder::class)->handle($plan->children->first(), 'claude:s:1')['rules'];
+
+    expect($rules[0]['text'])->toBe('Just the rule.')
+        ->and($rules[1]['text'])->toBe("Trigger: always.\nCheck: never.");
+});
+
+it('lists rules left out for space in rulesPending, and they arrive on the next claim', function (): void {
+    $big = ruleRecord('Rule: big', 'Rule: '.str_repeat('word ', 3000));
+    $small = ruleRecord('Rule: small', 'Rule: small one.');
+    $plan = nextPlan([['title' => 'A', 'addLinks' => [['issueId' => $big->id], ['issueId' => $small->id]]]]);
+    $a = $plan->children->first();
+
+    $order = app(DescribeWorkOrder::class)->handle($a, 'claude:s:1');
+
+    expect($order['rulesPending'])->toBe([$big->id])
+        ->and($order['hint'])->toContain('todo_show')
+        ->and($order['rules'][1]['text'])->toBe('Rule: small one.');
+    $big->update(['body' => 'Rule: short now.', 'revision' => 2]);
+    $next = app(DescribeWorkOrder::class)->handle($a, 'claude:s:1');
+    expect($next['rules'][0]['text'])->toBe('Rule: short now.')
+        ->and($next)->not->toHaveKey('rulesPending');
+});
+
+it('parses Tier and Repos from a mid-line body, with the plan body as the repos fallback', function (): void {
+    $plan = nextPlan([
+        ['title' => 'A', 'body' => 'Repos: ~/www/personal/dibs, ~/dotfiles (hook). Tier: Sonnet. Objective: x.'],
+        ['title' => 'B', 'body' => 'Objective: y.'],
+        ['title' => 'C'],
+    ]);
+    [$a, $b, $c] = $plan->children->all();
+    $plan->update(['body' => 'Repo: ~/www/plan-repo']);
+
+    $first = app(DescribeWorkOrder::class)->handle($a);
+    expect($first['tier'])->toBe('Sonnet')
+        ->and($first['repos'])->toBe('~/www/personal/dibs, ~/dotfiles (hook)')
+        ->and(app(DescribeWorkOrder::class)->handle($b)['repos'])->toBe('~/www/plan-repo')
+        ->and(app(DescribeWorkOrder::class)->handle($b)['tier'])->toBeNull();
+
+    $plan->update(['body' => null]);
+    expect(app(DescribeWorkOrder::class)->handle($c)['repos'])->toBeNull();
 });
