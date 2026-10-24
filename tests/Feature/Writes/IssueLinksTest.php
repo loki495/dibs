@@ -130,3 +130,14 @@ it('links scaffolded children and rolls the whole plan back on an invalid link',
     expect(fn () => app(ScaffoldTodoPlan::class)->handle(title: 'Bad plan', children: [['title' => 'Step', 'addLinks' => [['issueId' => 999999]]]]))->toThrow(TodoValidationException::class);
     expect(Issue::query()->where('title', 'Bad plan')->exists())->toBeFalse();
 });
+
+it('hides a link to a comment that became unavailable', function (): void {
+    $from = Issue::factory()->create();
+    $target = Issue::factory()->create();
+    $comment = Comment::factory()->for($target, 'issue')->create(['body' => 'Secret removed text', 'author_login' => null]);
+    app(SyncIssueLinks::class)->handle($from, [['issueId' => $target->id, 'commentId' => $comment->id]], []);
+
+    $comment->update(['is_available' => false]);
+
+    expect(app(DescribeTodoIssue::class)->handle($from->id)['links'])->toBe([]);
+});
