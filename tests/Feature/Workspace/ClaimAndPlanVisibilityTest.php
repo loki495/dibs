@@ -104,3 +104,17 @@ it('shows the incoming side of a link and a handled error for a bad link', funct
         ->assertSee('Linked from')->assertSee('Points at me')
         ->call('addLink', 999999)->assertSee('does not exist');
 });
+
+it('shows a step\'s fields and blockers read-only in the detail panel, and no step box without them', function (): void {
+    $plan = Issue::factory()->create();
+    $blocker = Issue::factory()->create(['parent_issue_id' => $plan->id, 'title' => 'Write the migration', 'state' => 'CLOSED']);
+    $step = Issue::factory()->create(['parent_issue_id' => $plan->id, 'done_when' => 'The brief lists the rules.', 'files_likely' => 'app/Actions/DescribeWorkOrder.php']);
+    $step->blockedBy()->attach($blocker->id);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $step->id)
+        ->assertSee('Done when')->assertSee('The brief lists the rules.')->assertSee('app/Actions/DescribeWorkOrder.php')
+        ->assertSee('Blocked by')->assertSee('Write the migration')->assertDontSee('Evidence');
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')->set('selected', $blocker->id)
+        ->assertDontSee('Blocked by');
+});

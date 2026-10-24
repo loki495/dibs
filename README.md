@@ -267,6 +267,11 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
   plan up front and keep it current as work progresses (`todo_revise` edits a record's title, body,
   Group, parent and labels with a stale-write check), so the plan itself — not a chat transcript
   — is the durable record.
+- **Picking up the next step** — steps can carry Done-when, Evidence and Files likely as fields
+  and wait on sibling steps (`blockedBy`). `todo_next` returns a plan's first open, unclaimed,
+  unblocked step with a short work order (objective, Done-when, files, linked rules, last
+  checkpoint), and `todo_claim` returns the same brief, sending each linked rule's text only once
+  per agent, so a session can start a step cold from the brief alone.
 - **Project knowledge** — research, lessons, and decisions get saved as their own records
   (`todo_create` with a knowledge label), discoverable later instead of buried in a comment
   history no one re-reads.

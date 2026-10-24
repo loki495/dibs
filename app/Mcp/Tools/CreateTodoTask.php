@@ -7,6 +7,7 @@ namespace App\Mcp\Tools;
 use App\Actions\CreateTodoIssue;
 use App\Actions\DescribeTodoIssue;
 use App\Exceptions\TodoValidationException;
+use App\Mcp\Tools\Concerns\StepArgument;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -40,7 +41,9 @@ class CreateTodoTask extends Tool implements Errable
             'addLinks' => ['sometimes', 'array', 'max:50'],
             'addLinks.*.issueId' => ['required', 'integer', 'min:1'],
             'addLinks.*.commentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            ...StepArgument::rules(),
         ]);
+        $stepArguments = StepArgument::normalize($arguments);
 
         try {
             $issue = $create->handle(
@@ -58,6 +61,8 @@ class CreateTodoTask extends Tool implements Errable
                 ], is_string(...))),
                 idempotencyKey: $arguments['idempotencyKey'] ?? null,
                 addLinks: $arguments['addLinks'] ?? [],
+                step: $stepArguments['step'],
+                blockedBy: $stepArguments['blockedBy'],
             );
         } catch (TodoValidationException $exception) {
             return Response::error($exception->getMessage());
@@ -81,6 +86,7 @@ class CreateTodoTask extends Tool implements Errable
             'newLabelName' => $schema->string()->nullable()->description('Create (or reuse, case-insensitively) a label by name.'),
             'labelNames' => $schema->array()->items($schema->string())->description('Label names to attach, e.g. ["bug", "agent task"]. Each is matched case-insensitively against existing labels and created if missing.'),
             'addLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Explicit links to records that apply to this one: each {issueId} links an issue (a rule, lesson, research, decision, guide or task; its kind is read from its labels), {issueId, commentId} links one comment of it. Duplicates are ignored; a missing or self target is an error.'),
+            ...StepArgument::schema($schema, 'Local ids of sibling steps (children of the same parentId) this step waits on; it is not ready until they all close. Self, cross-plan and cyclic edges are refused.'),
             'idempotencyKey' => $schema->string()->nullable()->description('A caller-chosen key; retrying the same key returns the original result instead of creating a duplicate.'),
         ];
     }

@@ -50,6 +50,8 @@ class GetIssueDetails
             'children' => $issue->children->map(fn (Issue $child): array => $this->summarize($child))->all(),
             'links' => $this->links->outgoing($issue, forAgent: false),
             'linkedBy' => $this->links->incoming($issue, forAgent: false),
+            'step' => array_filter([__('Done when') => $issue->done_when, __('Evidence') => $issue->evidence, __('Files likely') => $issue->files_likely], fn (?string $value): bool => $value !== null),
+            'blockedBy' => $issue->blockedBy()->where('is_available', true)->with('labels')->get()->map(fn (Issue $blocker): array => $this->summarize($blocker))->all(),
             'pushQueuePending' => GitHubPushQueueItem::query()->where('target_type', 'issue')->where('target_id', $issue->id)->whereIn('status', ['pending', 'failed', 'needs_attention'])->exists(),
         ];
     }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\ClaimTaskForAgent;
+use App\Actions\DescribeWorkOrder;
 use App\Models\Issue;
 use DomainException;
 use Illuminate\Console\Command;
@@ -12,11 +13,11 @@ use Illuminate\Support\Carbon;
 
 class AgentClaimTaskCommand extends Command
 {
-    protected $signature = 'todo:agent:claim {issue : Local Todo issue ID} {--agent= : Agent name} {--pid= : The calling agent\'s own OS process ID} {--minutes=30 : Claim duration, 1 to 480}';
+    protected $signature = 'todo:agent:claim {issue : Local Todo issue ID} {--agent= : Agent name} {--pid= : The calling agent\'s own OS process ID} {--minutes=30 : Claim duration, 1 to 480} {--context-reset : Resend the full text of every linked rule}';
 
     protected $description = 'Claim a Todo task for one host-local agent session as JSON';
 
-    public function handle(ClaimTaskForAgent $claim): int
+    public function handle(ClaimTaskForAgent $claim, DescribeWorkOrder $workOrder): int
     {
         $issue = Issue::query()->where('is_available', true)->find($this->argument('issue'));
         $pid = $this->option('pid');
@@ -38,6 +39,7 @@ class AgentClaimTaskCommand extends Command
             'expires_at' => Carbon::parse($result['claim']->expires_at)->toAtomString(),
             'capability_token' => $result['capability_token'],
             'is_verified_live' => $result['is_verified_live'],
+            'work_order' => $workOrder->handle($issue, (string) $this->option('agent'), (bool) $this->option('context-reset')),
         ], JSON_PRETTY_PRINT));
         if (! $result['is_verified_live']) {
             $this->comment('Note: process liveness could not be verified in this environment (weaker-assurance claim).');
