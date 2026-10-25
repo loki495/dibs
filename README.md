@@ -265,7 +265,7 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
   reason.
 - **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
   plan up front and keep it current as work progresses (`todo_revise` edits a record's title, body,
-  Group, parent and labels with a stale-write check), so the plan itself — not a chat transcript
+  Area, Group, Priority, parent and labels with a stale-write check), so the plan itself — not a chat transcript
   — is the durable record.
 - **Picking up the next step** — steps can carry Done-when, Evidence and Files likely as fields
   and wait on sibling steps (`blockedBy`). `todo_next` returns a plan's first open, unclaimed,
