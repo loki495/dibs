@@ -21,7 +21,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Revises an issue\'s canonical title, body, Group (groupId, newGroupName or clearGroup), parent (parentId or clearParent), labels (addLabels/removeLabels deltas by name), explicit links (addLinks/removeLinks) and/or plan step fields (step, blockedBy) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its existing area (the issue must already belong to an area/Project — set one via todo_create/todo_scaffold_plan first); use clearGroup to remove it. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
+#[Description('Revises an issue\'s canonical title, body, Area (areaId, areaName or clearArea), Priority (priorityId, priorityName or clearPriority), Group (groupId, newGroupName or clearGroup), parent (parentId or clearParent), labels (addLabels/removeLabels deltas by name), explicit links (addLinks/removeLinks) and/or plan step fields (step, blockedBy) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its area (the issue must belong to an area, or be given one with areaId/areaName in the same call; moving Area drops the old Group and Priority); use clearGroup to remove it. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
 class ReviseTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_revise';
@@ -40,6 +40,12 @@ class ReviseTodoTask extends Tool implements Errable
             'groupId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'newGroupName' => ['sometimes', 'nullable', 'string', 'max:100'],
             'clearGroup' => ['sometimes', 'boolean'],
+            'areaId' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'areaName' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'clearArea' => ['sometimes', 'boolean'],
+            'priorityId' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'priorityName' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'clearPriority' => ['sometimes', 'boolean'],
             'parentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'clearParent' => ['sometimes', 'boolean'],
             'addLabels' => ['sometimes', 'array', 'max:20'],
@@ -78,6 +84,12 @@ class ReviseTodoTask extends Tool implements Errable
                 replace: ReplaceArgument::normalize($arguments['replace'] ?? []),
                 step: $stepArguments['step'],
                 blockedBy: $stepArguments['blockedBy'],
+                areaId: $arguments['areaId'] ?? null,
+                areaName: $arguments['areaName'] ?? null,
+                clearArea: $arguments['clearArea'] ?? false,
+                priorityId: $arguments['priorityId'] ?? null,
+                priorityName: $arguments['priorityName'] ?? null,
+                clearPriority: $arguments['clearPriority'] ?? false,
             );
         } catch (TodoStaleRevisionException $exception) {
             return Response::structured([
@@ -108,6 +120,12 @@ class ReviseTodoTask extends Tool implements Errable
             'groupId' => $schema->integer()->nullable()->description('A Group id within the issue\'s existing area, if moving it to a different Group. The issue must already belong to an area/Project.'),
             'newGroupName' => $schema->string()->nullable()->description('Move the issue to the Group with this name in its area, creating it if missing (case-insensitive). The issue must already belong to an area. Use at most one of groupId, newGroupName, clearGroup.'),
             'clearGroup' => $schema->boolean()->description('Remove the issue from its Group.'),
+            'areaId' => $schema->integer()->nullable()->description('Move the issue to this Area (Project id from todo_metadata). The new membership starts with no Group or Priority (the old Area\'s options do not carry over) unless groupId/newGroupName/priorityId/priorityName in the same call set them from the new Area. Use at most one of areaId, areaName, clearArea.'),
+            'areaName' => $schema->string()->nullable()->description('Move the issue to the Area with this title (case-insensitive; must exist).'),
+            'clearArea' => $schema->boolean()->description('Remove the issue from its Area (and so its Group and Priority). Not combinable with Group or Priority changes.'),
+            'priorityId' => $schema->integer()->nullable()->description('A Priority option id of the issue\'s (new) Area. The issue must already belong to an area, or be given one in the same call. Use at most one of priorityId, priorityName, clearPriority.'),
+            'priorityName' => $schema->string()->nullable()->description('The Priority option of the issue\'s (new) Area with this name (case-insensitive; must exist).'),
+            'clearPriority' => $schema->boolean()->description('Remove the issue\'s Priority.'),
             'parentId' => $schema->integer()->nullable()->description('Move the issue under this local issue id (cycle-checked). Not combinable with clearParent.'),
             'clearParent' => $schema->boolean()->description('Detach the issue from its parent.'),
             'addLabels' => $schema->array()->items($schema->string())->description('Label names to attach, e.g. ["bug", "agent task"]: matched case-insensitively against existing labels and created if missing, stored lowercase. Knowledge labels (research, lesson, decision, guide) work too and move the issue to Knowledge.'),
