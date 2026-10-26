@@ -262,7 +262,10 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
 - **Checking before re-reading** — `todo_peek` reports id/title/revision/state for a batch of ids
   in one cheap call, no body, so a cached record can be checked for change without paying for a
   full `todo_show`; `todo_show`'s `maxBodyLength` gives a cheap truncated preview for the same
-  reason.
+  reason. Read selected records together with `todo_show({ids: [...]})` (up to 20), or check
+  several claims with `todo_claim_status({issueIds: [...]})` (up to 100). Batch reads preserve
+  order and report individual errors; batch show also bounds its JSON payload and marks clipped
+  or omitted fields.
 - **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
   plan up front and keep it current as work progresses (`todo_revise` edits a record's title, body,
   Area, Group, Priority, parent and labels with a stale-write check), so the plan itself — not a chat transcript
