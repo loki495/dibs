@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\CreateTodoComment;
+use App\Actions\CreateTodoIssue;
 use App\Mcp\Servers\TodoServer;
 use App\Models\AgentSession;
 use App\Models\ChangeLog;
@@ -92,6 +94,23 @@ function onlyCallLog(): McpCallLog
 
 beforeEach(function (): void {
     app()->forgetScopedInstances();
+});
+
+it('keeps temporary replay keys, comment edits and batch reads out of MCP history', function (): void {
+    config(['github.owner' => '', 'github.repository' => '']);
+    $task = app(CreateTodoIssue::class)->handle(title: 'Private handoff', idempotencyKey: 'private-replay', temporary: true);
+    $comment = app(CreateTodoComment::class)->handle($task->id, 'Private state');
+    $server = loggingServer($transport);
+
+    $replayed = callTool($server, $transport, 'todo_create', ['title' => 'Retry', 'temporary' => false, 'idempotencyKey' => 'private-replay']);
+    expect($replayed['result']['structuredContent']['id'])->toBe($task->id);
+    $edited = callTool($server, $transport, 'todo_comment', ['commentId' => $comment->id, 'expectedRevision' => $comment->revision, 'body' => 'Private revised state']);
+    expect($edited['result']['isError'])->toBeFalse()
+        ->and($comment->fresh()->body)->toBe('Private revised state');
+    $read = callTool($server, $transport, 'todo_show', ['ids' => [$task->id]]);
+    expect($read['result']['isError'])->toBeFalse()
+        ->and($read['result']['structuredContent']['items'][0]['id'])->toBe($task->id)
+        ->and(McpCallLog::count())->toBe(0);
 });
 
 it('consumes a temporary handoff through MCP without leaving history or mirror work', function (): void {

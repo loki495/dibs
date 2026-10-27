@@ -7,7 +7,9 @@ use App\Actions\CompleteTodoTask;
 use App\Actions\CreateTodoComment;
 use App\Actions\CreateTodoIssue;
 use App\Actions\DeleteTodoIssue;
+use App\Actions\DescribeTodoIssue;
 use App\Actions\ReleaseTaskClaim;
+use App\Actions\SyncIssueLinks;
 use App\Exceptions\TodoValidationException;
 use App\Mcp\Servers\TodoServer;
 use App\Mcp\Tools\CompleteTodoTaskTool;
@@ -38,6 +40,20 @@ it('requires the correct claim even for temporary tasks', function (): void {
     app(ClaimTaskForAgent::class)->handle($task, 'codex', getmypid(), 30);
     expect(fn () => app(CompleteTodoTask::class)->handle($task->id, getmypid(), 'bad'))->toThrow(DomainException::class);
     expect($task->fresh())->not->toBeNull();
+});
+
+it('leaves one plain consumed notice when permanent tasks link to a temporary task and its comment', function (): void {
+    $source = Issue::factory()->create();
+    $task = Issue::factory()->temporary()->create(['title' => 'Private handoff title', 'body' => 'Private handoff body']);
+    $comment = app(CreateTodoComment::class)->handle($task->id, 'Private comment');
+    app(SyncIssueLinks::class)->handle($source, [['issueId' => $task->id], ['issueId' => $task->id, 'commentId' => $comment->id]], []);
+
+    app(DeleteTodoIssue::class)->handle($task, false);
+
+    expect($source->comments()->sole()->body)->toBe("Temporary task {$task->id} was consumed.")
+        ->and(app(DescribeTodoIssue::class)->handle($source->id)['links'])->toBe([])
+        ->and(Comment::find($comment->id))->toBeNull()
+        ->and(Issue::find($task->id))->toBeNull();
 });
 
 it('refuses to purge a temporary parent or cascade through temporary descendants', function (): void {
