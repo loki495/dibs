@@ -11,6 +11,12 @@ use App\Models\Issue;
 use App\Models\Label;
 use App\Models\TaskClaim;
 
+it('declares completion and temporary discard reasons in its public schema', function (): void {
+    $schema = app(CompleteTodoTaskTool::class)->toArray()['inputSchema'];
+    expect($schema['properties']['reason']['enum'])->toBe(['COMPLETED', 'NOT_PLANNED'])
+        ->and($schema['properties']['reason']['description'])->toContain('explicit discard');
+});
+
 it('exposes the tool under the todo_complete name', function (): void {
     expect(app(CompleteTodoTaskTool::class)->name())->toBe('todo_complete');
 });
