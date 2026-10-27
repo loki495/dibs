@@ -173,7 +173,7 @@ class ReviseTodoIssue
                     }
                 }
                 if ($item instanceof ProjectItem && $groupChange) {
-                    $targetGroupId = $newGroupName !== null ? $this->resolveGroup->handle($item->project, $newGroupName)->id : $groupId;
+                    $targetGroupId = $newGroupName !== null ? $this->resolveGroup->handle($item->project, $newGroupName, ! $issue->is_temporary)->id : $groupId;
                     $previousGroupId = $item->group_option_id;
                     if ($targetGroupId !== $previousGroupId || $targetGroupId !== null) {
                         $item->update(['group_option_id' => $targetGroupId]);
@@ -195,7 +195,7 @@ class ReviseTodoIssue
                 if ($addLabels !== [] || $removeLabels !== []) {
                     $kept = $issue->labels()->where('is_available', true)->get()
                         ->reject(fn (Label $label): bool => in_array(LabelName::normalize($label->name), $removeLabels, true));
-                    $this->syncLabels->handle($issue, $this->resolveLabels->handle($issue->repository, $kept, $addLabels));
+                    $this->syncLabels->handle($issue, $this->resolveLabels->handle($issue->repository, $kept, $addLabels, ! $issue->is_temporary));
                 }
                 $this->syncLinks->handle($issue, $addLinks, $removeLinks);
                 $this->syncStep->handle($issue, $step, $blockedBy);

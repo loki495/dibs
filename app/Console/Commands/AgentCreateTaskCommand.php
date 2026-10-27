@@ -17,6 +17,7 @@ class AgentCreateTaskCommand extends Command
     protected $signature = 'todo:agent:create
         {title? : Task title; omit when using --tasks-file}
         {--tasks-file= : JSON file containing 1–20 independent task definitions (up to 2 MiB)}
+        {--temporary : Create a local-only temporary task}
         {--body= : Canonical body/description}
         {--area= : A GitHub Project id; defaults to the parent\'s sole active project}
         {--parent= : Nest under an existing local issue id}
@@ -34,7 +35,7 @@ class AgentCreateTaskCommand extends Command
         try {
             if ($this->option('tasks-file') !== null) {
                 $singleOptions = ['body', 'area', 'parent', 'group', 'priority', 'new-group', 'new-label', 'idempotency-key'];
-                if ($this->argument('title') !== null || $this->option('label') !== []
+                if ($this->argument('title') !== null || $this->option('temporary') || $this->option('label') !== []
                     || array_any($singleOptions, fn (string $option): bool => $this->option($option) !== null)) {
                     throw new TodoValidationException('Provide either --tasks-file or single-task arguments, not both.');
                 }
@@ -57,6 +58,7 @@ class AgentCreateTaskCommand extends Command
                 newGroupName: $this->option('new-group'),
                 newLabelNames: $this->option('new-label') !== null ? [$this->option('new-label')] : [],
                 idempotencyKey: $this->option('idempotency-key'),
+                temporary: (bool) $this->option('temporary'),
             );
         } catch (TodoValidationException $exception) {
             $this->error($exception->getMessage());

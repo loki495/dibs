@@ -19,6 +19,7 @@
                 <div class="mt-2">
                     <h2 id="issue-detail-title" class="w-full break-words text-2xl font-semibold leading-snug tracking-tight">{{ $detail['issue']->title }}</h2>
                     <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                        @if ($detail['issue']->is_temporary)<span class="text-xs font-medium text-amber-700 dark:text-amber-400">{{ __('Temporary') }}</span>@endif
                         <span @class(['text-xs font-medium uppercase tracking-wider', 'text-teal-700 dark:text-teal-400' => $detail['issue']->state === 'OPEN', 'text-slate-500' => $detail['issue']->state !== 'OPEN'])>{{ $detail['issue']->state === 'OPEN' ? __('Open') : __('Closed') }}</span>
                         @foreach ($detail['issue']->projectItems as $membership)
                             @php($membershipColor = app(\App\Support\ProjectColor::class)->for($membership->project))
@@ -76,7 +77,7 @@
                     @if ($detail['parent'])
                         <div>
                             <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Parent') }}</p>
-                            <button type="button" wire:click="$set('selected', {{ $detail['parent']['id'] }})" class="text-left text-teal-700 hover:underline dark:text-teal-400">{{ \App\Support\IssueNumber::withTitle($detail['parent']['number'], $detail['parent']['title']) }}</button>
+                            <button type="button" wire:click="$set('selected', {{ $detail['parent']['id'] }})" class="text-left text-teal-700 hover:underline dark:text-teal-400">{{ \App\Support\IssueNumber::withTitle($detail['parent']['number'], $detail['parent']['title']) }}</button>@if ($detail['parent']['temporary']) <span class="text-xs text-amber-700 dark:text-amber-400">{{ __('Temporary') }}</span>@endif
                         </div>
                     @endif
                     @if (count($detail['children']) > 0)
@@ -84,7 +85,7 @@
                             <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Child tasks') }}</p>
                             <ul class="space-y-1">
                                 @foreach ($detail['children'] as $child)
-                                    <li><button type="button" wire:click="$set('selected', {{ $child['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $child['isKnowledge'], 'text-teal-700 dark:text-teal-400' => ! $child['isKnowledge'], 'line-through opacity-70' => $child['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($child['number'], $child['title']) }}</button></li>
+                                    <li><button type="button" wire:click="$set('selected', {{ $child['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $child['isKnowledge'], 'text-teal-700 dark:text-teal-400' => ! $child['isKnowledge'], 'line-through opacity-70' => $child['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($child['number'], $child['title']) }}</button>@if ($child['temporary']) <span class="text-xs text-amber-700 dark:text-amber-400">{{ __('Temporary') }}</span>@endif</li>
                                 @endforeach
                             </ul>
                         </div>
@@ -98,7 +99,7 @@
                         <ul class="space-y-1">
                             @foreach ($detail['links'] as $link)
                                 <li class="flex items-start gap-2">
-                                    <button type="button" wire:click="$set('selected', {{ $link['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $link['knowledge'], 'text-teal-700 dark:text-teal-400' => ! $link['knowledge'], 'line-through opacity-70' => $link['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($link['number'], $link['title']) }}</button>
+                                    <button type="button" wire:click="$set('selected', {{ $link['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $link['knowledge'], 'text-teal-700 dark:text-teal-400' => ! $link['knowledge'], 'line-through opacity-70' => $link['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($link['number'], $link['title']) }}</button>@if ($link['temporary']) <span class="text-xs text-amber-700 dark:text-amber-400">{{ __('Temporary') }}</span>@endif
                                     @if ($link['commentId'])<span class="text-xs text-slate-500">{{ __('comment :id', ['id' => $link['commentId']]) }}</span>@endif
                                     @foreach ($link['labels'] as $linkLabel)<span class="rounded-full border border-slate-200 px-1.5 text-xs text-slate-500 dark:border-slate-700">{{ $linkLabel }}</span>@endforeach
                                     <button type="button" wire:click="removeLink({{ $link['id'] }}, {{ $link['commentId'] ?? 0 }})" class="ml-auto text-xs text-slate-500 hover:text-rose-600" aria-label="{{ __('Remove link') }}">×</button>
@@ -124,7 +125,7 @@
                             <p class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">{{ __('Linked from') }}</p>
                             <ul class="space-y-1">
                                 @foreach ($detail['linkedBy'] as $link)
-                                    <li><button type="button" wire:click="$set('selected', {{ $link['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $link['knowledge'], 'text-teal-700 dark:text-teal-400' => ! $link['knowledge'], 'line-through opacity-70' => $link['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($link['number'], $link['title']) }}</button></li>
+                                    <li><button type="button" wire:click="$set('selected', {{ $link['id'] }})" @class(['text-left hover:underline', 'text-violet-700 dark:text-violet-400' => $link['knowledge'], 'text-teal-700 dark:text-teal-400' => ! $link['knowledge'], 'line-through opacity-70' => $link['state'] === 'CLOSED'])>{{ \App\Support\IssueNumber::withTitle($link['number'], $link['title']) }}</button>@if ($link['temporary']) <span class="text-xs text-amber-700 dark:text-amber-400">{{ __('Temporary') }}</span>@endif</li>
                                 @endforeach
                             </ul>
                         </div>

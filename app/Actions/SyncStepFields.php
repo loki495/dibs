@@ -74,6 +74,9 @@ class SyncStepFields
             if (! $blocker instanceof Issue) {
                 throw new TodoValidationException("Cannot block step {$issue->id} on issue {$id}: it does not exist or is no longer available.");
             }
+            if ($issue->is_temporary || $blocker->is_temporary) {
+                throw new TodoValidationException('Temporary tasks cannot participate in dependency edges.');
+            }
             if ($issue->parent_issue_id === null || $blocker->parent_issue_id !== $issue->parent_issue_id) {
                 throw new TodoValidationException("Cannot block step {$issue->id} on issue {$id}: blocked-by only links sibling steps of the same plan.");
             }

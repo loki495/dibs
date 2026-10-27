@@ -57,8 +57,8 @@ it('returns the first open step in plan order with its work order', function ():
 
     expect($result['reason'])->toBeNull()
         ->and($result['ready'])->toMatchArray([
-            'step' => ['id' => $build->id, 'title' => 'Build it', 'revision' => $build->fresh()->revision, 'state' => 'OPEN'],
-            'plan' => ['id' => $plan->id, 'title' => 'Plan'],
+            'step' => ['id' => $build->id, 'title' => 'Build it', 'temporary' => false, 'revision' => $build->fresh()->revision, 'state' => 'OPEN'],
+            'plan' => ['id' => $plan->id, 'title' => 'Plan', 'temporary' => false],
             'objective' => 'build the thing.', 'tier' => 'Sonnet', 'doneWhen' => 'It builds.', 'evidence' => 'SHA and tests.', 'filesLikely' => 'app/Thing.php',
             'rules' => [['id' => $rule->id, 'title' => 'Rule: claim first']],
             'truncated' => false,
@@ -76,7 +76,7 @@ it('skips a step held by a live claim, but treats an expired claim as free', fun
 
     expect(app(FindNextPlanStep::class)->handle($plan->id))
         ->ready->step->id->toBe($b->id)
-        ->waiting->toBe([['id' => $a->id, 'title' => 'A', 'claimedBy' => 'claude:one']]);
+        ->waiting->toBe([['id' => $a->id, 'temporary' => false, 'title' => 'A', 'claimedBy' => 'claude:one']]);
 
     TaskClaim::query()->update(['expires_at' => now()->subMinute()]);
     expect(app(FindNextPlanStep::class)->handle($plan->id)['ready']['step']['id'])->toBe($a->id);
@@ -90,7 +90,7 @@ it('skips a blocked step until every blocker closes', function (): void {
     expect(app(FindNextPlanStep::class)->handle($plan->id))
         ->ready->toBeNull()
         ->reason->toBe('mixed')
-        ->waiting->toBe([['id' => $a->id, 'title' => 'A', 'claimedBy' => 'claude:one'], ['id' => $b->id, 'title' => 'B', 'blockedBy' => [$a->id]]]);
+        ->waiting->toBe([['id' => $a->id, 'temporary' => false, 'title' => 'A', 'claimedBy' => 'claude:one'], ['id' => $b->id, 'temporary' => false, 'title' => 'B', 'blockedBy' => [$a->id]]]);
 
     TaskClaim::query()->update(['released_at' => now()]);
     app(CloseTodoIssue::class)->handle($a);

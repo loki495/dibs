@@ -2,6 +2,12 @@
 
 This is the contract for the host-local stdio MCP server, its read/write/claim tool surface, and the Artisan CLI fallback. Local SQLite is authoritative for issues, comments, labels, native parents, Project membership, Group, Priority, plans, tasks, and knowledge records. GitHub is an asynchronous, mostly-read-only mirror reached through a durable push queue — there is no inbound webhook receiver and no scheduled freshness polling.
 
+## Temporary tasks
+
+Pass `temporary: true` to `todo_create` (also accepted per item in a `tasks` batch), or `--temporary` to `todo:agent:create`. The default is false; the value is immutable and unknown creation keys are rejected. Temporary tasks are local-only and never mirrored to GitHub. They remain discoverable in `todo_show`, `todo_list`, `todo_search` and `todo_next` while present; summaries, direct children, work orders and claim summaries include `temporary` so consumers can distinguish them. Exclude them from durable plan and atlas counts. Temporary children do not prevent a permanent step from being considered a leaf; `todo_next` can still select temporary children, including those of a temporary parent.
+
+Completion permanently deletes a temporary task and its associated content instead of closing it; the receipt includes `temporary: true` and `deleted: true`. An explicitly supplied summary is copied to an available permanent parent as a normal comment on completion or `NOT_PLANNED` discard. Available permanent records linking to the task receive a consumed notice. These comments use the normal mirror path. Releasing a claim leaves the task in place. Delete also permanently removes it; there is no restore. Consume all children first, temporary parents may have only temporary children, and dependency edges involving temporary tasks are disallowed. Completion guards do not apply to temporary tasks.
+
 ## Server foundation
 
 Dibs uses `laravel/mcp` `^1.0` (locked at v1.0.0). It targets the stateless 2026-07-28 MCP revision this project's claim/capability-token design assumes, serves legacy `initialize` clients alongside it, and implements the protocol itself, with no dependency on the separate official `modelcontextprotocol/php-sdk`.

@@ -43,7 +43,7 @@ class FindClaimPathOverlaps
     /**
      * @param  list<string>  $paths
      * @param  string|null  $exceptSession  skip claims whose agent name ends with ":<this>" (the caller's conversation id)
-     * @return list<array{issueId: int, agentName: string, paths: list<string>}>
+     * @return list<array{issueId: int, temporary: bool, agentName: string, paths: list<string>}>
      */
     public function handle(array $paths, ?int $exceptIssueId = null, ?string $exceptSession = null): array
     {
@@ -53,7 +53,7 @@ class FindClaimPathOverlaps
         }
 
         $found = [];
-        $claims = TaskClaim::query()->whereNull('released_at')->where('expires_at', '>', now())->whereNotNull('paths')->with('agentSession')->get();
+        $claims = TaskClaim::query()->whereNull('released_at')->where('expires_at', '>', now())->whereNotNull('paths')->with(['agentSession', 'issue'])->get();
         foreach ($claims as $claim) {
             $agent = $claim->agentSession->agent_name;
             if ($claim->issue_id === $exceptIssueId || ($exceptSession !== null && str_ends_with($agent, ':'.$exceptSession))) {
@@ -61,7 +61,7 @@ class FindClaimPathOverlaps
             }
             $hits = array_values(array_filter($claim->paths ?? [], fn (string $held): bool => $this->anyOverlap($held, $paths)));
             if ($hits !== [] && $this->liveness->handle($claim)['isCurrentlyAlive'] !== false) {
-                $found[] = ['issueId' => $claim->issue_id, 'agentName' => $agent, 'paths' => $hits];
+                $found[] = ['issueId' => $claim->issue_id, 'temporary' => (bool) $claim->issue?->is_temporary, 'agentName' => $agent, 'paths' => $hits];
             }
         }
 
@@ -71,16 +71,16 @@ class FindClaimPathOverlaps
     /**
      * Live claims, with or without paths, held by the conversation whose id ends the agent name.
      *
-     * @return list<array{issueId: int, agentName: string, paths: list<string>}>
+     * @return list<array{issueId: int, temporary: bool, agentName: string, paths: list<string>}>
      */
     public function heldBy(string $session): array
     {
         $found = [];
-        $claims = TaskClaim::query()->whereNull('released_at')->where('expires_at', '>', now())->with('agentSession')->get();
+        $claims = TaskClaim::query()->whereNull('released_at')->where('expires_at', '>', now())->with(['agentSession', 'issue'])->get();
         foreach ($claims as $claim) {
             $agent = $claim->agentSession->agent_name;
             if (str_ends_with($agent, ':'.$session) && $this->liveness->handle($claim)['isCurrentlyAlive'] !== false) {
-                $found[] = ['issueId' => $claim->issue_id, 'agentName' => $agent, 'paths' => $claim->paths ?? []];
+                $found[] = ['issueId' => $claim->issue_id, 'temporary' => (bool) $claim->issue?->is_temporary, 'agentName' => $agent, 'paths' => $claim->paths ?? []];
             }
         }
 

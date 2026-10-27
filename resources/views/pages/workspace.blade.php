@@ -193,6 +193,8 @@ new class extends Component
 
     public int $deletingIssueChildrenCount = 0;
 
+    public bool $deletingIssueTemporary = false;
+
     public ?string $deleteError = null;
 
     public ?string $restoreMessage = null;
@@ -651,7 +653,14 @@ new class extends Component
 
             return;
         }
-        app(CloseTodoIssue::class)->handle($issue);
+        try {
+            app(CloseTodoIssue::class)->handle($issue);
+            if ($issue->is_temporary) {
+                $this->selected = 0;
+            }
+        } catch (TodoValidationException $exception) {
+            $this->commentError = $exception->getMessage();
+        }
     }
 
     public function reopenIssue(): void
@@ -674,6 +683,7 @@ new class extends Component
             return;
         }
         $this->deletingIssue = $issue->id;
+        $this->deletingIssueTemporary = (bool) $issue->is_temporary;
         $this->deletingIssueChildrenCount = $issue->children()->where('is_available', true)->count();
         $this->deleteConfirmOpen = true;
     }
@@ -753,7 +763,16 @@ new class extends Component
             return;
         }
         $note = trim($this->newCommentBody) !== '' ? $this->newCommentBody : null;
-        app(CloseTodoIssue::class)->handle($issue, reason: $reason, note: $note);
+        try {
+            app(CloseTodoIssue::class)->handle($issue, reason: $reason, note: $note);
+            if ($issue->is_temporary) {
+                $this->selected = 0;
+            }
+        } catch (TodoValidationException $exception) {
+            $this->commentError = $exception->getMessage();
+
+            return;
+        }
         $this->reset('newCommentBody', 'commentError');
     }
 
@@ -1069,6 +1088,7 @@ new class extends Component
                                     @else <span class="w-10 shrink-0" aria-hidden="true"></span> @endif
                                     <div class="min-w-0 flex-1 py-2 text-left">
                                         <span @class(['block break-words text-sm leading-6', 'font-medium' => $row['container'], 'text-slate-500 dark:text-slate-400' => $row['context'], 'line-through opacity-70' => $row['state'] === 'CLOSED'])>{{ $row['title'] }}</span>
+                                        @if ($row['temporary'])<span class="text-xs font-medium text-amber-700 dark:text-amber-400">{{ __('Temporary') }}</span>@endif
                                         <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                                             <span title="{{ __('Local id (used by MCP tools)') }}">{{ __('id :id', ['id' => $row['id']]) }}</span>
                                             @if ($row['number'] !== null)<span>{{ \App\Support\IssueNumber::label($row['number']) }}</span>@endif
@@ -1241,7 +1261,9 @@ new class extends Component
         <div class="space-y-5">
             <div>
                 <flux:heading size="lg">{{ __('Delete task') }}</flux:heading>
-                @if ($deletingIssueChildrenCount > 0)
+                @if ($deletingIssueTemporary)
+                    <flux:text class="mt-1">{{ $deletingIssueChildrenCount > 0 ? __('Consume all children before deleting this temporary task.') : __('This permanently deletes the temporary task. It cannot be restored.') }}</flux:text>
+                @elseif ($deletingIssueChildrenCount > 0)
                     <flux:text class="mt-1">{{ trans_choice('This task has :count sub-task. What should happen to it?|This task has :count sub-tasks. What should happen to them?', $deletingIssueChildrenCount, ['count' => $deletingIssueChildrenCount]) }}</flux:text>
                 @else
                     <flux:text class="mt-1">{{ $mirrored ? __('This deletes the task on GitHub. You can undo it right after, as long as it has not synced yet.') : __('This deletes the task. You can undo it right after.') }}</flux:text>
@@ -1250,10 +1272,10 @@ new class extends Component
             @if ($deleteError)<p role="alert" class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">{{ $deleteError }}</p>@endif
             <div class="flex flex-wrap justify-end gap-2">
                 <flux:modal.close><flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button></flux:modal.close>
-                @if ($deletingIssueChildrenCount > 0)
+                @if (! $deletingIssueTemporary && $deletingIssueChildrenCount > 0)
                     <flux:button type="button" wire:click="confirmDelete(false)" variant="ghost">{{ __('Move them up a level') }}</flux:button>
                     <flux:button type="button" wire:click="confirmDelete(true)" variant="danger">{{ __('Delete them too') }}</flux:button>
-                @else
+                @elseif ($deletingIssueChildrenCount === 0)
                     <flux:button type="button" wire:click="confirmDelete(false)" variant="danger">{{ __('Delete task') }}</flux:button>
                 @endif
             </div>

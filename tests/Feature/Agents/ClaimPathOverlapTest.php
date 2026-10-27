@@ -28,7 +28,7 @@ it('reports a live claim whose path is the same, an ancestor or a descendant, bu
 
     foreach (['/srv/app/Actions', '/srv/app/Actions/Claim.php', '/srv/app'] as $path) {
         $result = app(ClaimTaskForAgent::class)->handle(Issue::factory()->create(), 'codex', getmypid(), 30, [$path]);
-        expect($result['overlaps'])->toBe([['issueId' => $other->id, 'agentName' => 'claude:a:1', 'paths' => ['/srv/app/Actions']]], $path);
+        expect($result['overlaps'])->toBe([['issueId' => $other->id, 'temporary' => false, 'agentName' => 'claude:a:1', 'paths' => ['/srv/app/Actions']]], $path);
         $result['claim']->update(['released_at' => now()]);
     }
 
@@ -94,7 +94,7 @@ it('lists every live claim a conversation holds, with or without paths, through 
     $released = app(ClaimTaskForAgent::class)->handle(Issue::factory()->create(), 'claude:a:sess-9', getmypid(), 30);
     $released['claim']->update(['released_at' => now()]);
 
-    expect(app(FindClaimPathOverlaps::class)->heldBy('sess-9'))->toBe([['issueId' => $mine->id, 'agentName' => 'claude:a:sess-9', 'paths' => []]]);
+    expect(app(FindClaimPathOverlaps::class)->heldBy('sess-9'))->toBe([['issueId' => $mine->id, 'temporary' => false, 'agentName' => 'claude:a:sess-9', 'paths' => []]]);
     $this->artisan('todo:agent:claims', ['--held-by' => 'sess-9'])->expectsOutputToContain((string) $mine->id)->assertExitCode(0);
     $this->artisan('todo:agent:claims', ['--held-by' => 'nobody'])->expectsOutput('[]')->assertExitCode(0);
 });

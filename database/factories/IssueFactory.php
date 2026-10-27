@@ -13,6 +13,11 @@ class IssueFactory extends Factory
 {
     protected $model = Issue::class;
 
+    public function temporary(): static
+    {
+        return $this->state(fn (): array => ['is_temporary' => true, 'github_node_id' => null, 'github_number' => null]);
+    }
+
     /** @return array<string, mixed> */
     public function definition(): array
     {

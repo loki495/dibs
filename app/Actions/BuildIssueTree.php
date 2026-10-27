@@ -31,6 +31,7 @@ class BuildIssueTree
             'projectItems' => fn ($query) => $query->where('is_available', true)->whereNull('archived_at')->whereHas('project', fn ($project) => $project->where('is_available', true)),
             'projectItems.project', 'projectItems.groupOption', 'projectItems.priorityOption', 'projectItems.statusOption',
         ])->orderBy('sibling_position')->orderByRaw('github_number is null')->orderBy('github_number')->orderBy('id')->get();
+        $durableContainerIds = $issues->where('is_temporary', false)->pluck('parent_issue_id')->filter()->flip()->all();
         $containerIds = $issues->pluck('parent_issue_id')->filter()->flip()->all();
         $requiresParent = in_array('parent', $labels, true);
         $requestedLabels = array_values(array_filter($labels, fn (string $label): bool => $label !== 'parent'));
@@ -47,7 +48,7 @@ class BuildIssueTree
             $names = $issue->labels->pluck('name')->all();
             $container = isset($containerIds[$issue->id]);
             $knowledge = count(array_intersect($names, ['research', 'lesson', 'decision', 'guide'])) > 0;
-            $actionable = ! $container && ! $knowledge;
+            $actionable = ! isset($durableContainerIds[$issue->id]) && ! $knowledge && ! $issue->is_temporary;
             $memberships = [];
             foreach ($issue->projectItems as $item) {
                 $memberships[] = ['area' => $item->project_id, 'title' => $item->project->title,
@@ -77,7 +78,7 @@ class BuildIssueTree
             $priorityMatches = $priority === 0 || collect($memberships)->contains(fn (array $item): bool => $item['priority'] === (string) $priority && ($area === 0 || $item['area'] === $area));
             $matches[$issue->id] = $inArea && $inGroup && $modeMatches && $stateMatches && $searchMatches && $labelMatches && $priorityMatches;
             $claim = $claims->get($issue->id);
-            $nodes[$issue->id] = ['id' => $issue->id, 'number' => $issue->github_number, 'title' => $issue->title, 'state' => $issue->state,
+            $nodes[$issue->id] = ['id' => $issue->id, 'number' => $issue->github_number, 'title' => $issue->title, 'state' => $issue->state, 'temporary' => (bool) $issue->is_temporary,
                 'modifiedAt' => $this->formatDate($issue->remote_updated_at ?? $issue->updated_at),
                 'closedAt' => $issue->state === 'CLOSED' ? $this->formatDate($issue->closed_at ?? $issue->remote_updated_at ?? $issue->updated_at) : null,
                 'parent' => $issue->parent_issue_id, 'remoteParent' => $issue->github_parent_node_id,

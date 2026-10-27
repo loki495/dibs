@@ -34,6 +34,8 @@ local SQLite is authoritative.
 
 *(Screenshots show seeded sample data — see `database/seeders/DemoSeeder.php`.)*
 
+Temporary tasks are local-only, short-lived coordination records. Create one with `todo_create` using `temporary: true` or `todo:agent:create --temporary`. They appear marked in the workspace and agent reads, but are excluded from durable counts. Completing or deleting one permanently removes it; see [the agent interface](docs/agent-interface.md#temporary-tasks) for parent, claim, and summary behavior.
+
 ## Quick start
 
 Requires Docker and Docker Compose (or see [Running without Docker](#running-without-docker)).

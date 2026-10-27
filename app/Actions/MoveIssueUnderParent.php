@@ -20,6 +20,10 @@ class MoveIssueUnderParent
     {
         $previousParentId = $issue->parent_issue_id;
 
+        if ($parent instanceof Issue && $parent->is_temporary && ! $issue->is_temporary) {
+            throw new TodoValidationException('A temporary task can only have temporary children.');
+        }
+
         if ($parent instanceof Issue) {
             if ($previousParentId === $parent->id) {
                 return;

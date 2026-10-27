@@ -13,7 +13,7 @@ class DescribeTodoClaim
     /** @return array<string, mixed>|null */
     public function handle(int $issueId): ?array
     {
-        $claim = TaskClaim::query()->where('issue_id', $issueId)->whereNull('released_at')->with('agentSession')->first();
+        $claim = TaskClaim::query()->where('issue_id', $issueId)->whereNull('released_at')->with(['agentSession', 'issue'])->first();
         if (! $claim instanceof TaskClaim) {
             return null;
         }
@@ -24,6 +24,7 @@ class DescribeTodoClaim
         return [
             'claimId' => $claim->id,
             'issueId' => $claim->issue_id,
+            'temporary' => (bool) $claim->issue?->is_temporary,
             'agentName' => $session->agent_name,
             'host' => $session->host_identifier,
             'pid' => $session->pid,

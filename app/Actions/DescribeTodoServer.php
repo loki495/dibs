@@ -28,7 +28,7 @@ class DescribeTodoServer
                 'full_name' => $repository?->full_name,
             ],
             'counts' => [
-                'issues' => Issue::query()->where('is_available', true)->count(),
+                'issues' => Issue::query()->where('is_available', true)->where('is_temporary', false)->count(),
                 'labels' => Label::query()->where('is_available', true)->count(),
                 'projects' => GitHubProject::query()->where('is_available', true)->count(),
             ],

@@ -38,7 +38,7 @@ class AgentCompleteTaskCommand extends Command
 
             return self::FAILURE;
         }
-        $this->line(json_encode(['issue_id' => $issue->id, 'state' => $issue->state, 'url' => $issue->url], JSON_PRETTY_PRINT));
+        $this->line(json_encode($issue->is_temporary ? ['issue_id' => $issue->id, 'deleted' => true, 'temporary' => true] : ['issue_id' => $issue->id, 'state' => $issue->state, 'url' => $issue->url], JSON_PRETTY_PRINT));
 
         return self::SUCCESS;
     }

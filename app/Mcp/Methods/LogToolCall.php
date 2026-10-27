@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Mcp\Methods;
 
 use App\Mcp\ClientIdentity;
+use App\Models\Comment;
+use App\Models\Issue;
 use App\Models\McpCallLog;
+use App\Models\McpWriteReceipt;
 use App\Services\Activity\ActivityContext;
 use App\Services\Activity\ActivityRecorder;
 use Generator;
@@ -42,6 +45,10 @@ class LogToolCall implements Method
     {
         $agent = $this->agentLabel($request);
         $this->context->beginMcp($agent);
+        $arguments = $request->params['arguments'] ?? [];
+        if (is_array($arguments) && $this->containsTemporary($arguments)) {
+            $this->context->protectTemporary();
+        }
         $startedAt = hrtime(true);
 
         try {
@@ -96,12 +103,46 @@ class LogToolCall implements Method
 
         $this->recorder->mcpCall(
             is_string($name) && $name !== '' ? $name : self::UNKNOWN_TOOL,
-            is_array($arguments) ? $arguments : [],
+            is_array($arguments) && ! in_array($name, ['todo_search', 'todo_list'], true) ? $arguments : [],
             $status,
             $error,
             (int) round((hrtime(true) - $startedAt) / 1_000_000),
             $agent,
         );
+    }
+
+    /** @param array<array-key, mixed> $arguments */
+    private function containsTemporary(array $arguments): bool
+    {
+        foreach ($arguments as $key => $value) {
+            if ($key === 'idempotencyKey' && is_string($value)) {
+                $receipt = McpWriteReceipt::query()->where('idempotency_key', $value)->first();
+                if ($receipt !== null && (($receipt->subject_type === 'issue' && Issue::query()->whereKey($receipt->subject_id)->where('is_temporary', true)->exists())
+                    || ($receipt->subject_type === 'comment' && Comment::query()->whereKey($receipt->subject_id)->whereHas('issue', fn ($q) => $q->where('is_temporary', true))->exists()))) {
+                    return true;
+                }
+            }
+            if ($key === 'temporary' && $value !== false) {
+                return true;
+            }
+            if (is_array($value) && $this->containsTemporary($value)) {
+                return true;
+            }
+            if ($key === 'commentId' && is_numeric($value)
+                && Comment::query()->whereKey((int) $value)->whereHas('issue', fn ($q) => $q->where('is_temporary', true))->exists()) {
+                return true;
+            }
+            if (in_array($key, ['issueId', 'parentId', 'id'], true) && is_numeric($value)
+                && Issue::query()->whereKey((int) $value)->where('is_temporary', true)->exists()) {
+                return true;
+            }
+            if (in_array($key, ['issueIds', 'ids'], true) && is_array($value)
+                && Issue::query()->whereIn('id', array_values(array_filter($value, is_numeric(...))))->where('is_temporary', true)->exists()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array{string, string} */

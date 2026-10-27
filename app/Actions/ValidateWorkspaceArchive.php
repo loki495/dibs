@@ -129,8 +129,16 @@ class ValidateWorkspaceArchive
                 }
             }
         }
+        foreach ($data['step_blockers'] as $edge) {
+            if ($byId['issues'][$edge['issue_id']]['is_temporary'] || $byId['issues'][$edge['blocked_by_issue_id']]['is_temporary']) {
+                $this->invalid(__('Temporary tasks cannot participate in dependency edges.'));
+            }
+        }
         $finished = [];
         foreach ($data['issues'] as $issue) {
+            if ($issue['parent_issue_id'] !== null && $byId['issues'][$issue['parent_issue_id']]['is_temporary'] && ! $issue['is_temporary']) {
+                $this->invalid(__('A temporary task can only have temporary children.'));
+            }
             $path = [];
             $id = $issue['id'];
             while ($id !== null && ! isset($finished[$id])) {
