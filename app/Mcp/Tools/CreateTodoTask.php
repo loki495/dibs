@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Actions\CreateTodoIssue;
+use App\Actions\CreateTodoIssues;
 use App\Actions\DescribeTodoIssue;
 use App\Exceptions\TodoValidationException;
 use App\Mcp\Tools\Concerns\StepArgument;
+use App\Support\TodoCreationInput;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -17,53 +19,25 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Creates a new Todo task (or plan, or knowledge record — apply a research/lesson/decision/guide label via labelNames or labelIds) locally and enqueues its GitHub push. Set area (a GitHub Project id) and optionally groupId/priorityId (must belong to that area) or newGroupName to create a Group by name. Set parentId to nest under an existing issue. An omitted or null area inherits the parent\'s sole active project (several projects require an explicit area); an omitted or null groupId inherits its Group in the effective area unless newGroupName is set. Explicit project/Group choices win, Groups never cross projects, and Priority is not inherited. Pass idempotencyKey to make a retried call return the original result instead of creating a duplicate. Call todo_show with the returned id for full detail.')]
+#[Description('Creates one Todo task, or a best-effort batch via tasks (1–20 independent definitions, each with its own optional idempotencyKey; cannot combine with single-task fields). Batch results preserve order with compact issue summaries or per-item errors and succeeded/failed counts. Parent IDs for new writes must exist before the batch; use scaffold_plan for a new plan/tree. Single creation returns full detail. Creates a task (or plan, or knowledge record — apply a research/lesson/decision/guide label via labelNames or labelIds) locally and enqueues its GitHub push. Set area (a GitHub Project id) and optionally groupId/priorityId (must belong to that area) or newGroupName to create a Group by name. Set parentId to nest under an existing issue. An omitted or null area inherits the parent\'s sole active project (several projects require an explicit area); an omitted or null groupId inherits its Group in the effective area unless newGroupName is set. Explicit project/Group choices win, Groups never cross projects, and Priority is not inherited. Pass idempotencyKey to make a retried call return the original result instead of creating a duplicate. Call todo_show with the returned id for full detail.')]
 class CreateTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_create';
 
-    public function handle(Request $request, CreateTodoIssue $create, DescribeTodoIssue $describe): Response|ResponseFactory
+    public function handle(Request $request, CreateTodoIssue $create, DescribeTodoIssue $describe, CreateTodoIssues $batch): Response|ResponseFactory
     {
-        $arguments = $request->validate([
-            'title' => ['required', 'string', 'max:255'],
-            'body' => ['sometimes', 'nullable', 'string', 'max:65535'],
-            'area' => ['sometimes', 'nullable', 'integer', 'min:1'],
-            'parentId' => ['sometimes', 'integer', 'min:1'],
-            'groupId' => ['sometimes', 'nullable', 'integer', 'min:1'],
-            'priorityId' => ['sometimes', 'integer', 'min:1'],
-            'labelIds' => ['sometimes', 'array'],
-            'labelIds.*' => ['integer'],
-            'newGroupName' => ['sometimes', 'nullable', 'string', 'max:50'],
-            'newLabelName' => ['sometimes', 'nullable', 'string', 'max:50'],
-            'labelNames' => ['sometimes', 'array'],
-            'labelNames.*' => ['string', 'max:50'],
-            'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'addLinks' => ['sometimes', 'array', 'max:50'],
-            'addLinks.*.issueId' => ['required', 'integer', 'min:1'],
-            'addLinks.*.commentId' => ['sometimes', 'nullable', 'integer', 'min:1'],
-            ...StepArgument::rules(),
-        ]);
-        $stepArguments = StepArgument::normalize($arguments);
+        if (array_key_exists('tasks', $request->all())) {
+            $arguments = $request->validate(['tasks' => ['required', 'array', 'list', 'min:1', 'max:'.CreateTodoIssues::MAX_TASKS]]);
+            if (count($request->all()) !== 1) {
+                return Response::error('Provide either tasks or single-task fields, not both.');
+            }
+
+            return Response::structured($batch->handle($arguments['tasks']));
+        }
+        $arguments = $request->validate(TodoCreationInput::rules());
 
         try {
-            $issue = $create->handle(
-                title: $arguments['title'],
-                body: $arguments['body'] ?? null,
-                area: $arguments['area'] ?? null,
-                parentId: $arguments['parentId'] ?? null,
-                groupId: $arguments['groupId'] ?? null,
-                priorityId: $arguments['priorityId'] ?? null,
-                labelIds: $arguments['labelIds'] ?? [],
-                newGroupName: $arguments['newGroupName'] ?? null,
-                newLabelNames: array_values(array_filter([
-                    ...($arguments['labelNames'] ?? []),
-                    $arguments['newLabelName'] ?? null,
-                ], is_string(...))),
-                idempotencyKey: $arguments['idempotencyKey'] ?? null,
-                addLinks: $arguments['addLinks'] ?? [],
-                step: $stepArguments['step'],
-                blockedBy: $stepArguments['blockedBy'],
-            );
+            $issue = $create->handle(...TodoCreationInput::arguments($arguments));
         } catch (TodoValidationException $exception) {
             return Response::error($exception->getMessage());
         }
@@ -73,6 +47,16 @@ class CreateTodoTask extends Tool implements Errable
 
     /** @return array<string, Type> */
     public function schema(JsonSchema $schema): array
+    {
+        $single = $this->taskSchema($schema);
+        $single['title']->required(false);
+
+        return [...$single, 'tasks' => $schema->array()->items($schema->object($this->taskSchema($schema)))
+            ->min(1)->max(CreateTodoIssues::MAX_TASKS)->description('Create 1–20 independent tasks, best effort, in order. Cannot combine with single-task fields. Each item accepts the normal create fields and its own optional idempotencyKey; existing parent IDs only. Returns compact per-task issue/error results, succeeded and failed counts.')];
+    }
+
+    /** @return array<string, Type> */
+    private function taskSchema(JsonSchema $schema): array
     {
         return [
             'title' => $schema->string()->required()->description('The task title.'),
