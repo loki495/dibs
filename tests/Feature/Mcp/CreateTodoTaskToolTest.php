@@ -2,12 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\CreateTodoIssue;
 use App\Mcp\Servers\TodoServer;
 use App\Mcp\Tools\CreateTodoTask;
+use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
 use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\Label;
+use App\Models\ProjectField;
+use App\Models\ProjectFieldOption;
+use App\Models\ProjectItem;
+use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 
 beforeEach(function (): void {
     GitHubRepository::factory()->create(['owner' => config('github.owner'), 'name' => config('github.repository'), 'full_name' => config('github.owner').'/'.config('github.repository')]);
@@ -15,6 +21,13 @@ beforeEach(function (): void {
 
 it('exposes the tool under the todo_create name', function (): void {
     expect(app(CreateTodoTask::class)->name())->toBe('todo_create');
+});
+
+it('declares nullable project and Group selectors for parent defaults', function (): void {
+    $schema = app(CreateTodoTask::class)->schema(new JsonSchemaTypeFactory);
+    $area = $schema['area']->toArray();
+    $group = $schema['groupId']->toArray();
+    expect($area['type'])->toContain('null')->and($group['type'])->toContain('null');
 });
 
 it('creates a task through the todo_create tool and returns full detail', function (): void {
@@ -100,3 +113,24 @@ it('rejects labelNames that is not an array of short strings without creating an
     'a non-string item' => [[['nested']]],
     'an over-long name' => [[str_repeat('x', 51)]],
 ]);
+
+it('inherits project and Group through the tool when those fields are omitted or null', function (bool $explicitNull): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $parent = app(CreateTodoIssue::class)->handle(title: 'Parent', area: $project->id, groupId: $group->id);
+
+    TodoServer::tool(CreateTodoTask::class, ['title' => 'Inherited tool child', 'parentId' => $parent->id, ...($explicitNull ? ['area' => null, 'groupId' => null] : [])])
+        ->assertOk()->assertSee($project->title)->assertSee($group->name);
+
+    expect(Issue::query()->where('title', 'Inherited tool child')->sole()->projectItems->sole()->group_option_id)->toBe($group->id);
+})->with([false, true]);
+
+it('returns a handled error for ambiguous parent projects without creating the child', function (): void {
+    $parent = app(CreateTodoIssue::class)->handle(title: 'Ambiguous parent', area: GitHubProject::factory()->create()->id);
+    ProjectItem::factory()->for($parent, 'issue')->create();
+
+    TodoServer::tool(CreateTodoTask::class, ['title' => 'Ambiguous tool child', 'parentId' => $parent->id])
+        ->assertHasErrors(['Choose an area explicitly'])->assertDontSee('internal server error');
+    expect(Issue::query()->where('title', 'Ambiguous tool child')->exists())->toBeFalse();
+});

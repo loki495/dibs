@@ -17,7 +17,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Creates a new Todo task (or plan, or knowledge record — apply a research/lesson/decision/guide label via labelNames or labelIds) locally and enqueues its GitHub push. Set area (a GitHub Project id) and optionally groupId/priorityId (must belong to that area) or newGroupName to create a Group by name. Set parentId to nest under an existing issue. Pass idempotencyKey to make a retried call return the original result instead of creating a duplicate. Call todo_show with the returned id for full detail.')]
+#[Description('Creates a new Todo task (or plan, or knowledge record — apply a research/lesson/decision/guide label via labelNames or labelIds) locally and enqueues its GitHub push. Set area (a GitHub Project id) and optionally groupId/priorityId (must belong to that area) or newGroupName to create a Group by name. Set parentId to nest under an existing issue. An omitted or null area inherits the parent\'s sole active project (several projects require an explicit area); an omitted or null groupId inherits its Group in the effective area unless newGroupName is set. Explicit project/Group choices win, Groups never cross projects, and Priority is not inherited. Pass idempotencyKey to make a retried call return the original result instead of creating a duplicate. Call todo_show with the returned id for full detail.')]
 class CreateTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_create';
@@ -27,9 +27,9 @@ class CreateTodoTask extends Tool implements Errable
         $arguments = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'body' => ['sometimes', 'nullable', 'string', 'max:65535'],
-            'area' => ['sometimes', 'integer', 'min:1'],
+            'area' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'parentId' => ['sometimes', 'integer', 'min:1'],
-            'groupId' => ['sometimes', 'integer', 'min:1'],
+            'groupId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'priorityId' => ['sometimes', 'integer', 'min:1'],
             'labelIds' => ['sometimes', 'array'],
             'labelIds.*' => ['integer'],
@@ -77,12 +77,12 @@ class CreateTodoTask extends Tool implements Errable
         return [
             'title' => $schema->string()->required()->description('The task title.'),
             'body' => $schema->string()->nullable()->description('The canonical body/description.'),
-            'area' => $schema->integer()->description('A GitHub Project id.'),
+            'area' => $schema->integer()->nullable()->description('A GitHub Project id. Omitted or null inherits the parent\'s sole active project; a parent in several projects requires an explicit area.'),
             'parentId' => $schema->integer()->description('Nest this issue under an existing local issue id.'),
-            'groupId' => $schema->integer()->description('A Group option id; must belong to `area`.'),
-            'priorityId' => $schema->integer()->description('A Priority option id; must belong to `area`.'),
+            'groupId' => $schema->integer()->nullable()->description('A Group option id in the effective area. Omitted or null inherits the parent\'s Group in that area unless newGroupName is given. Explicit values override the default.'),
+            'priorityId' => $schema->integer()->description('A Priority option id in the explicit or inherited area. Priority is never inherited.'),
             'labelIds' => $schema->array()->items($schema->integer())->description('Existing label ids to attach.'),
-            'newGroupName' => $schema->string()->nullable()->description('Create (or reuse, case-insensitively) a Group by name within `area`. Requires `area`.'),
+            'newGroupName' => $schema->string()->nullable()->description('Create (or reuse, case-insensitively) a Group by name in the explicit or inherited area, overriding the parent Group. Requires an effective area.'),
             'newLabelName' => $schema->string()->nullable()->description('Create (or reuse, case-insensitively) a label by name.'),
             'labelNames' => $schema->array()->items($schema->string())->description('Label names to attach, e.g. ["bug", "agent task"]. Each is matched case-insensitively against existing labels and created if missing.'),
             'addLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Explicit links to records that apply to this one: each {issueId} links an issue (a rule, lesson, research, decision, guide or task; its kind is read from its labels), {issueId, commentId} links one comment of it. Duplicates are ignored; a missing or self target is an error.'),

@@ -17,7 +17,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Creates a plan issue together with its initial child task issues in one atomic call: if any child fails validation, nothing is created at all — never a plan with a partial set of children. Each child is scoped to the same area as the plan. groupId/priorityId set the plan issue\'s own Group/Priority; each child accepts its own groupId/priorityId independently. Apply the "plan" label via labelIds if the plan should read as a maintained plan document. Pass idempotencyKey to make a retried call return the original plan instead of duplicating it. The result carries stepLint: open child steps whose body lacks a required section (Done-when, Files likely, Evidence), by name — a flag, not a rejection.')]
+#[Description('Creates a plan issue together with its initial child task issues in one atomic call: if any child fails validation, nothing is created at all — never a plan with a partial set of children. Each child is scoped to the same area as the plan. groupId/priorityId set the plan issue\'s own Group/Priority; each child may override groupId or inherit the plan Group when omitted/null. Child Priority stays unset unless supplied. Apply the "plan" label via labelIds if the plan should read as a maintained plan document. Pass idempotencyKey to make a retried call return the original plan instead of duplicating it. The result carries stepLint: open child steps whose body lacks a required section (Done-when, Files likely, Evidence), by name — a flag, not a rejection.')]
 class ScaffoldTodoPlan extends Tool implements Errable
 {
     protected string $name = 'todo_scaffold_plan';
@@ -73,14 +73,14 @@ class ScaffoldTodoPlan extends Tool implements Errable
             'title' => $schema->string()->required()->description('The plan issue title.'),
             'body' => $schema->string()->nullable()->description('The plan\'s maintained objective/status/decisions document.'),
             'area' => $schema->integer()->description('A GitHub Project id; every child inherits it too.'),
-            'groupId' => $schema->integer()->nullable()->description('A Group id (within `area`) for the plan issue itself — independent of each child\'s own `groupId`.'),
+            'groupId' => $schema->integer()->nullable()->description('A Group id (within `area`) for the plan. A child without its own groupId inherits this Group.'),
             'priorityId' => $schema->integer()->nullable()->description('A Priority id (within `area`) for the plan issue itself — independent of each child\'s own `priorityId`.'),
             'labelIds' => $schema->array()->items($schema->integer())->description('Existing label ids for the plan issue (e.g. a "plan" label).'),
             'newLabelName' => $schema->string()->nullable()->description('Create (or reuse, case-insensitively) a label by name for the plan issue.'),
             'children' => $schema->array()->items($schema->object([
                 'title' => $schema->string()->required(),
                 'body' => $schema->string()->nullable(),
-                'groupId' => $schema->integer()->nullable(),
+                'groupId' => $schema->integer()->nullable()->description('An explicit child Group; omitted or null inherits the plan Group.'),
                 'priorityId' => $schema->integer()->nullable(),
                 'labelIds' => $schema->array()->items($schema->integer()),
                 'addLinks' => $schema->array()->items($schema->object(['issueId' => $schema->integer()->required(), 'commentId' => $schema->integer()->nullable()]))->description('Explicit links for this child, same shape as todo_create addLinks.'),

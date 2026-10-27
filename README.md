@@ -266,6 +266,9 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
   several claims with `todo_claim_status({issueIds: [...]})` (up to 100). Batch reads preserve
   order and report individual errors; batch show also bounds its JSON payload and marks clipped
   or omitted fields.
+- **Creating child tasks** — a new task under a parent defaults to its project and Group when
+  those fields are blank. Explicit choices win; a parent in several projects needs an explicit
+  project choice. Scaffold children use the same Group default, with Priority set separately.
 - **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
   plan up front and keep it current as work progresses (`todo_revise` edits a record's title, body,
   Area, Group, Priority, parent and labels with a stale-write check), so the plan itself — not a chat transcript

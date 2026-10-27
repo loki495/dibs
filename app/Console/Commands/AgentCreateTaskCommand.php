@@ -14,12 +14,12 @@ class AgentCreateTaskCommand extends Command
     protected $signature = 'todo:agent:create
         {title : Task title}
         {--body= : Canonical body/description}
-        {--area= : A GitHub Project id}
+        {--area= : A GitHub Project id; defaults to the parent\'s sole active project}
         {--parent= : Nest under an existing local issue id}
-        {--group= : A Group option id; must belong to --area}
-        {--priority= : A Priority option id; must belong to --area}
+        {--group= : A Group option id in the effective area; defaults to the parent\'s Group}
+        {--priority= : A Priority option id in the explicit or inherited area; never inherited}
         {--label=* : Existing label ids to attach (repeatable)}
-        {--new-group= : Create or reuse a Group by name within --area}
+        {--new-group= : Create or reuse a Group by name in the explicit or inherited area}
         {--new-label= : Create or reuse a label by name}
         {--idempotency-key= : Retrying the same key returns the original result}';
 
