@@ -266,6 +266,10 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
   several claims with `todo_claim_status({issueIds: [...]})` (up to 100). Batch reads preserve
   order and report individual errors; batch show also bounds its JSON payload and marks clipped
   or omitted fields.
+- **Filing several tasks** — `todo_create({tasks: [...]})` creates up to 20 independent tasks
+  in one call with ordered per-task results. Successful items stay saved when another fails;
+  per-task retry keys prevent duplicates on keyed retries. The CLI accepts the same definitions
+  from a JSON file with `todo:agent:create --tasks-file=...`.
 - **Creating child tasks** — a new task under a parent defaults to its project and Group when
   those fields are blank. Explicit choices win; a parent in several projects needs an explicit
   project choice. Scaffold children use the same Group default, with Priority set separately.

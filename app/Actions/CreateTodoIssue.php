@@ -31,6 +31,7 @@ class CreateTodoIssue
      * @param  list<array{issueId: int, commentId?: ?int}>  $addLinks
      * @param  array<string, ?string>  $step  step fields (see SyncStepFields)
      * @param  list<int>|null  $blockedBy  sibling steps this one waits on; needs a parent
+     * @param  list<int>|null  $allowedParentIds  batch-start parent snapshot; null for ordinary creation
      */
     public function handle(
         string $title,
@@ -46,8 +47,12 @@ class CreateTodoIssue
         array $addLinks = [],
         array $step = [],
         ?array $blockedBy = null,
+        ?array $allowedParentIds = null,
     ): Issue {
-        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy): Issue {
+        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy, $allowedParentIds): Issue {
+            if ($parentId !== null && $allowedParentIds !== null && ! in_array($parentId, $allowedParentIds, true)) {
+                throw new TodoValidationException('The selected parent must already exist before this batch starts.');
+            }
             $parent = $parentId !== null && $parentId > 0 ? Issue::query()->where('is_available', true)->find($parentId) : null;
             if ($parentId !== null && $parentId > 0 && ! $parent instanceof Issue) {
                 throw new TodoValidationException('The selected parent is no longer available. Refresh and try again.');

@@ -14,6 +14,7 @@ use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use Illuminate\JsonSchema\JsonSchemaTypeFactory;
+use Illuminate\Testing\Fluent\AssertableJson;
 
 beforeEach(function (): void {
     GitHubRepository::factory()->create(['owner' => config('github.owner'), 'name' => config('github.repository'), 'full_name' => config('github.owner').'/'.config('github.repository')]);
@@ -133,4 +134,33 @@ it('returns a handled error for ambiguous parent projects without creating the c
     TodoServer::tool(CreateTodoTask::class, ['title' => 'Ambiguous tool child', 'parentId' => $parent->id])
         ->assertHasErrors(['Choose an area explicitly'])->assertDontSee('internal server error');
     expect(Issue::query()->where('title', 'Ambiguous tool child')->exists())->toBeFalse();
+});
+
+it('creates a best-effort batch through the tool with ordered compact results', function (): void {
+    TodoServer::tool(CreateTodoTask::class, ['tasks' => [['title' => 'Batch A', 'idempotencyKey' => 'tool-batch-a'], ['title' => ''], ['title' => 'Batch B']]])
+        ->assertOk()->assertStructuredContent(function (AssertableJson $json): void {
+            $json->where('succeeded', 2)->where('failed', 1)->where('items.0.issue.title', 'Batch A')
+                ->where('items.1.index', 1)->where('items.1.error.code', 'validation_error')
+                ->where('items.2.issue.title', 'Batch B')->missing('items.0.issue.body')->etc();
+        });
+    expect(Issue::query()->count())->toBe(2);
+});
+
+it('rejects malformed batch envelopes or mixed single and batch inputs without writes', function (array $arguments, string $message): void {
+    TodoServer::tool(CreateTodoTask::class, $arguments)->assertHasErrors([$message])->assertDontSee('internal server error');
+    expect(Issue::query()->count())->toBe(0);
+})->with([
+    'empty' => [['tasks' => []], 'tasks'],
+    'oversized' => [['tasks' => array_fill(0, 21, ['title' => 'Task'])], 'tasks'],
+    'not list' => [['tasks' => ['one' => ['title' => 'Task']]], 'tasks'],
+    'not array' => [['tasks' => 'bad'], 'tasks'],
+    'mixed title' => [['title' => 'Single', 'tasks' => [['title' => 'Batch']]], 'either'],
+    'mixed key' => [['idempotencyKey' => 'not-a-batch-key', 'tasks' => [['title' => 'Batch']]], 'either'],
+]);
+
+it('declares batch task fields while keeping single title conditional in the schema', function (): void {
+    $schema = app(CreateTodoTask::class)->toArray()['inputSchema'];
+    expect($schema['required'] ?? [])->not->toContain('title')
+        ->and($schema['properties']['tasks']['maxItems'])->toBe(20)
+        ->and($schema['properties']['tasks']['items']['required'])->toContain('title');
 });
