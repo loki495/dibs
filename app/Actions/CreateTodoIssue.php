@@ -48,16 +48,33 @@ class CreateTodoIssue
         ?array $blockedBy = null,
     ): Issue {
         $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy): Issue {
+            $parent = $parentId !== null && $parentId > 0 ? Issue::query()->where('is_available', true)->find($parentId) : null;
+            if ($parentId !== null && $parentId > 0 && ! $parent instanceof Issue) {
+                throw new TodoValidationException('The selected parent is no longer available. Refresh and try again.');
+            }
+            if ($parent instanceof Issue) {
+                $memberships = $parent->projectItems()->where('is_available', true)->whereNull('archived_at')
+                    ->whereHas('project', fn ($query) => $query->where('is_available', true))
+                    ->with('groupOption.field')->get();
+                if ($area === null || $area === 0) {
+                    if ($memberships->count() > 1) {
+                        throw new TodoValidationException('The parent belongs to several areas. Choose an area explicitly.');
+                    }
+                    $area = $memberships->first()?->project_id;
+                }
+                $parentGroup = $memberships->firstWhere('project_id', $area)?->groupOption;
+                if (($groupId === null || $groupId === 0) && ($newGroupName === null || trim($newGroupName) === '')
+                    && $parentGroup instanceof ProjectFieldOption && $parentGroup->field->is_available
+                    && $parentGroup->field->semantic_key === 'group' && $parentGroup->field->project_id === $area) {
+                    $groupId = $parentGroup->id;
+                }
+            }
             if ($newGroupName !== null && trim($newGroupName) !== '' && ($area === null || $area === 0)) {
                 throw new TodoValidationException('Choose an area before creating a Group.');
             }
             $project = $area !== null && $area > 0 ? GitHubProject::query()->where('is_available', true)->find($area) : null;
             if ($area !== null && $area > 0 && ! $project instanceof GitHubProject) {
                 throw new TodoValidationException('The selected area is no longer available. Refresh and try again.');
-            }
-            $parent = $parentId !== null && $parentId > 0 ? Issue::query()->where('is_available', true)->find($parentId) : null;
-            if ($parentId !== null && $parentId > 0 && ! $parent instanceof Issue) {
-                throw new TodoValidationException('The selected parent is no longer available. Refresh and try again.');
             }
             $group = $groupId !== null && $groupId > 0 ? ProjectFieldOption::query()->with('field')->find($groupId) : null;
             if ($groupId !== null && $groupId > 0 && (! $group instanceof ProjectFieldOption || ! $project instanceof GitHubProject || $group->field->project_id !== $project->id)) {

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\CloseTodoIssue;
+use App\Actions\CreateTodoIssue;
 use App\Actions\GetIssueDetails;
 use App\Actions\SyncGitHub;
 use App\Actions\UpdateGitHubProject;
@@ -296,6 +297,23 @@ it('quickly captures a task locally without calling GitHub', function (): void {
     expect(Issue::count())->toBe(1);
     expect(GitHubPushQueueItem::where('operation', 'create_issue')->count())->toBe(1);
     Http::assertNothingSent();
+});
+
+it('inherits the selected parent project and Group when capture leaves both blank', function (): void {
+    GitHubRepository::factory()->create(['owner' => config('github.owner'), 'name' => config('github.repository'), 'full_name' => config('github.owner').'/'.config('github.repository')]);
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $parent = app(CreateTodoIssue::class)->handle(title: 'Capture parent', area: $project->id, groupId: $group->id);
+
+    Livewire::actingAs(User::factory()->create())->test('pages::workspace')
+        ->set('newTitle', 'Capture child defaults')->set('captureParent', $parent->id)
+        ->set('captureArea', 0)->set('captureGroup', 0)->call('capture')
+        ->assertHasNoErrors()->assertSet('captureError', null);
+
+    $child = Issue::query()->where('title', 'Capture child defaults')->sole();
+    expect($child->projectItems->sole()->project_id)->toBe($project->id)
+        ->and($child->projectItems->sole()->group_option_id)->toBe($group->id);
 });
 
 it('keeps a quick-capture draft when the configured GitHub repository has not been imported', function (): void {
