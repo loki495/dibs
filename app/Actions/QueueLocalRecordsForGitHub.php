@@ -21,12 +21,14 @@ class QueueLocalRecordsForGitHub
 
     public function handle(GitHubRepository $repository): void
     {
-        $labels = Label::query()->where('repository_id', $repository->id)->whereNull('github_node_id')->where('is_available', true)->orderBy('id')->get();
+        $labels = Label::query()->where('repository_id', $repository->id)->whereNull('github_node_id')->where('is_available', true)->where(function ($query): void {
+            $query->where('is_temporary_origin', false)->orWhereHas('issues', fn ($issues) => $issues->where('is_temporary', false));
+        })->orderBy('id')->get();
         foreach ($labels as $label) {
             $this->enqueue->handle('create_label', 'label', $label->id, ['name' => $label->name, 'color' => $label->color, 'description' => $label->description], 'label:create:'.$label->id);
         }
 
-        $issues = Issue::query()->where('repository_id', $repository->id)->whereNull('github_node_id')->where('is_available', true)->with('labels')->orderBy('id')->get();
+        $issues = Issue::query()->where('repository_id', $repository->id)->whereNull('github_node_id')->where('is_available', true)->where('is_temporary', false)->with('labels')->orderBy('id')->get();
         foreach ($issues as $issue) {
             $this->enqueue->handle('create_issue', 'issue', $issue->id, ['title' => $issue->title, 'body' => $issue->body], 'issue:create:'.$issue->id);
             if ($issue->labels->isNotEmpty()) {

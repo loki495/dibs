@@ -48,14 +48,18 @@ class CreateTodoIssue
         array $step = [],
         ?array $blockedBy = null,
         ?array $allowedParentIds = null,
+        bool $temporary = false,
     ): Issue {
-        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy, $allowedParentIds): Issue {
+        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy, $allowedParentIds, $temporary): Issue {
             if ($parentId !== null && $allowedParentIds !== null && ! in_array($parentId, $allowedParentIds, true)) {
                 throw new TodoValidationException('The selected parent must already exist before this batch starts.');
             }
             $parent = $parentId !== null && $parentId > 0 ? Issue::query()->where('is_available', true)->find($parentId) : null;
             if ($parentId !== null && $parentId > 0 && ! $parent instanceof Issue) {
                 throw new TodoValidationException('The selected parent is no longer available. Refresh and try again.');
+            }
+            if ($parent instanceof Issue && $parent->is_temporary && ! $temporary) {
+                throw new TodoValidationException('A temporary task can only have temporary children.');
             }
             if ($parent instanceof Issue) {
                 $memberships = $parent->projectItems()->where('is_available', true)->whereNull('archived_at')
@@ -97,13 +101,14 @@ class CreateTodoIssue
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy): Issue {
+            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy, $temporary): Issue {
                 if ($newGroupName !== null && trim($newGroupName) !== '') {
-                    $group = $this->resolveGroup->handle($project, $newGroupName);
+                    $group = $this->resolveGroup->handle($project, $newGroupName, ! $temporary);
                 }
-                $labels = $this->resolveLabels->handle($repository, $labels, $newLabelNames);
+                $labels = $this->resolveLabels->handle($repository, $labels, $newLabelNames, ! $temporary);
                 $issue = Issue::create([
                     'repository_id' => $repository->id,
+                    'is_temporary' => $temporary,
                     'github_node_id' => null,
                     'github_number' => null,
                     'title' => trim($title),

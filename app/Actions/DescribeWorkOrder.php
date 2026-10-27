@@ -59,8 +59,8 @@ class DescribeWorkOrder
             ->latest('id')->first();
 
         $order = [
-            'step' => ['id' => $step->id, 'title' => $this->trust->title($step), 'revision' => $step->revision, 'state' => $step->state],
-            'plan' => $plan instanceof Issue ? ['id' => $plan->id, 'title' => $this->trust->title($plan)] : null,
+            'step' => ['id' => $step->id, 'title' => $this->trust->title($step), 'temporary' => (bool) $step->is_temporary, 'revision' => $step->revision, 'state' => $step->state],
+            'plan' => $plan instanceof Issue ? ['id' => $plan->id, 'title' => $this->trust->title($plan), 'temporary' => (bool) $plan->is_temporary] : null,
             'objective' => $values['objective'] ?? ($body === null ? null : $this->clip($body, self::OBJECTIVE_LENGTH)),
             'tier' => $values['tier'],
             'repos' => $values['repos'] ?? ($plan instanceof Issue && $this->trust->allows($plan->author_login) ? StepTemplate::inline($plan->body, 'repos?') : null),

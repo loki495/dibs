@@ -49,7 +49,7 @@ class CompleteTodoTask
         // surface to the calling agent as an opaque "internal server error".
         return DB::transaction(function () use ($issueId, $pid, $capabilityToken, $summary, $reason, $references, $result, $force, $forceReason): Issue {
             $claim = $this->authorize->handle($issueId, $pid, $capabilityToken);
-            $guard = $claim->issue->is_available ? $this->guards->handle($claim->issue, $reason, $summary, $result) : ['profile' => '', 'missing' => []];
+            $guard = $claim->issue->is_available && ! $claim->issue->is_temporary ? $this->guards->handle($claim->issue, $reason, $summary, $result) : ['profile' => '', 'missing' => []];
             if ($guard['missing'] !== []) {
                 if (! $force) {
                     throw new TodoValidationException("Completion refused (guard profile {$guard['profile']}):\n- ".implode("\n- ", $guard['missing'])
@@ -59,6 +59,9 @@ class CompleteTodoTask
                 $summary = trim(trim((string) $summary)."\n\nGuard overridden: ".trim((string) $forceReason));
             }
             $issue = $this->close->handle($claim->issue, reason: $reason, note: $summary, references: $references, result: $result);
+            if ($issue->is_temporary) {
+                return $issue;
+            }
             $claim->update(['released_at' => now()]);
 
             return $issue->fresh();

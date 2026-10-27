@@ -64,6 +64,7 @@ class GetIssueDetails
             'number' => $issue->github_number,
             'title' => $issue->title,
             'state' => $issue->state,
+            'temporary' => (bool) $issue->is_temporary,
             'isKnowledge' => $issue->labels->pluck('name')->intersect(KnowledgeLabels::NAMES)->isNotEmpty(),
         ];
     }

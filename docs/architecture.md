@@ -4,6 +4,10 @@ This describes Dibs as it actually exists today, not a proposal. For the product
 quick start, see [`README.md`](../README.md); for the full MCP/CLI agent contract, see
 [`agent-interface.md`](agent-interface.md).
 
+## Temporary tasks
+
+`issues.is_temporary` is an immutable creation-time flag. Temporary records remain local and discoverable, but are excluded from durable counts. They are hard-deleted on completion or deletion, with no restore; associated issue content and receipts are removed. A permanent parent may receive the completion summary as a normal comment, and permanent incoming link sources receive a consumed notice. Both use the ordinary local-first comment/mirror path. Temporary parents accept only temporary children, all children must be consumed before their parent, and dependencies involving temporary issues are forbidden. See [the agent interface](agent-interface.md#temporary-tasks) for the client contract.
+
 ## Stack
 
 Laravel 13, Livewire 4 class-based single-file components, PHP 8.5, SQLite, Tailwind 4, Flux
@@ -92,7 +96,7 @@ renamed GitHub field doesn't silently break the mapping.
 
 `issue_links` (`from_issue_id`, `to_issue_id`, nullable `to_comment_id`, unique on the triple; all three cascade on delete) is local-only: explicit links between records, with the target's kind read from its labels rather than stored. Because NULLs are distinct in a unique index, `SyncIssueLinks` also checks for an existing issue-level link before inserting. It is part of the workspace archive.
 
-Plan steps keep `issues.done_when`, `issues.evidence` and `issues.files_likely` (nullable text; an empty one falls back to the matching `Done-when:`/`Evidence:`/`Files likely:` body line, `App\Support\StepTemplate`) and `step_blockers` (`issue_id`, `blocked_by_issue_id`, unique pair, both cascade on delete): blocked-by edges between sibling steps, written only through `SyncStepFields`, which refuses self, cross-plan and cyclic edges. `delivered_rules` (`agent_name`, `rule_issue_id`, `revision`, unique per agent name and rule) records which rule revisions each agent identity has already received in a work order (`DescribeWorkOrder`); it is runtime state, not exported. Fields, edges and deliveries are local-only, never pushed to GitHub. The step fields and `step_blockers` are part of the workspace archive (format version 4).
+Plan steps keep `issues.done_when`, `issues.evidence` and `issues.files_likely` (nullable text; an empty one falls back to the matching `Done-when:`/`Evidence:`/`Files likely:` body line, `App\Support\StepTemplate`) and `step_blockers` (`issue_id`, `blocked_by_issue_id`, unique pair, both cascade on delete): blocked-by edges between sibling steps, written only through `SyncStepFields`, which refuses self, cross-plan and cyclic edges. `delivered_rules` (`agent_name`, `rule_issue_id`, `revision`, unique per agent name and rule) records which rule revisions each agent identity has already received in a work order (`DescribeWorkOrder`); it is runtime state, not exported. Fields, edges and deliveries are local-only, never pushed to GitHub. The step fields and `step_blockers` are part of the workspace archive (format version 5).
 
 `comments.kind` is nullable and only ever `null` or `Comment::KIND_CLOSING`; a closing-note comment is
 an ordinary comment for GitHub's purposes (the `kind` column is local-only bookkeeping so the app can

@@ -26,7 +26,7 @@ class ResolveLabels
      * @param  list<string>  $newNames
      * @return Collection<int, Label>
      */
-    public function handle(GitHubRepository $repository, Collection $labels, array $newNames): Collection
+    public function handle(GitHubRepository $repository, Collection $labels, array $newNames, bool $mirror = true): Collection
     {
         $resolved = collect($labels->all());
         foreach ($newNames as $name) {
@@ -42,13 +42,16 @@ class ResolveLabels
             }
             $label = Label::create([
                 'repository_id' => $repository->id,
+                'is_temporary_origin' => ! $mirror,
                 'github_node_id' => null,
                 'name' => $name,
                 'color' => '6B7280',
                 'is_available' => true,
             ]);
-            $this->enqueue->handle('create_label', 'label', $label->id, ['name' => $label->name, 'color' => '6B7280', 'description' => null], 'label:create:'.$label->id);
-            $this->recorder->change('ResolveLabels', $label, 'Created label', $this->recorder->diffModel($label, ['name', 'color']));
+            if ($mirror) {
+                $this->enqueue->handle('create_label', 'label', $label->id, ['name' => $label->name, 'color' => '6B7280', 'description' => null], 'label:create:'.$label->id);
+                $this->recorder->change('ResolveLabels', $label, 'Created label', $this->recorder->diffModel($label, ['name', 'color']));
+            }
             $resolved->push($label);
         }
 

@@ -33,8 +33,8 @@ class FindNextPlanStep
         }
 
         $steps = $plan->children()->where('is_available', true)
-            ->withCount(['children' => fn ($query) => $query->where('is_available', true)])
-            ->with(['blockedBy' => fn ($query) => $query->where('is_available', true)])
+            ->withCount(['children' => fn ($query) => $query->where('is_available', true)->when(! $plan->is_temporary, fn ($children) => $children->where('is_temporary', false))])
+            ->with(['blockedBy' => fn ($query) => $query->where('is_available', true)->when(! $plan->is_temporary, fn ($children) => $children->where('is_temporary', false))])
             ->get()
             ->filter(fn (Issue $step): bool => $step->children_count === 0 && $this->trust->allows($step->author_login));
         if ($steps->isEmpty()) {
@@ -54,6 +54,7 @@ class FindNextPlanStep
             $blocked += $openBlockers === [] ? 0 : 1;
             $waiting[] = array_filter([
                 'id' => $step->id,
+                'temporary' => (bool) $step->is_temporary,
                 'title' => $this->trust->title($step),
                 'claimedBy' => $claimedBy,
                 'blockedBy' => $openBlockers === [] ? null : $openBlockers,

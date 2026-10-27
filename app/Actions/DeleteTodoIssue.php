@@ -25,6 +25,14 @@ class DeleteTodoIssue
         }
 
         return DB::transaction(function () use ($issue, $cascadeChildren): array {
+            if ($issue->is_temporary) {
+                app(PurgeTemporaryTask::class)->handle($issue);
+
+                return [$issue->id];
+            }
+            if ($cascadeChildren && $this->hasTemporaryDescendant($issue)) {
+                throw new TodoValidationException('Consume temporary descendants before cascading deletion.');
+            }
             if (! $cascadeChildren) {
                 $this->promoteChildren($issue);
             }
@@ -35,6 +43,17 @@ class DeleteTodoIssue
 
             return [...$deletedIds, $issue->id];
         });
+    }
+
+    private function hasTemporaryDescendant(Issue $issue): bool
+    {
+        foreach ($issue->children()->get() as $child) {
+            if ($child->is_temporary || $this->hasTemporaryDescendant($child)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return list<int> */

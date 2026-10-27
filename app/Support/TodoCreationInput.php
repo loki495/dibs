@@ -14,6 +14,7 @@ final class TodoCreationInput
     public static function rules(string $prefix = ''): array
     {
         $rules = [
+            'temporary' => ['sometimes', 'boolean:strict'],
             'title' => ['required', 'string', 'max:255'],
             'body' => ['sometimes', 'nullable', 'string', 'max:65535'],
             'area' => ['sometimes', 'nullable', 'integer', 'min:1'],
@@ -54,6 +55,7 @@ final class TodoCreationInput
     {
         return [
             'title' => $input['title'],
+            'temporary' => $input['temporary'] ?? false,
             'body' => $input['body'] ?? null,
             'area' => isset($input['area']) ? (int) $input['area'] : null,
             'parentId' => isset($input['parentId']) ? (int) $input['parentId'] : null,

@@ -32,7 +32,7 @@ class DescribeTodoContext
     {
         return GitHubProject::query()->where('is_available', true)
             ->withCount(['items' => fn ($items) => $items->where('is_available', true)->whereNull('archived_at')
-                ->whereHas('issue', fn ($issue) => $issue->where('is_available', true)->where('state', 'OPEN'))])
+                ->whereHas('issue', fn ($issue) => $issue->where('is_available', true)->where('is_temporary', false)->where('state', 'OPEN'))])
             ->orderBy('title')->get()
             ->map(fn (GitHubProject $project): array => [
                 'id' => $project->id, 'title' => $project->title, 'color' => $project->color, 'openTaskCount' => $project->items_count,
@@ -57,6 +57,7 @@ class DescribeTodoContext
 
         return $claims->map(fn (TaskClaim $claim): array => [
             'issueId' => $claim->issue_id,
+            'temporary' => (bool) $claim->issue?->is_temporary,
             'issueTitle' => $claim->issue instanceof Issue ? $this->trust->title($claim->issue) : null,
             'agentName' => $claim->agentSession?->agent_name,
             'expiresAt' => $claim->expires_at->toIso8601String(),

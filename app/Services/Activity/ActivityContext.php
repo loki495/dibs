@@ -15,6 +15,8 @@ use Illuminate\Support\Str;
  */
 final class ActivityContext
 {
+    private bool $privateOperation = false;
+
     private ?string $requestId = null;
 
     private ?string $source = null;
@@ -41,6 +43,16 @@ final class ActivityContext
     public function beginSystem(string $label): void
     {
         $this->begin(ChangeLog::SOURCE_SYSTEM, ChangeLog::ACTOR_SYSTEM, $label);
+    }
+
+    public function protectTemporary(): void
+    {
+        $this->privateOperation = true;
+    }
+
+    public function isTemporaryOperation(): bool
+    {
+        return $this->privateOperation;
     }
 
     public function hasBegun(): bool
@@ -70,6 +82,7 @@ final class ActivityContext
 
     private function begin(string $source, ?string $actorType, ?string $actorLabel): void
     {
+        $this->privateOperation = false;
         $this->requestId = (string) Str::uuid();
         $this->source = $source;
         $this->actorType = $actorType;

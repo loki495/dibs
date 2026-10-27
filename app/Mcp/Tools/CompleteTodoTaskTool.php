@@ -20,7 +20,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Finishes the calling agent\'s own claimed task: closes the issue, enqueues the GitHub push, and releases the claim. Only the exact process holding the live claim (matched by capability token) can complete it. `summary` becomes the closing note (a comment on the issue); `reason` and `references` are optional extra detail on why and how it was closed. `result` is the structured evidence (commit, tests, docs, done_when_held); the completion guards refuse a close that lacks what the task\'s guard profile asks for (a summary always; a commit for agent tasks, bugs and plan steps; tests and docs whenever a commit SHA is given; Done-when for plan steps), and the refusal lists each missing field. Where evidence truly does not apply, give "none: <the real reason>" for that field, or force: true with a real forceReason (logged and noted in the closing note). Call todo_show afterward for the `closing` object.')]
+#[Description('Finishes the calling agent\'s own claimed task: closes the issue, enqueues the GitHub push, and releases the claim. Temporary tasks are permanently deleted instead, returning a deleted receipt; consume children first. They bypass completion evidence guards, and an explicit summary becomes a normal comment on a surviving permanent parent. NOT_PLANNED discards the task; ordinary claim release retains it. Only the exact process holding the live claim (matched by capability token) can complete it. `summary` becomes the closing note (a comment on the issue); `reason` and `references` are optional extra detail on why and how it was closed. `result` is the structured evidence (commit, tests, docs, done_when_held); the completion guards refuse a close that lacks what the task\'s guard profile asks for (a summary always; a commit for agent tasks, bugs and plan steps; tests and docs whenever a commit SHA is given; Done-when for plan steps), and the refusal lists each missing field. Where evidence truly does not apply, give "none: <the real reason>" for that field, or force: true with a real forceReason (logged and noted in the closing note). Call todo_show afterward for the `closing` object of a permanent task; a consumed temporary task no longer exists.')]
 class CompleteTodoTaskTool extends Tool implements Errable
 {
     protected string $name = 'todo_complete';
@@ -59,7 +59,7 @@ class CompleteTodoTaskTool extends Tool implements Errable
             return Response::error($exception->getMessage());
         }
 
-        return Response::structured($describe->handle($issue->id));
+        return Response::structured($issue->is_temporary ? ['id' => $issue->id, 'deleted' => true, 'temporary' => true] : $describe->handle($issue->id));
     }
 
     /** @return array<string, Type> */
@@ -69,7 +69,7 @@ class CompleteTodoTaskTool extends Tool implements Errable
             'issueId' => $schema->integer()->required()->description('The claimed issue\'s local id.'),
             'capabilityToken' => $schema->string()->required()->description('The token returned by todo_claim for this claim.'),
             'summary' => $schema->string()->nullable()->description('The closing note, posted as a comment. Omit for no note.'),
-            'reason' => $schema->string()->enum(CloseTodoIssue::REASONS)->nullable()->description('Why the task was closed: COMPLETED or NOT_PLANNED. Pushed to GitHub as the issue\'s close reason.'),
+            'reason' => $schema->string()->enum(CloseTodoIssue::REASONS)->nullable()->description('Why the task was closed: COMPLETED or NOT_PLANNED (explicit discard for a temporary task). Pushed to GitHub as the issue\'s close reason.'),
             'result' => $schema->object([
                 'commit' => $schema->string()->description('The commit SHA (7-40 hex), or "none: <why no commit>".'),
                 'tests' => $schema->object(['command' => $schema->string()->required(), 'exit_code' => $schema->integer()->required()])->description('The test run: {command, exit_code}; exit_code must be 0. Or the string "none: <why no tests>".'),

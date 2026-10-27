@@ -75,7 +75,7 @@ class DescribeTodoMetadata
             ->when($area !== null, fn (Builder $projects) => $projects->whereKey($area))
             ->when($pattern !== null, fn (Builder $projects) => $projects->whereRaw("title LIKE ? ESCAPE '\\'", [$pattern]))
             ->withCount(['items' => fn ($items) => $items->where('is_available', true)->whereNull('archived_at')
-                ->whereHas('issue', fn ($issue) => $issue->where('is_available', true)->where('state', 'OPEN'))])
+                ->whereHas('issue', fn ($issue) => $issue->where('is_available', true)->where('is_temporary', false)->where('state', 'OPEN'))])
             ->orderBy('title')->limit(self::LIMIT + 1)->get()
             ->map(fn (GitHubProject $project): array => ['id' => $project->id, 'title' => $project->title, 'color' => $project->color, 'openTaskCount' => $project->items_count])
             ->all();
@@ -87,7 +87,7 @@ class DescribeTodoMetadata
         $options = $this->options('group', $pattern, $area);
         $open = ProjectItem::query()->whereIn('group_option_id', $options->modelKeys())
             ->where('is_available', true)->whereNull('archived_at')
-            ->whereHas('issue', fn ($issue) => $issue->where('is_available', true)->where('state', 'OPEN'))
+            ->whereHas('issue', fn ($issue) => $issue->where('is_available', true)->where('is_temporary', false)->where('state', 'OPEN'))
             ->selectRaw('group_option_id, COUNT(*) AS aggregate')->groupBy('group_option_id')->pluck('aggregate', 'group_option_id');
 
         return $options->map(fn (ProjectFieldOption $option): array => [
@@ -125,8 +125,8 @@ class DescribeTodoMetadata
             ->when($pattern !== null, fn (Builder $labels) => $labels->where(fn (Builder $match) => $match
                 ->whereRaw("name LIKE ? ESCAPE '\\'", [$pattern])->orWhereRaw("description LIKE ? ESCAPE '\\'", [$pattern])))
             ->withCount([
-                'issues as total_count' => fn ($issues) => $issues->where('is_available', true),
-                'issues as open_count' => fn ($issues) => $issues->where('is_available', true)->where('state', 'OPEN'),
+                'issues as total_count' => fn ($issues) => $issues->where('is_available', true)->where('is_temporary', false),
+                'issues as open_count' => fn ($issues) => $issues->where('is_available', true)->where('is_temporary', false)->where('state', 'OPEN'),
             ])
             ->orderBy('name')->limit(self::LIMIT + 1)->get()
             ->map(fn (Label $label): array => [

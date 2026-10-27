@@ -40,3 +40,10 @@ it('never includes the GitHub token or other secrets', function (): void {
 
     expect(json_encode($description))->not->toContain('super-secret-token');
 });
+
+it('excludes temporary tasks from durable record counts', function (): void {
+    Issue::factory()->create();
+    Issue::factory()->temporary()->create();
+
+    expect(app(DescribeTodoServer::class)->handle()['counts']['issues'])->toBe(1);
+});

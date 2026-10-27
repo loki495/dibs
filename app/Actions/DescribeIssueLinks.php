@@ -56,6 +56,7 @@ class DescribeIssueLinks
                 'title' => $forAgent ? $this->trust->title($target) : $target->title,
                 'withheld' => $forAgent && (! $this->trust->allows($target->author_login) || ! $allowed),
                 'state' => $target->state,
+                'temporary' => (bool) $target->is_temporary,
                 'labels' => $names,
                 'knowledge' => count(array_intersect($names, KnowledgeLabels::NAMES)) > 0,
                 'commentId' => $comment?->id,

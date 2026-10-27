@@ -27,6 +27,7 @@ class IssueSummary
             'title' => $trust->title($issue),
             'withheld' => ! $trust->allows($issue->author_login),
             'state' => $issue->state,
+            'temporary' => (bool) $issue->is_temporary,
             'url' => $issue->url,
             'container' => $issue->children_count > 0,
             'knowledge' => count(array_intersect($names, KnowledgeLabels::NAMES)) > 0,

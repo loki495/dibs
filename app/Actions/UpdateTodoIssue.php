@@ -91,9 +91,9 @@ class UpdateTodoIssue
         // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
         return DB::transaction(function () use ($issue, $repository, $project, $parent, $group, $priority, $labels, $title, $body, $newGroupName, $newLabelNames): Issue {
             if ($newGroupName !== '') {
-                $group = $this->resolveGroup->handle($project, $newGroupName);
+                $group = $this->resolveGroup->handle($project, $newGroupName, ! $issue->is_temporary);
             }
-            $labels = $this->resolveLabels->handle($repository, $labels, $newLabelNames);
+            $labels = $this->resolveLabels->handle($repository, $labels, $newLabelNames, ! $issue->is_temporary);
 
             $issue->update(['title' => $title, 'body' => $body === '' ? null : $body, 'revision' => $issue->revision + 1]);
             $this->recorder->changeModel('UpdateTodoIssue', $issue);
