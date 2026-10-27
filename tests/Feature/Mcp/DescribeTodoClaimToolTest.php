@@ -7,10 +7,16 @@ use App\Mcp\Servers\TodoServer;
 use App\Mcp\Tools\DescribeTodoClaimTool;
 use App\Models\Issue;
 use App\Models\TaskClaim;
+use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 use Illuminate\Testing\Fluent\AssertableJson;
 
 it('exposes the tool under the todo_claim_status name', function (): void {
     expect(app(DescribeTodoClaimTool::class)->name())->toBe('todo_claim_status');
+});
+
+it('declares both claim selectors in the tool schema', function (): void {
+    expect(array_keys(app(DescribeTodoClaimTool::class)->schema(new JsonSchemaTypeFactory)))
+        ->toBe(['issueId', 'issueIds']);
 });
 
 it('reports no claim for a free task', function (): void {
