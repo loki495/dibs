@@ -98,6 +98,26 @@ The demo login is a normal Dibs account (`demo@example.com`, seeded by
 `DemoSeeder`) that ships in every visitor's copy of the template, published
 openly since the whole point is to let visitors in.
 
+### Sample agent workflow
+
+Under **Personal Projects → Dibs**, **Plan: Add notification digests** illustrates
+how agents coordinate and resume work with durable context. It includes a completed
+data-model step with a simulated closing note, two claimed implementation steps,
+an integration step blocked by both implementations, and a ready documentation step.
+Each step has an objective, acceptance criteria, expected evidence, likely files,
+and explicit links to a rule and relevant knowledge. The plan links a delivery rule,
+a design decision, and a retry lesson; the rule also carries `guide` so it appears
+in the Knowledge view.
+
+All progress, file paths, evidence, and agent identities in this example are
+fictional. The claims have no real PID or verified liveness, and a one-year sample
+lease keeps them visible when a template is served long after boot. They do not
+heartbeat or send mail. Normal claims retain their existing lifecycle. This sample
+does not mean Dibs has a notification or email-digest feature.
+
+The updated dataset reaches new visitor databases when the template is rebuilt.
+Existing visitor copies keep their own data until cleaned up or evicted.
+
 ### Test-suite gotcha
 
 `ResolveDemoDatabase` calls `DB::purge('sqlite')` to force a reconnect after

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Actions\ResolveActiveRepository;
+use App\Actions\SyncIssueLinks;
+use App\Actions\SyncStepFields;
 use App\Models\AgentSession;
 use App\Models\Comment;
 use App\Models\GitHubProject;
@@ -47,7 +49,7 @@ class DemoSeeder extends Seeder
         // same local repository row a visitor's own new tasks and labels are created in.
         $this->repository = app(ResolveActiveRepository::class)->local();
 
-        foreach (['bug', 'feature', 'documentation', 'research', 'decision', 'lesson', 'guide', 'plan', 'today', 'next', 'waiting', 'someday', 'needs research', 'parent'] as $name) {
+        foreach (['bug', 'feature', 'documentation', 'research', 'decision', 'lesson', 'guide', 'rule', 'agent task', 'plan', 'today', 'next', 'waiting', 'someday', 'needs research', 'parent'] as $name) {
             $this->labels[$name] = Label::factory()->for($this->repository, 'repository')->create(['name' => $name]);
         }
 
@@ -80,14 +82,7 @@ class DemoSeeder extends Seeder
         $this->comment($child, 'Moved it next to the sort dropdown instead — screenshots look right on a 390px viewport now.');
         $this->issue('Add a quick "back to all projects" link when a single area is sorted by group', $project, $groups['Dibs'], $priorities[2], parent: $parent);
 
-        // A plan-shaped hierarchy with one claimed and two unclaimed children -- what makes Dibs
-        // different from a plain todo list isn't visible from the task list alone, so the demo
-        // needs at least one task showing live agent coordination, not just task/knowledge content.
-        $plan = $this->issue('Plan: Add notification digests', $project, $groups['Dibs'], $priorities[2], labels: ['plan']);
-        $this->issue('Design the notification data model', $project, $groups['Dibs'], $priorities[2], parent: $plan, labels: ['next']);
-        $claimed = $this->issue('Build the in-app notification bell', $project, $groups['Dibs'], $priorities[1], parent: $plan, labels: ['feature']);
-        $this->issue('Add an email digest opt-in setting', $project, $groups['Dibs'], $priorities[3], parent: $plan);
-        $this->claim($claimed, 'claude-code');
+        $this->seedAgentPlan($project, $groups['Dibs'], $priorities[2]);
 
         $this->pushQueueShowcase($project, $groups['Dibs'], $priorities[2]);
 
@@ -97,6 +92,116 @@ class DemoSeeder extends Seeder
 
         $this->issue('Draft the "why local-first" post', $project, $groups['Blog'], $priorities[4], labels: ['someday']);
         $this->closedIssue('Set up the blog\'s RSS feed', $project, $groups['Blog']);
+    }
+
+    private function seedAgentPlan(GitHubProject $project, ProjectFieldOption $group, ProjectFieldOption $priority): void
+    {
+        $rule = $this->issue('Rule: Keep notification delivery local and opt-in', $project, $group, $priority, labels: ['rule', 'guide'], body: <<<'MD'
+            Rule: Save notifications locally before attempting delivery. Email digests are disabled by default. Tests use fake mail delivery; never send a real message from a test or the public demo.
+
+            Trigger: Changing notification storage, preferences, or delivery.
+            Check: Opt-out and failed-delivery tests pass without contacting a mail service.
+            MD);
+        $decision = $this->issue('Decision: One notification store, separate delivery channels', $project, $group, $priority, labels: ['decision'], body: <<<'MD'
+            Fictional design decision for this demo project.
+
+            Keep one local notification record per event. The bell reads that store; an optional digest groups the same records. A failed email must not hide an in-app notification or roll back local work.
+
+            The agreed contract is: id, event_key, title, read_at, created_at. The preferences screen owns digest_enabled, defaulting to false. The bell and preferences agents can work independently against this contract.
+            MD);
+        $lesson = $this->issue('Lesson: Retried digest jobs must not duplicate notifications', $project, $group, $priority, labels: ['lesson'], body: <<<'MD'
+            Fictional finding from the demo team's retry investigation.
+
+            A worker can restart after saving an event but before acknowledging its job. Retrying that job used to create a second unread item. Use a stable event_key with a unique constraint and test replaying the same event twice.
+
+            Reuse this finding when checking the bell count and the eventual digest integration, rather than rediscovering the failure in a new chat.
+            MD);
+        foreach ([$rule, $decision, $lesson] as $knowledge) {
+            $knowledge->update(['state' => 'CLOSED', 'closed_at' => now()->subDays(2), 'state_reason' => 'COMPLETED']);
+        }
+
+        $plan = $this->issue('Plan: Add notification digests', $project, $group, $priority, labels: ['plan', 'agent task'], body: <<<'MD'
+            ## Goal
+
+            Let people catch up on task activity without watching the workspace all day: an unread bell now, with a user-controlled email digest later.
+
+            ## Current checkpoint
+
+            Simulated demo scenario: the data model is complete. Claude is building the notification bell while Codex adds the opt-in preferences. Integration waits for both; documentation is ready for another agent to claim.
+
+            ## Why keep this in Dibs?
+
+            A new session can read this plan, follow the linked rule and design decision, and ask todo_next for a ready step. Each step carries acceptance criteria, expected evidence, likely files, and a checkpoint. Claims show who owns which work; dependencies keep an agent from starting integration too soon. The linked lesson preserves a retry bug across sessions.
+
+            ## Boundaries
+
+            This is fictional sample work, not a notification feature already implemented in Dibs. The two sample claims do not represent running agents. No mail is sent. Open the child tasks and their linked context to explore the workflow.
+            MD);
+        app(SyncIssueLinks::class)->handle($plan, array_map(fn (Issue $issue): array => ['issueId' => $issue->id], [$rule, $decision, $lesson]), []);
+
+        $definitions = [
+            [
+                'title' => 'Design the notification data model',
+                'objective' => 'Define the shared storage contract so the bell and preferences can be built independently.',
+                'doneWhen' => 'A unique event_key prevents duplicate records; read_at is nullable; digest_enabled defaults to false.',
+                'evidence' => 'Migration and model tests cover event replay and the default opt-out state.',
+                'filesLikely' => 'database/migrations/*_create_notifications_table.php; app/Models/Notification.php; tests/Feature/Notifications/StorageTest.php',
+                'context' => $decision,
+            ],
+            [
+                'title' => 'Build the in-app notification bell',
+                'objective' => 'Show unread local notifications and let the user mark them read using the agreed storage contract.',
+                'doneWhen' => 'The unread count updates after marking an item read; empty and narrow-screen states remain usable.',
+                'evidence' => 'Pest covers unread/read transitions and an empty inbox; attach mobile and desktop screenshots.',
+                'filesLikely' => 'resources/views/components/notification-bell.blade.php; tests/Feature/Notifications/BellTest.php',
+                'context' => $decision,
+            ],
+            [
+                'title' => 'Add an email digest opt-in setting',
+                'objective' => 'Let the user choose a digest frequency while keeping email disabled until they opt in.',
+                'doneWhen' => 'Preferences persist; invalid frequencies show validation errors; disabled digests never queue email.',
+                'evidence' => 'Pest covers default opt-out, saved preferences, and invalid input with fake mail delivery.',
+                'filesLikely' => 'resources/views/pages/notification-preferences.blade.php; tests/Feature/Notifications/PreferencesTest.php',
+                'context' => $decision,
+            ],
+            [
+                'title' => 'Verify the notification flow end to end',
+                'objective' => 'Connect the bell and preferences after both implementations are complete, then exercise retries and delivery failure.',
+                'doneWhen' => 'One event creates one unread item even after a retry; opted-out users receive no digest; delivery failure preserves local records.',
+                'evidence' => 'Integration tests use fake mail and cover duplicate events, opt-out, and a failed delivery.',
+                'filesLikely' => 'app/Actions/Notifications/BuildDigest.php; tests/Feature/Notifications/DigestFlowTest.php',
+                'context' => $lesson,
+            ],
+            [
+                'title' => 'Document notification preferences and recovery',
+                'objective' => 'Draft the user guide from the accepted design while the two implementation agents work.',
+                'doneWhen' => 'The draft explains unread status, opt-in, and retry recovery, with a checklist to confirm against the final integration.',
+                'evidence' => 'Documentation diff and a list of settings and failure cases checked against the linked decision.',
+                'filesLikely' => 'docs/notifications.md',
+                'context' => $decision,
+            ],
+        ];
+        $steps = [];
+        foreach ($definitions as $position => $definition) {
+            $step = $this->issue($definition['title'], $project, $group, $priority, parent: $plan, labels: ['agent task'], body: 'Objective: '.$definition['objective']."\n\nFictional demo work; file paths describe the sample project.");
+            $step->update(['sibling_position' => $position]);
+            app(SyncStepFields::class)->handle($step, array_intersect_key($definition, SyncStepFields::FIELDS));
+            app(SyncIssueLinks::class)->handle($step, [['issueId' => $rule->id], ['issueId' => $definition['context']->id]], []);
+            $steps[] = $step;
+        }
+
+        $steps[0]->update(['state' => 'CLOSED', 'closed_at' => now()->subDay(), 'state_reason' => 'COMPLETED']);
+        Comment::factory()->closing()->for($steps[0], 'issue')->create([
+            'body' => 'Simulated completion: agreed the notification contract and recorded the linked decision. Example evidence: storage tests pass for duplicate event keys and default opt-out. No feature code was actually written by this demo.',
+        ]);
+        foreach ([$steps[1], $steps[2], $steps[4]] as $step) {
+            app(SyncStepFields::class)->handle($step, blockedBy: [$steps[0]->id]);
+        }
+        app(SyncStepFields::class)->handle($steps[3], blockedBy: [$steps[1]->id, $steps[2]->id]);
+        $this->claim($steps[1], 'claude:demo:notification-bell', ['resources/views/components/notification-bell.blade.php', 'tests/Feature/Notifications/BellTest.php']);
+        $this->claim($steps[2], 'codex:demo:preferences', ['resources/views/pages/notification-preferences.blade.php', 'tests/Feature/Notifications/PreferencesTest.php']);
+        $this->comment($steps[1], 'Simulated checkpoint: unread list and empty state are drafted against the agreed contract. Next: finish mark-as-read coverage and check the bell at a phone viewport. Preferences are owned by the other agent.');
+        $this->comment($steps[2], 'Simulated checkpoint: preference validation and default opt-out are drafted. Next: check invalid frequencies and disabled-digest behavior with fake mail. The bell is owned by the other agent.');
     }
 
     private function seedLearning(): void
@@ -159,11 +264,11 @@ class DemoSeeder extends Seeder
     }
 
     /** @param list<string> $labels */
-    private function issue(string $title, GitHubProject $project, ProjectFieldOption $group, ProjectFieldOption $priority, ?Issue $parent = null, array $labels = []): Issue
+    private function issue(string $title, GitHubProject $project, ProjectFieldOption $group, ProjectFieldOption $priority, ?Issue $parent = null, array $labels = [], ?string $body = null): Issue
     {
         $issue = Issue::factory()->for($this->repository, 'repository')->create([
             'title' => $title,
-            'body' => null,
+            'body' => $body,
             'parent_issue_id' => $parent?->id,
         ] + self::LOCAL_IDENTITY);
 
@@ -188,7 +293,7 @@ class DemoSeeder extends Seeder
 
     private function comment(Issue $issue, string $body): void
     {
-        Comment::factory()->for($issue, 'issue')->create(['body' => $body, 'author_login' => 'demo-user']);
+        Comment::factory()->for($issue, 'issue')->create(['body' => $body, 'author_login' => null]);
     }
 
     private function researchNote(string $title, GitHubProject $project, string $body): void
@@ -212,9 +317,13 @@ class DemoSeeder extends Seeder
      * liveness is itself a real, documented state the app handles (see AuthorizeAgentClaim's own
      * docs), not a demo shortcut: it renders as "claimed" with "(liveness unverifiable)", not as
      * a dead/abandoned claim.
+     *
+     * @param  list<string>  $paths
      */
-    private function claim(Issue $issue, string $agentName): void
+    private function claim(Issue $issue, string $agentName, array $paths): void
     {
+        // A static template may be served long after boot; keep illustrative claims visible without a real heartbeat.
+        $expiresAt = now()->addYear();
         $session = AgentSession::create([
             'agent_name' => $agentName,
             'session_key' => (string) Str::uuid(),
@@ -224,13 +333,14 @@ class DemoSeeder extends Seeder
             'capability_token_hash' => hash('sha256', Str::random(40)),
             'is_verified_live' => false,
             'last_seen_at' => now()->subMinutes(2),
-            'expires_at' => now()->addMinutes(30),
+            'expires_at' => $expiresAt,
         ]);
 
         TaskClaim::create([
             'issue_id' => $issue->id,
             'agent_session_id' => $session->id,
-            'expires_at' => now()->addMinutes(30),
+            'expires_at' => $expiresAt,
+            'paths' => $paths,
         ]);
     }
 
