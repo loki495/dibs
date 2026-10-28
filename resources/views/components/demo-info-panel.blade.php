@@ -26,11 +26,15 @@
         <div x-show="open" x-cloak class="space-y-3 border-t border-sky-200 px-4 py-4 text-sky-900 dark:border-sky-900 dark:text-sky-100">
             <p>
                 <strong>{{ __('Agent coordination:') }}</strong>
-                {{ __('open Personal Projects → Dibs → "Build the in-app notification bell" to see a task actively claimed by an agent — the same claim/heartbeat/release lifecycle real AI agents use through Dibs\' MCP server, not just a status label.') }}
+                {{ __('open Personal Projects → Dibs → "Plan: Add notification digests". Two simulated agents have claimed separate tasks: Claude owns the bell and Codex owns preferences. Their checkpoints show what is left for the next session.') }}
             </p>
             <p>
-                <strong>{{ __('Plans, not just tasks:') }}</strong>
-                {{ __('"Plan: Add notification digests" (same Group) is a parent issue with its own children — one claimed, two open — showing how a multi-step plan and its tasks stay linked.') }}
+                <strong>{{ __('A useful next step:') }}</strong>
+                {{ __('the data model is complete, integration is blocked by both agents, and documentation is ready to pick up. Open a child task for its acceptance criteria, evidence, and likely files — the same work order an agent gets through MCP.') }}
+            </p>
+            <p>
+                <strong>{{ __('Context that survives a chat:') }}</strong>
+                {{ __('follow the plan\'s linked rule, design decision, and retry lesson. An agent starting fresh can reuse those records instead of asking you to explain the project again. The claims and progress are fictional examples; no agents are running in this demo.') }}
             </p>
             <p>
                 <strong>{{ __('Local-first sync:') }}</strong>
