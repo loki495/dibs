@@ -25,10 +25,16 @@ class AgentUpdateTaskCommand extends Command
         {--clear-group : Remove the task from its Group}
         {--add-label=* : Label name to attach (repeatable); created if missing}
         {--remove-label=* : Label name to detach (repeatable); ignored if the task lacks it}
+        {--area= : Area (Project) ID to move the task to; drops the old Group and Priority}
+        {--area-name= : Area (Project) title to move the task to}
+        {--clear-area : Remove the task from its Area}
+        {--priority= : Priority option ID in the task\'s (new) Area}
+        {--priority-name= : Priority option name in the task\'s (new) Area, e.g. 1}
+        {--clear-priority : Remove the task\'s Priority}
         {--note= : Optional revision note, posted as a comment}
         {--idempotency-key= : Retrying the same key returns the original result}';
 
-    protected $description = 'Revise a Todo task\'s title/body/Group/parent/labels for a host-local agent as JSON';
+    protected $description = 'Revise a Todo task\'s title/body/Area/Group/Priority/parent/labels for a host-local agent as JSON';
 
     public function handle(ReviseTodoIssue $revise, DescribeTodoIssue $details): int
     {
@@ -46,6 +52,14 @@ class AgentUpdateTaskCommand extends Command
             return self::FAILURE;
         }
 
+        foreach (['area', 'priority'] as $option) {
+            if ($this->option($option) !== null && ! ctype_digit((string) $this->option($option))) {
+                $this->error("A numeric --{$option} is required.");
+
+                return self::FAILURE;
+            }
+        }
+
         try {
             $issue = $revise->handle(
                 id: (int) $this->argument('issue'),
@@ -60,6 +74,12 @@ class AgentUpdateTaskCommand extends Command
                 clearParent: (bool) $this->option('clear-parent'),
                 newGroupName: $this->option('new-group'),
                 clearGroup: (bool) $this->option('clear-group'),
+                areaId: $this->option('area') === null ? null : (int) $this->option('area'),
+                areaName: $this->option('area-name'),
+                clearArea: (bool) $this->option('clear-area'),
+                priorityId: $this->option('priority') === null ? null : (int) $this->option('priority'),
+                priorityName: $this->option('priority-name'),
+                clearPriority: (bool) $this->option('clear-priority'),
             );
         } catch (TodoStaleRevisionException $exception) {
             $this->line(json_encode(['conflict' => true, 'message' => $exception->getMessage(), 'current' => $details->handle($exception->currentId)], JSON_PRETTY_PRINT));

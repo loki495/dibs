@@ -30,8 +30,9 @@ class CloseTodoIssue
      * issue that was already closed.
      *
      * @param  list<string>  $references
+     * @param  array<string, mixed>  $result  completion evidence kept on the closing comment
      */
-    public function handle(Issue $issue, ?string $reason = null, ?string $note = null, array $references = []): Issue
+    public function handle(Issue $issue, ?string $reason = null, ?string $note = null, array $references = [], array $result = []): Issue
     {
         if (! $issue->is_available) {
             throw new TodoRecordUnavailableException("Issue #{$issue->github_number} (local id {$issue->id}) is no longer available; it was removed or lost GitHub access.");
@@ -41,15 +42,21 @@ class CloseTodoIssue
             throw new TodoValidationException('Reason must be one of: '.implode(', ', self::REASONS).'.');
         }
 
+        if ($issue->is_temporary) {
+            DB::transaction(fn () => app(PurgeTemporaryTask::class)->handle($issue, $note), 3);
+
+            return $issue;
+        }
+
         // attempts: 3 — same transient "database is locked" race against the scheduler's
         // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-        return DB::transaction(function () use ($issue, $reason, $note, $references): Issue {
+        return DB::transaction(function () use ($issue, $reason, $note, $references, $result): Issue {
             $wasAlreadyClosed = $issue->state === 'CLOSED';
             $issue->update(['state' => 'CLOSED', 'state_reason' => $reason, 'closed_at' => $wasAlreadyClosed ? ($issue->closed_at ?? now()) : now()]);
             $this->enqueue->handle('close_issue', 'issue', $issue->id, ['stateReason' => $reason], 'issue:close:'.$issue->id);
 
             if (! $wasAlreadyClosed) {
-                $this->createClosingComment->handle($issue->id, $note, $references);
+                $this->createClosingComment->handle($issue->id, $note, $references, $result);
             }
 
             return $issue;

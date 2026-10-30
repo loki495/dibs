@@ -29,11 +29,12 @@ it('completes a claim, heartbeat, release lifecycle end to end via the CLI', fun
     Artisan::call('todo:agent:claim', ['issue' => $issue->id, '--agent' => 'codex', '--pid' => (string) getmypid()]);
     $output = json_decode(Artisan::output(), true);
     $token = $output['capability_token'];
+    expect($output['work_order']['step']['id'])->toBe($issue->id);
 
     Artisan::call('todo:agent:heartbeat', ['issue' => $issue->id, '--pid' => (string) getmypid(), '--token' => $token, '--minutes' => 45]);
     expect(Artisan::output())->toContain('claim_id');
 
-    $this->artisan('todo:agent:release', ['issue' => $issue->id, '--pid' => (string) getmypid(), '--token' => $token])
+    $this->artisan('todo:agent:release', ['issue' => $issue->id, '--pid' => (string) getmypid(), '--token' => $token, '--left' => 'Write the tests next.'])
         ->assertExitCode(0);
     expect(TaskClaim::query()->sole()->released_at)->not->toBeNull();
 });

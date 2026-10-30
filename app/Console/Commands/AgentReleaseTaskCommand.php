@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\ReleaseTaskClaim;
+use App\Exceptions\TodoValidationException;
 use DomainException;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
 class AgentReleaseTaskCommand extends Command
 {
-    protected $signature = 'todo:agent:release {issue : Local Todo issue ID} {--pid= : The calling agent\'s own OS process ID} {--token= : The capability token returned by todo:agent:claim}';
+    protected $signature = 'todo:agent:release {issue : Local Todo issue ID} {--pid= : The calling agent\'s own OS process ID} {--token= : The capability token returned by todo:agent:claim} {--left= : What is left and the exact next step (required), posted as a comment}';
 
     protected $description = 'Release a host-local agent task claim as JSON';
 
@@ -25,8 +26,8 @@ class AgentReleaseTaskCommand extends Command
             return self::FAILURE;
         }
         try {
-            $claim = $release->handle((int) $this->argument('issue'), (int) $pid, $token);
-        } catch (DomainException $exception) {
+            $claim = $release->handle((int) $this->argument('issue'), (int) $pid, $token, (string) $this->option('left'));
+        } catch (DomainException|TodoValidationException $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;

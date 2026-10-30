@@ -22,19 +22,24 @@ use Illuminate\Support\Str;
  */
 class ClaimTaskForAgent
 {
-    public function __construct(private readonly LinuxProcessLiveness $liveness) {}
+    public function __construct(private readonly LinuxProcessLiveness $liveness, private readonly FindClaimPathOverlaps $overlaps) {}
 
-    /** @return array{claim: TaskClaim, capability_token: string, is_verified_live: bool} */
-    public function handle(Issue $issue, string $agentName, int $pid, int $minutes = 30): array
+    /**
+     * @param  list<string>  $paths  absolute files/directories the work will touch; only reported against other live claims, never a lock
+     * @return array{claim: TaskClaim, capability_token: string, is_verified_live: bool, overlaps: list<array{issueId: int, agentName: string, paths: list<string>}>}
+     */
+    public function handle(Issue $issue, string $agentName, int $pid, int $minutes = 30, array $paths = []): array
     {
         $agentName = trim($agentName);
         if (! $issue->is_available || $agentName === '' || $pid < 1 || $minutes < 1 || $minutes > 480) {
             throw new DomainException('A current task, agent name, a real process ID, and a claim length from 1 to 480 minutes are required.');
         }
 
+        $paths = $this->overlaps->normalize($paths);
+
         // attempts: 3 — same transient "database is locked" race against the scheduler's
         // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-        return DB::transaction(function () use ($issue, $agentName, $pid, $minutes): array {
+        return DB::transaction(function () use ($issue, $agentName, $pid, $minutes, $paths): array {
             $this->releaseIfStaleOrDead($issue);
 
             $active = TaskClaim::query()->where('issue_id', $issue->id)->whereNull('released_at')->exists();
@@ -59,11 +64,12 @@ class ClaimTaskForAgent
                 'expires_at' => $expiresAt,
             ]);
 
+            $overlaps = $this->overlaps->handle($paths, $issue->id);
             $claim = TaskClaim::query()->create([
-                'issue_id' => $issue->id, 'agent_session_id' => $session->id, 'expires_at' => $expiresAt,
+                'issue_id' => $issue->id, 'agent_session_id' => $session->id, 'expires_at' => $expiresAt, 'paths' => $paths === [] ? null : $paths,
             ]);
 
-            return ['claim' => $claim, 'capability_token' => $token, 'is_verified_live' => $isVerifiedLive];
+            return ['claim' => $claim, 'capability_token' => $token, 'is_verified_live' => $isVerifiedLive, 'overlaps' => $overlaps];
         }, 3);
     }
 

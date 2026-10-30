@@ -9,6 +9,7 @@ use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
+use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 
 beforeEach(function (): void {
     GitHubRepository::factory()->create(['owner' => config('github.owner'), 'name' => config('github.repository'), 'full_name' => config('github.owner').'/'.config('github.repository')]);
@@ -16,6 +17,12 @@ beforeEach(function (): void {
 
 it('exposes the tool under the todo_scaffold_plan name', function (): void {
     expect(app(ScaffoldTodoPlan::class)->name())->toBe('todo_scaffold_plan');
+});
+
+it('describes inherited child Groups in the scaffold schema', function (): void {
+    $schema = app(ScaffoldTodoPlan::class)->schema(new JsonSchemaTypeFactory);
+    $group = $schema['groupId']->toArray();
+    expect($group['description'])->toContain('inherits this Group');
 });
 
 it('scaffolds a plan with children through the tool', function (): void {

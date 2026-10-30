@@ -22,12 +22,16 @@ class CreateTodoIssue
         private readonly ActivityRecorder $recorder,
         private readonly ResolveActiveRepository $activeRepository,
         private readonly SyncIssueLinks $syncLinks,
+        private readonly SyncStepFields $syncStep,
     ) {}
 
     /**
      * @param  list<int>  $labelIds
      * @param  list<string>  $newLabelNames
      * @param  list<array{issueId: int, commentId?: ?int}>  $addLinks
+     * @param  array<string, ?string>  $step  step fields (see SyncStepFields)
+     * @param  list<int>|null  $blockedBy  sibling steps this one waits on; needs a parent
+     * @param  list<int>|null  $allowedParentIds  batch-start parent snapshot; null for ordinary creation
      */
     public function handle(
         string $title,
@@ -41,18 +45,45 @@ class CreateTodoIssue
         array $newLabelNames = [],
         ?string $idempotencyKey = null,
         array $addLinks = [],
+        array $step = [],
+        ?array $blockedBy = null,
+        ?array $allowedParentIds = null,
+        bool $temporary = false,
     ): Issue {
-        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks): Issue {
+        $create = function () use ($title, $body, $area, $parentId, $groupId, $priorityId, $labelIds, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy, $allowedParentIds, $temporary): Issue {
+            if ($parentId !== null && $allowedParentIds !== null && ! in_array($parentId, $allowedParentIds, true)) {
+                throw new TodoValidationException('The selected parent must already exist before this batch starts.');
+            }
+            $parent = $parentId !== null && $parentId > 0 ? Issue::query()->where('is_available', true)->find($parentId) : null;
+            if ($parentId !== null && $parentId > 0 && ! $parent instanceof Issue) {
+                throw new TodoValidationException('The selected parent is no longer available. Refresh and try again.');
+            }
+            if ($parent instanceof Issue && $parent->is_temporary && ! $temporary) {
+                throw new TodoValidationException('A temporary task can only have temporary children.');
+            }
+            if ($parent instanceof Issue) {
+                $memberships = $parent->projectItems()->where('is_available', true)->whereNull('archived_at')
+                    ->whereHas('project', fn ($query) => $query->where('is_available', true))
+                    ->with('groupOption.field')->get();
+                if ($area === null || $area === 0) {
+                    if ($memberships->count() > 1) {
+                        throw new TodoValidationException('The parent belongs to several areas. Choose an area explicitly.');
+                    }
+                    $area = $memberships->first()?->project_id;
+                }
+                $parentGroup = $memberships->firstWhere('project_id', $area)?->groupOption;
+                if (($groupId === null || $groupId === 0) && ($newGroupName === null || trim($newGroupName) === '')
+                    && $parentGroup instanceof ProjectFieldOption && $parentGroup->field->is_available
+                    && $parentGroup->field->semantic_key === 'group' && $parentGroup->field->project_id === $area) {
+                    $groupId = $parentGroup->id;
+                }
+            }
             if ($newGroupName !== null && trim($newGroupName) !== '' && ($area === null || $area === 0)) {
                 throw new TodoValidationException('Choose an area before creating a Group.');
             }
             $project = $area !== null && $area > 0 ? GitHubProject::query()->where('is_available', true)->find($area) : null;
             if ($area !== null && $area > 0 && ! $project instanceof GitHubProject) {
                 throw new TodoValidationException('The selected area is no longer available. Refresh and try again.');
-            }
-            $parent = $parentId !== null && $parentId > 0 ? Issue::query()->where('is_available', true)->find($parentId) : null;
-            if ($parentId !== null && $parentId > 0 && ! $parent instanceof Issue) {
-                throw new TodoValidationException('The selected parent is no longer available. Refresh and try again.');
             }
             $group = $groupId !== null && $groupId > 0 ? ProjectFieldOption::query()->with('field')->find($groupId) : null;
             if ($groupId !== null && $groupId > 0 && (! $group instanceof ProjectFieldOption || ! $project instanceof GitHubProject || $group->field->project_id !== $project->id)) {
@@ -70,13 +101,14 @@ class CreateTodoIssue
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks): Issue {
+            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy, $temporary): Issue {
                 if ($newGroupName !== null && trim($newGroupName) !== '') {
-                    $group = $this->resolveGroup->handle($project, $newGroupName);
+                    $group = $this->resolveGroup->handle($project, $newGroupName, ! $temporary);
                 }
-                $labels = $this->resolveLabels->handle($repository, $labels, $newLabelNames);
+                $labels = $this->resolveLabels->handle($repository, $labels, $newLabelNames, ! $temporary);
                 $issue = Issue::create([
                     'repository_id' => $repository->id,
+                    'is_temporary' => $temporary,
                     'github_node_id' => null,
                     'github_number' => null,
                     'title' => trim($title),
@@ -119,6 +151,7 @@ class CreateTodoIssue
                 }
 
                 $this->syncLinks->handle($issue, $addLinks, []);
+                $this->syncStep->handle($issue, $step, $blockedBy);
 
                 $assigned = array_filter([
                     'area' => $project?->title,

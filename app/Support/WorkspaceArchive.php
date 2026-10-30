@@ -10,12 +10,12 @@ final class WorkspaceArchive
 {
     public const string FORMAT = 'dibs-workspace';
 
-    public const int VERSION = 2;
+    public const int VERSION = 5;
 
     /** @var list<string> */
     public const array TABLES = [
         'repositories', 'projects', 'project_fields', 'project_field_options',
-        'issues', 'labels', 'issue_label', 'project_items', 'comments', 'issue_links',
+        'issues', 'labels', 'issue_label', 'project_items', 'comments', 'issue_links', 'step_blockers',
         'capture_settings', 'todo_capture_requests', 'mcp_call_logs', 'change_logs',
     ];
 
@@ -25,13 +25,13 @@ final class WorkspaceArchive
         'project_fields' => 'Project fields', 'project_field_options' => 'Groups, statuses and priorities',
         'issues' => 'Tasks and knowledge records', 'labels' => 'Labels',
         'issue_label' => 'Task label assignments', 'project_items' => 'Project memberships and schedules',
-        'comments' => 'Comments and closing notes', 'issue_links' => 'Links between tasks and knowledge records', 'capture_settings' => 'Capture settings',
+        'comments' => 'Comments and closing notes', 'issue_links' => 'Links between tasks and knowledge records', 'step_blockers' => 'Blocked-by edges between plan steps', 'capture_settings' => 'Capture settings',
         'todo_capture_requests' => 'Capture drafts', 'mcp_call_logs' => 'MCP activity history',
         'change_logs' => 'Change history',
     ];
 
     public static function isEmpty(): bool
     {
-        return array_all([...self::TABLES, 'github_push_queue', 'sync_states', 'agent_sessions', 'task_claims', 'mcp_write_receipts'], fn (string $table): bool => ! DB::table($table)->exists());
+        return array_all([...self::TABLES, 'github_push_queue', 'sync_states', 'agent_sessions', 'task_claims', 'mcp_write_receipts', 'delivered_rules'], fn (string $table): bool => ! DB::table($table)->exists());
     }
 }

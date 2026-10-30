@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Mcp\Servers\TodoServer;
 use App\Mcp\Tools\ReviseTodoTask;
 use App\Models\GitHubProject;
+use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectField;
@@ -160,4 +161,113 @@ it('rejects malformed link arguments', function (): void {
     $issue = Issue::factory()->create(['revision' => 1]);
 
     TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'addLinks' => [['issueId' => 'abc']]])->assertHasErrors();
+});
+
+function areaWithOptions(string $title, string $priorityName = '1'): array
+{
+    $project = GitHubProject::factory()->create(['title' => $title]);
+    $group = ProjectFieldOption::factory()->for(ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']), 'field')->create(['name' => 'Dibs']);
+    $priority = ProjectFieldOption::factory()->for(ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'priority']), 'field')->create(['name' => $priorityName]);
+
+    return [$project, $group, $priority];
+}
+
+it('sets and clears a Priority by id and by name, queueing each change', function (): void {
+    [$project, , $one] = areaWithOptions('Alpha', '1');
+    $five = ProjectFieldOption::factory()->for($one->field, 'field')->create(['name' => '5']);
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $item = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create(['priority_option_id' => $five->id]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'priorityId' => $one->id])->assertOk()->assertHasNoErrors();
+    expect($item->fresh()->priority_option_id)->toBe($one->id);
+    expect(GitHubPushQueueItem::query()->where('operation', 'set_project_item_priority')->where('target_id', $item->id)->count())->toBe(1);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 2, 'priorityName' => '5'])->assertOk()->assertHasNoErrors();
+    expect($item->fresh()->priority_option_id)->toBe($five->id);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 3, 'clearPriority' => true])->assertOk()->assertHasNoErrors();
+    expect($item->fresh()->priority_option_id)->toBeNull();
+    expect(GitHubPushQueueItem::query()->where('operation', 'clear_project_item_priority')->where('target_id', $item->id)->count())->toBe(1);
+});
+
+it('refuses a Priority from another Area, an unknown name, and a Priority on an issue with no area', function (): void {
+    [$project] = areaWithOptions('Alpha');
+    [, , $foreign] = areaWithOptions('Beta');
+    $issue = Issue::factory()->create(['revision' => 1]);
+    ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create();
+    $bare = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'priorityId' => $foreign->id])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'priorityName' => '9'])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'priorityId' => $foreign->id, 'clearPriority' => true])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $bare->id, 'expectedRevision' => 1, 'priorityId' => $foreign->id])->assertHasErrors();
+
+    expect($issue->fresh()->revision)->toBe(1)->and($bare->fresh()->revision)->toBe(1);
+});
+
+it('moves an issue to another Area by id or title, dropping the old Group and Priority', function (): void {
+    [$alpha, $group, $priority] = areaWithOptions('Alpha');
+    [$beta] = areaWithOptions('Beta');
+    $issue = Issue::factory()->create(['revision' => 1]);
+    $old = ProjectItem::factory()->for($alpha, 'project')->for($issue, 'issue')->create(['github_node_id' => null, 'group_option_id' => $group->id, 'priority_option_id' => $priority->id]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaId' => $beta->id])->assertOk()->assertHasNoErrors();
+
+    $new = ProjectItem::query()->where('issue_id', $issue->id)->where('project_id', $beta->id)->first();
+    expect($new->group_option_id)->toBeNull()->and($new->priority_option_id)->toBeNull()
+        ->and($old->fresh()->is_available)->toBeFalse();
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 2, 'areaName' => 'alpha'])->assertOk()->assertHasNoErrors();
+    expect(ProjectItem::query()->where('issue_id', $issue->id)->where('project_id', $alpha->id)->where('is_available', true)->count())->toBe(1);
+});
+
+it('moves Area and sets the new Area\'s Group and Priority in one call', function (): void {
+    [$alpha] = areaWithOptions('Alpha');
+    [$beta, $betaGroup, $betaPriority] = areaWithOptions('Beta', '2');
+    $issue = Issue::factory()->create(['revision' => 1]);
+    ProjectItem::factory()->for($alpha, 'project')->for($issue, 'issue')->create(['github_node_id' => null]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaId' => $beta->id, 'groupId' => $betaGroup->id, 'priorityName' => '2'])->assertOk()->assertHasNoErrors();
+
+    $new = ProjectItem::query()->where('issue_id', $issue->id)->where('project_id', $beta->id)->first();
+    expect($new->group_option_id)->toBe($betaGroup->id)->and($new->priority_option_id)->toBe($betaPriority->id);
+});
+
+it('gives an area-less issue an Area, and clears an Area', function (): void {
+    [$alpha] = areaWithOptions('Alpha');
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaId' => $alpha->id])->assertOk()->assertHasNoErrors();
+    expect(ProjectItem::query()->where('issue_id', $issue->id)->where('is_available', true)->count())->toBe(1);
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 2, 'clearArea' => true])->assertOk()->assertHasNoErrors();
+    expect(ProjectItem::query()->where('issue_id', $issue->id)->where('is_available', true)->count())->toBe(0);
+});
+
+it('refuses an unknown Area, contradictory Area arguments, a Group from the old Area, and clearArea with a Priority', function (): void {
+    [$alpha, $alphaGroup, $alphaPriority] = areaWithOptions('Alpha');
+    [$beta] = areaWithOptions('Beta');
+    $issue = Issue::factory()->create(['revision' => 1]);
+    ProjectItem::factory()->for($alpha, 'project')->for($issue, 'issue')->create();
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaId' => 999_999])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaName' => 'Nope'])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaName' => ' '])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaId' => $beta->id, 'clearArea' => true])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaId' => $beta->id, 'groupId' => $alphaGroup->id])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'areaId' => $beta->id, 'priorityId' => $alphaPriority->id])->assertHasErrors();
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'clearArea' => true, 'clearPriority' => true])->assertHasErrors();
+
+    expect($issue->fresh()->revision)->toBe(1)
+        ->and(ProjectItem::query()->where('issue_id', $issue->id)->where('is_available', true)->pluck('project_id')->all())->toBe([$alpha->id]);
+});
+
+it('reports a conflict instead of moving Area or Priority on a stale revision', function (): void {
+    [$alpha, , $priority] = areaWithOptions('Alpha');
+    $issue = Issue::factory()->create(['revision' => 2]);
+    $item = ProjectItem::factory()->for($alpha, 'project')->for($issue, 'issue')->create();
+
+    TodoServer::tool(ReviseTodoTask::class, ['id' => $issue->id, 'expectedRevision' => 1, 'priorityId' => $priority->id])->assertOk()->assertSee('"conflict":true');
+
+    expect($item->fresh()->priority_option_id)->toBeNull();
 });

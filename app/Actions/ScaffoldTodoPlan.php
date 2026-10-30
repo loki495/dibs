@@ -21,7 +21,7 @@ class ScaffoldTodoPlan
      * set of children.
      *
      * @param  list<int>  $labelIds
-     * @param  list<array{title: string, body?: ?string, groupId?: ?int, priorityId?: ?int, labelIds?: list<int>, addLinks?: list<array{issueId: int, commentId?: ?int}>}>  $children
+     * @param  list<array{title: string, body?: ?string, groupId?: ?int, priorityId?: ?int, labelIds?: list<int>, addLinks?: list<array{issueId: int, commentId?: ?int}>, step?: array<string, ?string>, blockedBy?: list<int>}>  $children  blockedBy holds indexes of earlier children
      */
     public function handle(
         string $title,
@@ -38,12 +38,18 @@ class ScaffoldTodoPlan
             if (trim($child['title']) === '') {
                 throw new TodoValidationException("Child task at position {$index} needs a title.");
             }
+            foreach ($child['blockedBy'] ?? [] as $blocker) {
+                if ($blocker < 0 || $blocker >= $index) {
+                    throw new TodoValidationException("Child task at position {$index} can only be blocked by an earlier child, by its position (0 to ".($index - 1).').');
+                }
+            }
         }
 
         $scaffold = fn (): Issue => DB::transaction(function () use ($title, $body, $area, $groupId, $priorityId, $labelIds, $newLabelName, $children): Issue {
             $plan = $this->create->handle(title: $title, body: $body, area: $area, groupId: $groupId, priorityId: $priorityId, labelIds: $labelIds, newLabelNames: $newLabelName !== null ? [$newLabelName] : []);
+            $ids = [];
             foreach ($children as $child) {
-                $this->create->handle(
+                $ids[] = $this->create->handle(
                     title: $child['title'],
                     body: $child['body'] ?? null,
                     area: $area,
@@ -52,7 +58,9 @@ class ScaffoldTodoPlan
                     priorityId: $child['priorityId'] ?? null,
                     labelIds: $child['labelIds'] ?? [],
                     addLinks: $child['addLinks'] ?? [],
-                );
+                    step: $child['step'] ?? [],
+                    blockedBy: isset($child['blockedBy']) ? array_map(fn (int $position): int => $ids[$position], $child['blockedBy']) : null,
+                )->id;
             }
 
             return $plan->refresh()->load('children');

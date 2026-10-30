@@ -2,10 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\CreateTodoComment;
+use App\Actions\CreateTodoIssue;
 use App\Mcp\Servers\TodoServer;
+use App\Models\AgentSession;
 use App\Models\ChangeLog;
+use App\Models\Comment;
+use App\Models\GitHubPushQueueItem;
+use App\Models\GitHubRepository;
 use App\Models\Issue;
 use App\Models\McpCallLog;
+use App\Models\McpWriteReceipt;
+use App\Models\TaskClaim;
 use App\Services\Activity\ActivityContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Response;
@@ -86,6 +94,77 @@ function onlyCallLog(): McpCallLog
 
 beforeEach(function (): void {
     app()->forgetScopedInstances();
+});
+
+it('keeps temporary replay keys, comment edits and batch reads out of MCP history', function (): void {
+    config(['github.owner' => '', 'github.repository' => '']);
+    $task = app(CreateTodoIssue::class)->handle(title: 'Private handoff', idempotencyKey: 'private-replay', temporary: true);
+    $comment = app(CreateTodoComment::class)->handle($task->id, 'Private state');
+    $server = loggingServer($transport);
+
+    $replayed = callTool($server, $transport, 'todo_create', ['title' => 'Retry', 'temporary' => false, 'idempotencyKey' => 'private-replay']);
+    expect($replayed['result']['structuredContent']['id'])->toBe($task->id);
+    $edited = callTool($server, $transport, 'todo_comment', ['commentId' => $comment->id, 'expectedRevision' => $comment->revision, 'body' => 'Private revised state']);
+    expect($edited['result']['isError'])->toBeFalse()
+        ->and($comment->fresh()->body)->toBe('Private revised state');
+    $read = callTool($server, $transport, 'todo_show', ['ids' => [$task->id]]);
+    expect($read['result']['isError'])->toBeFalse()
+        ->and($read['result']['structuredContent']['items'][0]['id'])->toBe($task->id)
+        ->and(McpCallLog::count())->toBe(0);
+});
+
+it('consumes a temporary handoff through MCP without leaving history or mirror work', function (): void {
+    config(['github.owner' => '', 'github.repository' => '']);
+    GitHubRepository::factory()->create();
+    $server = loggingServer($transport);
+    $created = callTool($server, $transport, 'todo_create', [
+        'title' => 'Private handoff', 'body' => 'Private session state', 'temporary' => true,
+        'idempotencyKey' => 'private-handoff',
+    ]);
+    $id = $created['result']['structuredContent']['id'];
+    $comment = callTool($server, $transport, 'todo_comment', [
+        'issueId' => $id, 'body' => 'Private remaining work', 'idempotencyKey' => 'private-comment',
+    ]);
+    expect($comment['result']['isError'])->toBeFalse();
+    $claimed = callTool($server, $transport, 'todo_claim', ['issueId' => $id, 'agentName' => 'test worker']);
+    $completed = callTool($server, $transport, 'todo_complete', [
+        'issueId' => $id, 'capabilityToken' => $claimed['result']['structuredContent']['capabilityToken'],
+    ]);
+
+    expect($completed['result']['structuredContent'])->toMatchArray(['id' => $id, 'temporary' => true, 'deleted' => true])
+        ->and(Issue::find($id))->toBeNull()
+        ->and(McpCallLog::count())->toBe(0)
+        ->and(ChangeLog::count())->toBe(0)
+        ->and(Comment::count())->toBe(0)
+        ->and(TaskClaim::count())->toBe(0)
+        ->and(AgentSession::count())->toBe(0)
+        ->and(McpWriteReceipt::count())->toBe(0)
+        ->and(GitHubPushQueueItem::count())->toBe(0);
+});
+
+it('does not retain rejected temporary creation arguments', function (mixed $temporary, bool $batch): void {
+    $server = loggingServer($transport);
+    $task = ['title' => 'Private failed task', 'body' => 'Private failed body', 'temporary' => $temporary];
+
+    $response = callTool($server, $transport, 'todo_create', $batch ? ['tasks' => [$task]] : $task);
+
+    expect($response)->not->toHaveKey('error')
+        ->and(McpCallLog::count())->toBe(0)
+        ->and(ChangeLog::count())->toBe(0);
+    if ($batch) {
+        expect($response['result']['structuredContent']['failed'])->toBe(1);
+    } else {
+        expect($response['result']['isError'])->toBeTrue();
+    }
+})->with(['string' => 'true', 'null' => null, 'array' => [[]]])->with([false, true]);
+
+it('allows tools to validate malformed id lists before logging', function (): void {
+    $server = loggingServer($transport);
+
+    $response = callTool($server, $transport, 'todo_show', ['ids' => [[1]]]);
+
+    expect($response)->not->toHaveKey('error')
+        ->and($response['result']['isError'])->toBeTrue();
 });
 
 it('logs a successful read with its tool, arguments, duration, agent and request id, and leaves the response alone', function (): void {

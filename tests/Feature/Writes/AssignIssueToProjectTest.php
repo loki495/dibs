@@ -64,3 +64,14 @@ it('ignores memberships that are already unavailable or archived', function (): 
 
     expect(GitHubPushQueueItem::query()->where('operation', 'delete_project_item')->count())->toBe(0);
 });
+
+it('revives a membership retired by an earlier move instead of colliding on the unique pair', function (): void {
+    $issue = Issue::factory()->create();
+    $project = GitHubProject::factory()->create();
+    $retired = ProjectItem::factory()->for($project, 'project')->for($issue, 'issue')->create(['github_node_id' => 'PVTI_gone', 'is_available' => false]);
+
+    $item = app(AssignIssueToProject::class)->handle($issue, $project);
+
+    expect($item->id)->toBe($retired->id)->and($item->is_available)->toBeTrue()->and($item->github_node_id)->toBeNull()
+        ->and(GitHubPushQueueItem::query()->where('operation', 'add_project_membership')->where('target_id', $retired->id)->count())->toBe(1);
+});

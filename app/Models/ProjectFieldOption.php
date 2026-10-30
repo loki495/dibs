@@ -17,6 +17,12 @@ class ProjectFieldOption extends Model
 
     protected $guarded = [];
 
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return ['is_temporary_origin' => 'boolean'];
+    }
+
     /** @return BelongsTo<ProjectField, $this> */
     public function field(): BelongsTo
     {

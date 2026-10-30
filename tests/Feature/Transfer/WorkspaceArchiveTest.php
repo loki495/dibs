@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\CloseTodoIssue;
+use App\Actions\CreateTodoIssue;
 use App\Actions\ExportWorkspaceArchive;
 use App\Actions\RestoreWorkspaceArchive;
 use App\Actions\ValidateWorkspaceArchive;
@@ -32,7 +34,7 @@ it('exports archived content and relationships without accounts or capability to
     $archive = app(ExportWorkspaceArchive::class)->handle();
 
     expect($archive['format'])->toBe('dibs-workspace')
-        ->and($archive['version'])->toBe(2)
+        ->and($archive['version'])->toBe(5)
         ->and($archive['data']['issues'])->toHaveCount(2)
         ->and($archive['data']['issue_label'])->toHaveCount(1)
         ->and($archive['data']['comments'][0]['body'])->toBe('Saved note')
@@ -181,3 +183,55 @@ it('rejects scalar structured fields instead of creating records that crash when
     expect(fn () => app(ValidateWorkspaceArchive::class)->handle(json_encode($archive, JSON_THROW_ON_ERROR)))
         ->toThrow(ValidationException::class);
 });
+
+it('round trips temporary tasks and their metadata without changing their consumption behavior', function (): void {
+    config(['github.owner' => '', 'github.repository' => '']);
+    $parent = app(CreateTodoIssue::class)->handle(title: 'Permanent parent');
+    $temporary = app(CreateTodoIssue::class)->handle(title: 'Temporary child', parentId: $parent->id, temporary: true, newLabelNames: ['private label']);
+    $archive = app(ExportWorkspaceArchive::class)->handle();
+    foreach (array_reverse(WorkspaceArchive::TABLES) as $table) {
+        DB::table($table)->delete();
+    }
+    $user = User::factory()->create();
+    app(RestoreWorkspaceArchive::class)->handle(json_encode($archive, JSON_THROW_ON_ERROR), $user->id);
+
+    $restored = Issue::findOrFail($temporary->id);
+    expect($restored->is_temporary)->toBeTrue()
+        ->and((bool) $restored->labels->sole()->is_temporary_origin)->toBeTrue();
+    app(CloseTodoIssue::class)->handle($restored, note: 'Explicit saved summary');
+    expect(Issue::find($temporary->id))->toBeNull()
+        ->and(Comment::where('issue_id', $parent->id)->sole()->body)->toBe('Explicit saved summary')
+        ->and(GitHubPushQueueItem::count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+it('rejects permanent children of temporary parents in an archive', function (): void {
+    $parent = Issue::factory()->temporary()->create();
+    Issue::factory()->create(['parent_issue_id' => $parent->id]);
+    $archive = app(ExportWorkspaceArchive::class)->handle();
+
+    expect(fn () => app(ValidateWorkspaceArchive::class)->handle(json_encode($archive, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+});
+
+it('rejects dependency edges involving temporary tasks in an archive', function (bool $temporaryBlocker): void {
+    $parent = Issue::factory()->create();
+    $task = Issue::factory()->create(['parent_issue_id' => $parent->id, 'is_temporary' => ! $temporaryBlocker]);
+    $blocker = Issue::factory()->create(['parent_issue_id' => $parent->id, 'is_temporary' => $temporaryBlocker]);
+    $task->blockedBy()->attach($blocker);
+    $archive = app(ExportWorkspaceArchive::class)->handle();
+
+    expect(fn () => app(ValidateWorkspaceArchive::class)->handle(json_encode($archive, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with([false, true]);
+
+it('rejects nonboolean temporary flags in archives', function (string $table, string $column): void {
+    Issue::factory()->create();
+    Label::factory()->create();
+    ProjectFieldOption::factory()->create();
+    $archive = app(ExportWorkspaceArchive::class)->handle();
+    $archive['data'][$table][0][$column] = 2;
+
+    expect(fn () => app(ValidateWorkspaceArchive::class)->handle(json_encode($archive, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with([['issues', 'is_temporary'], ['labels', 'is_temporary_origin'], ['project_field_options', 'is_temporary_origin']]);

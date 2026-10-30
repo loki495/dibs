@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\CreateTodoIssue;
+use App\Actions\ReviseTodoIssue;
 use App\Exceptions\TodoValidationException;
 use App\Models\GitHubProject;
 use App\Models\GitHubPushQueueItem;
@@ -11,6 +12,7 @@ use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectField;
 use App\Models\ProjectFieldOption;
+use App\Models\ProjectItem;
 
 beforeEach(function (): void {
     GitHubRepository::factory()->create(['owner' => config('github.owner'), 'name' => config('github.repository'), 'full_name' => config('github.owner').'/'.config('github.repository')]);
@@ -143,4 +145,124 @@ it('is idempotent: retrying the same key returns the original issue without crea
     expect($second->id)->toBe($first->id)
         ->and(Issue::query()->count())->toBe(1)
         ->and(GitHubPushQueueItem::query()->where('operation', 'create_issue')->count())->toBe(1);
+});
+
+describe('parent project and Group defaults', function (): void {
+    beforeEach(function (): void {
+        $this->project = GitHubProject::factory()->create();
+        $field = ProjectField::factory()->for($this->project, 'project')->create(['semantic_key' => 'group']);
+        $this->groupOption = ProjectFieldOption::factory()->for($field, 'field')->create();
+        $priorityField = ProjectField::factory()->for($this->project, 'project')->create(['semantic_key' => 'priority']);
+        $this->priorityOption = ProjectFieldOption::factory()->for($priorityField, 'field')->create();
+        $this->parentIssue = Issue::factory()->for(GitHubRepository::query()->sole(), 'repository')->create();
+        $this->parentItem = ProjectItem::factory()->for($this->project, 'project')->for($this->parentIssue, 'issue')->create([
+            'group_option_id' => $this->groupOption->id, 'priority_option_id' => $this->priorityOption->id,
+        ]);
+    });
+
+    it('inherits missing project and Group but leaves Priority unset, with matching mirror writes', function (?int $empty): void {
+        $issue = app(CreateTodoIssue::class)->handle(title: 'Inherited', parentId: $this->parentIssue->id, area: $empty, groupId: $empty);
+        $item = $issue->projectItems->sole();
+
+        expect($item->project_id)->toBe($this->project->id)
+            ->and($item->group_option_id)->toBe($this->groupOption->id)
+            ->and($item->priority_option_id)->toBeNull()
+            ->and($issue->parent_issue_id)->toBe($this->parentIssue->id)
+            ->and(GitHubPushQueueItem::query()->where('operation', 'add_project_membership')->where('target_id', $item->id)->exists())->toBeTrue()
+            ->and(GitHubPushQueueItem::query()->where('operation', 'set_project_item_group')->where('target_id', $item->id)->sole()->payload)
+            ->toBe(['group_option_id' => $this->groupOption->id])
+            ->and(GitHubPushQueueItem::query()->where('operation', 'set_project_item_priority')->exists())->toBeFalse();
+    })->with([null, 0]);
+
+    it('inherits the Group with an explicit matching project and Priority', function (): void {
+        $issue = app(CreateTodoIssue::class)->handle(title: 'Same project', parentId: $this->parentIssue->id, area: $this->project->id, priorityId: $this->priorityOption->id);
+
+        expect($issue->projectItems->sole()->group_option_id)->toBe($this->groupOption->id)
+            ->and($issue->projectItems->sole()->priority_option_id)->toBe($this->priorityOption->id);
+    });
+
+    it('honors an explicit Group within the inherited project', function (): void {
+        $other = ProjectFieldOption::factory()->for($this->groupOption->field, 'field')->create();
+        $issue = app(CreateTodoIssue::class)->handle(title: 'Override', parentId: $this->parentIssue->id, groupId: $other->id);
+
+        expect($issue->projectItems->sole()->group_option_id)->toBe($other->id);
+    });
+
+    it('creates an explicitly named Group within the inherited project', function (): void {
+        $issue = app(CreateTodoIssue::class)->handle(title: 'Named override', parentId: $this->parentIssue->id, newGroupName: 'New child group');
+
+        expect($issue->projectItems->sole()->project_id)->toBe($this->project->id)
+            ->and($issue->projectItems->sole()->groupOption->name)->toBe('New child group');
+    });
+
+    it('does not carry the inherited Group into an explicit different project', function (): void {
+        $other = GitHubProject::factory()->create();
+        $issue = app(CreateTodoIssue::class)->handle(title: 'Other project', parentId: $this->parentIssue->id, area: $other->id);
+
+        expect($issue->projectItems->sole()->project_id)->toBe($other->id)
+            ->and($issue->projectItems->sole()->group_option_id)->toBeNull();
+    });
+
+    it('rejects a Group from a different project after resolving defaults without writing anything', function (): void {
+        $other = GitHubProject::factory()->create();
+        expect(fn () => app(CreateTodoIssue::class)->handle(title: 'Invalid override', parentId: $this->parentIssue->id, area: $other->id, groupId: $this->groupOption->id))
+            ->toThrow(TodoValidationException::class, 'Group is no longer available');
+
+        expect(Issue::query()->count())->toBe(1)->and(GitHubPushQueueItem::query()->count())->toBe(0);
+    });
+
+    it('requires an explicit project when the parent has several active memberships', function (): void {
+        ProjectItem::factory()->for($this->parentIssue, 'issue')->create();
+
+        expect(fn () => app(CreateTodoIssue::class)->handle(title: 'Ambiguous', parentId: $this->parentIssue->id))
+            ->toThrow(TodoValidationException::class, 'Choose an area explicitly');
+        expect(Issue::query()->count())->toBe(1)->and(GitHubPushQueueItem::query()->count())->toBe(0);
+
+        $issue = app(CreateTodoIssue::class)->handle(title: 'Explicit project', parentId: $this->parentIssue->id, area: $this->project->id);
+        expect($issue->projectItems->sole()->group_option_id)->toBe($this->groupOption->id);
+    });
+
+    it('ignores unavailable or archived memberships and unavailable projects', function (string $retired): void {
+        match ($retired) {
+            'membership' => $this->parentItem->update(['is_available' => false]),
+            'archived' => $this->parentItem->update(['archived_at' => now()]),
+            'project' => $this->project->update(['is_available' => false]),
+        };
+
+        $issue = app(CreateTodoIssue::class)->handle(title: 'No active defaults', parentId: $this->parentIssue->id);
+        expect($issue->projectItems)->toHaveCount(0);
+    })->with(['membership', 'archived', 'project']);
+
+    it('does not inherit a Group whose field is unavailable', function (): void {
+        $this->groupOption->field->update(['is_available' => false]);
+        $issue = app(CreateTodoIssue::class)->handle(title: 'No stale group', parentId: $this->parentIssue->id);
+        expect($issue->projectItems->sole()->group_option_id)->toBeNull();
+    });
+
+    it('keeps parentless creation unassigned and accepts a parent with no project', function (): void {
+        $plain = app(CreateTodoIssue::class)->handle(title: 'No parent');
+        $unassignedParent = Issue::factory()->for($this->parentIssue->repository, 'repository')->create();
+        $child = app(CreateTodoIssue::class)->handle(title: 'No parent project', parentId: $unassignedParent->id);
+        expect($plain->projectItems)->toHaveCount(0)->and($child->projectItems)->toHaveCount(0);
+    });
+
+    it('replays idempotent creates without recalculating changed parent defaults', function (): void {
+        $first = app(CreateTodoIssue::class)->handle(title: 'Retry', parentId: $this->parentIssue->id, idempotencyKey: 'inherit-retry');
+        $this->parentItem->update(['group_option_id' => null]);
+        $retry = app(CreateTodoIssue::class)->handle(title: 'Retry', parentId: $this->parentIssue->id, idempotencyKey: 'inherit-retry');
+        expect($retry->id)->toBe($first->id)
+            ->and($retry->projectItems->sole()->group_option_id)->toBe($this->groupOption->id);
+    });
+
+    it('preserves project and Group when an existing issue is reparented', function (): void {
+        $other = GitHubProject::factory()->create();
+        $field = ProjectField::factory()->for($other, 'project')->create(['semantic_key' => 'group']);
+        $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+        $existing = app(CreateTodoIssue::class)->handle(title: 'Move parent only', area: $other->id, groupId: $group->id);
+
+        app(ReviseTodoIssue::class)->handle(id: $existing->id, expectedRevision: 1, parentId: $this->parentIssue->id);
+        expect($existing->fresh()->parent_issue_id)->toBe($this->parentIssue->id)
+            ->and($existing->fresh()->projectItems->sole()->project_id)->toBe($other->id)
+            ->and($existing->fresh()->projectItems->sole()->group_option_id)->toBe($group->id);
+    });
 });

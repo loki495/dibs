@@ -43,6 +43,7 @@ class DescribeTodoIssue
         }
 
         $body = $this->trust->allows($issue->author_login) ? $issue->body : null;
+        $step = $this->step($issue, $body);
         $bodyTruncated = $maxBodyLength !== null && $body !== null && mb_strlen($body) > $maxBodyLength;
         if ($bodyTruncated) {
             $body = mb_substr($body, 0, $maxBodyLength).'…';
@@ -66,6 +67,10 @@ class DescribeTodoIssue
             'linkedBy' => $this->links->incoming($issue),
             'closing' => $this->closing($issue),
         ];
+
+        if ($step !== null) {
+            $result['step'] = $step;
+        }
 
         if ($issue->children->isNotEmpty()) {
             $result['stepLint'] = $this->stepLint($issue);
@@ -96,7 +101,7 @@ class DescribeTodoIssue
      * closing an issue again leaves its earlier closing comments in history but reports only the
      * latest one here, alongside the current `state_reason`.
      *
-     * @return array{reason: ?string, note: ?string, references: ?list<string>, closedAt: string}|null
+     * @return array{reason: ?string, note: ?string, references: ?list<string>, result: ?array<string, mixed>, closedAt: string}|null
      */
     private function closing(Issue $issue): ?array
     {
@@ -110,8 +115,24 @@ class DescribeTodoIssue
             'reason' => $issue->state_reason,
             'note' => $note !== null && $this->trust->allows($note->author_login) ? $note->body : null,
             'references' => $note?->references,
+            'result' => $note?->result,
             'closedAt' => ($issue->closed_at ?? ($note !== null ? $note->created_at : $issue->updated_at))->toIso8601String(),
         ];
+    }
+
+    /**
+     * A step's Done-when, Evidence and Files likely (field, else body line) and its blockers, or null when none is set.
+     *
+     * @return array{doneWhen: ?string, evidence: ?string, filesLikely: ?string, blockedBy: list<array{id: int, title: string, state: string}>}|null
+     */
+    private function step(Issue $issue, ?string $body): ?array
+    {
+        $values = StepTemplate::values($issue, $body);
+        $blockedBy = $issue->blockedBy()->where('is_available', true)->get()
+            ->map(fn (Issue $blocker): array => ['id' => $blocker->id, 'title' => $this->trust->title($blocker), 'state' => $blocker->state])->all();
+        $step = ['doneWhen' => $values['doneWhen'], 'evidence' => $values['evidence'], 'filesLikely' => $values['filesLikely'], 'blockedBy' => $blockedBy];
+
+        return $blockedBy === [] && $values['doneWhen'] === null && $values['evidence'] === null && $values['filesLikely'] === null ? null : $step;
     }
 
     /**
@@ -123,7 +144,7 @@ class DescribeTodoIssue
     {
         return $plan->children
             ->filter(fn (Issue $child): bool => $child->state === 'OPEN' && $child->children_count === 0 && $this->trust->allows($child->author_login))
-            ->map(fn (Issue $child): array => ['id' => $child->id, 'title' => $child->title, 'missing' => StepTemplate::missing($child->body)])
+            ->map(fn (Issue $child): array => ['id' => $child->id, 'title' => $child->title, 'missing' => StepTemplate::missing($child->body, $child)])
             ->filter(fn (array $row): bool => $row['missing'] !== [])
             ->values()
             ->all();

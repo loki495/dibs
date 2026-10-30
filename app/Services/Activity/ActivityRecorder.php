@@ -54,6 +54,10 @@ class ActivityRecorder
      */
     public function mcpCall(string $tool, array $arguments, string $status, ?string $errorMessage, int $durationMs, ?string $agentLabel): ?McpCallLog
     {
+        if ($this->context->isTemporaryOperation()) {
+            return null;
+        }
+
         return $this->guarded(fn (): McpCallLog => McpCallLog::query()->create([
             'request_id' => $this->context->requestId(),
             'tool' => Str::limit($tool, 255),
@@ -136,6 +140,10 @@ class ActivityRecorder
             return null;
         }
 
+        if (Issue::query()->whereKey($id)->where('is_temporary', true)->exists()) {
+            return "#{$id}";
+        }
+
         $title = $this->nameOf(Issue::class, $id);
 
         return $title === null ? "#{$id}" : "{$title} (#{$id})";
@@ -166,6 +174,12 @@ class ActivityRecorder
     /** @param  array<string, array{from: mixed, to: mixed}>  $changes */
     private function write(string $category, string $action, string $summary, array $changes, ?Model $subject, ?string $subjectLabel): ?ChangeLog
     {
+        if ($this->context->isTemporaryOperation() || ($subject instanceof Issue && $subject->is_temporary)
+            || ($subject instanceof Model && $subject->getAttribute('issue_id') !== null
+                && Issue::query()->whereKey($subject->getAttribute('issue_id'))->where('is_temporary', true)->exists())) {
+            return null;
+        }
+
         return $this->guarded(fn (): ChangeLog => ChangeLog::query()->create([
             'request_id' => $this->context->requestId(),
             'source' => $this->context->source(),

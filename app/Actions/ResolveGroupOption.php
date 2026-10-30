@@ -20,7 +20,7 @@ class ResolveGroupOption
      * Find a project's Group by name (case-insensitively) or create it locally and queue its creation.
      * Runs inside the caller's transaction.
      */
-    public function handle(GitHubProject $project, string $name): ProjectFieldOption
+    public function handle(GitHubProject $project, string $name, bool $mirror = true): ProjectFieldOption
     {
         $name = trim($name);
         $field = $project->fields()->where('semantic_key', 'group')->where('is_available', true)->first();
@@ -35,13 +35,16 @@ class ResolveGroupOption
 
         $option = ProjectFieldOption::create([
             'project_field_id' => $field->id,
+            'is_temporary_origin' => ! $mirror,
             'github_option_id' => null,
             'name' => $name,
             'color' => 'GRAY',
             'position' => (int) $field->options()->max('position') + 1,
         ]);
-        $this->enqueue->handle('create_group_option', 'project_field_option', $option->id, ['name' => $option->name, 'color' => 'GRAY'], 'group_option:create:'.$option->id);
-        $this->recorder->change('ResolveGroupOption', $option, 'Created Group', $this->recorder->diffModel($option, ['name', 'color']));
+        if ($mirror) {
+            $this->enqueue->handle('create_group_option', 'project_field_option', $option->id, ['name' => $option->name, 'color' => 'GRAY'], 'group_option:create:'.$option->id);
+            $this->recorder->change('ResolveGroupOption', $option, 'Created Group', $this->recorder->diffModel($option, ['name', 'color']));
+        }
 
         return $option;
     }

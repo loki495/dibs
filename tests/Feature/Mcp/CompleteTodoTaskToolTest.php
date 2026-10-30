@@ -8,7 +8,14 @@ use App\Mcp\Tools\CompleteTodoTaskTool;
 use App\Models\Comment;
 use App\Models\GitHubPushQueueItem;
 use App\Models\Issue;
+use App\Models\Label;
 use App\Models\TaskClaim;
+
+it('declares completion and temporary discard reasons in its public schema', function (): void {
+    $schema = app(CompleteTodoTaskTool::class)->toArray()['inputSchema'];
+    expect($schema['properties']['reason']['enum'])->toBe(['COMPLETED', 'NOT_PLANNED'])
+        ->and($schema['properties']['reason']['description'])->toContain('explicit discard');
+});
 
 it('exposes the tool under the todo_complete name', function (): void {
     expect(app(CompleteTodoTaskTool::class)->name())->toBe('todo_complete');
@@ -75,3 +82,33 @@ it('rejects malformed reason or references arguments before calling the handler'
     'reference too long' => [['references' => [str_repeat('x', 501)]], 'references.0'],
     'too many references' => [['references' => array_fill(0, 21, 'x')], 'references'],
 ]);
+
+it('passes result evidence through and returns it in closing.result', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+    $issue->labels()->attach(Label::factory()->create(['name' => 'agent task']));
+    $claim = app(ClaimTaskForAgent::class)->handle($issue, 'codex', posix_getppid(), 30);
+    $evidence = ['commit' => 'abc1234', 'tests' => ['command' => 'composer pest', 'exit_code' => 0], 'docs' => ['README.md']];
+
+    TodoServer::tool(CompleteTodoTaskTool::class, ['issueId' => $issue->id, 'capabilityToken' => $claim['capability_token'], 'summary' => 'Shipped it.', 'result' => $evidence])
+        ->assertOk()
+        ->assertHasNoErrors()
+        ->assertSee('"commit":"abc1234"');
+
+    expect(Comment::query()->sole()->result)->toBe($evidence);
+});
+
+it('returns the guard refusal as a tool error naming the missing field, and completes with force and a real reason', function (): void {
+    $issue = Issue::factory()->create(['state' => 'OPEN']);
+    $issue->labels()->attach(Label::factory()->create(['name' => 'bug']));
+    $claim = app(ClaimTaskForAgent::class)->handle($issue, 'codex', posix_getppid(), 30);
+    $arguments = ['issueId' => $issue->id, 'capabilityToken' => $claim['capability_token'], 'summary' => 'Fixed upstream.'];
+
+    TodoServer::tool(CompleteTodoTaskTool::class, $arguments)->assertHasErrors(['result.commit', 'force: true']);
+    TodoServer::tool(CompleteTodoTaskTool::class, [...$arguments, 'force' => true, 'forceReason' => 'force'])->assertHasErrors(['force needs a real reason']);
+    expect($issue->fresh()->state)->toBe('OPEN');
+
+    TodoServer::tool(CompleteTodoTaskTool::class, [...$arguments, 'force' => true, 'forceReason' => 'fixed by the vendor upstream, no commit of ours'])
+        ->assertHasNoErrors()
+        ->assertSee('Guard overridden: fixed by the vendor upstream');
+    expect($issue->fresh()->state)->toBe('CLOSED');
+});

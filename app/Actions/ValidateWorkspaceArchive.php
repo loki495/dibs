@@ -129,8 +129,16 @@ class ValidateWorkspaceArchive
                 }
             }
         }
+        foreach ($data['step_blockers'] as $edge) {
+            if ($byId['issues'][$edge['issue_id']]['is_temporary'] || $byId['issues'][$edge['blocked_by_issue_id']]['is_temporary']) {
+                $this->invalid(__('Temporary tasks cannot participate in dependency edges.'));
+            }
+        }
         $finished = [];
         foreach ($data['issues'] as $issue) {
+            if ($issue['parent_issue_id'] !== null && $byId['issues'][$issue['parent_issue_id']]['is_temporary'] && ! $issue['is_temporary']) {
+                $this->invalid(__('A temporary task can only have temporary children.'));
+            }
             $path = [];
             $id = $issue['id'];
             while ($id !== null && ! isset($finished[$id])) {
@@ -159,7 +167,7 @@ class ValidateWorkspaceArchive
         }
         $jsonColumns = [
             'project_fields' => ['configuration_json'], 'project_items' => ['raw_fields_json'],
-            'comments' => ['references'], 'capture_settings' => ['enabled_agents'],
+            'comments' => ['references', 'result'], 'capture_settings' => ['enabled_agents'],
             'todo_capture_requests' => ['draft'], 'mcp_call_logs' => ['arguments'], 'change_logs' => ['changes'],
         ];
         foreach ($jsonColumns[$table] ?? [] as $name) {
@@ -180,7 +188,7 @@ class ValidateWorkspaceArchive
                 if (json_last_error() !== JSON_ERROR_NONE || ($value !== null && ! is_array($value))) {
                     $this->invalid(__('Structured archive fields must contain objects or lists.'));
                 }
-                if ($table === 'comments' && $value !== null && (! array_is_list($value) || ! array_all($value, fn (mixed $reference): bool => is_string($reference)))) {
+                if ($table === 'comments' && $name === 'references' && $value !== null && (! array_is_list($value) || ! array_all($value, fn (mixed $reference): bool => is_string($reference)))) {
                     $this->invalid(__('Closing references must be a list of strings.'));
                 }
             }

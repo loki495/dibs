@@ -114,3 +114,18 @@ it('rejects a plan-level groupId that belongs to a different area', function ():
 
     expect(Issue::query()->count())->toBe(0);
 });
+
+it('defaults child Groups to the plan Group, honoring child overrides and leaving Priority unset', function (): void {
+    $project = GitHubProject::factory()->create();
+    $field = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'group']);
+    $group = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $other = ProjectFieldOption::factory()->for($field, 'field')->create();
+    $priorityField = ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'priority']);
+    $priority = ProjectFieldOption::factory()->for($priorityField, 'field')->create();
+
+    $plan = app(ScaffoldTodoPlan::class)->handle(title: 'Inherited plan', area: $project->id, groupId: $group->id, priorityId: $priority->id,
+        children: [['title' => 'Default'], ['title' => 'Null default', 'groupId' => null], ['title' => 'Override', 'groupId' => $other->id]]);
+
+    expect($plan->children->map(fn (Issue $child) => $child->projectItems->sole()->group_option_id)->all())->toBe([$group->id, $group->id, $other->id])
+        ->and($plan->children->every(fn (Issue $child) => $child->projectItems->sole()->priority_option_id === null))->toBeTrue();
+});

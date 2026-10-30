@@ -9,19 +9,24 @@ use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
 use App\Models\Comment;
+use App\Support\TextReplacements;
 use Illuminate\Support\Facades\DB;
 
 class ReviseTodoComment
 {
     public function __construct(private readonly ResolveIdempotentWrite $idempotent) {}
 
-    public function handle(int $id, string $body, int $expectedRevision, ?string $idempotencyKey = null): Comment
+    /** @param  list<array{from: string, to: string, all?: bool}>  $replace  exact-string edits of the current body, instead of a whole new $body */
+    public function handle(int $id, ?string $body, int $expectedRevision, ?string $idempotencyKey = null, array $replace = []): Comment
     {
-        if (trim($body) === '') {
+        if (($body === null) === ($replace === [])) {
+            throw new TodoValidationException('Provide either a new comment body or replace edits, not both.');
+        }
+        if ($body !== null && trim($body) === '') {
             throw new TodoValidationException('A comment body is required.');
         }
 
-        $revise = function () use ($id, $body, $expectedRevision): Comment {
+        $revise = function () use ($id, $body, $expectedRevision, $replace): Comment {
             $comment = Comment::query()->find($id);
             if (! $comment instanceof Comment) {
                 throw new TodoRecordNotFoundException("No comment with local id [{$id}].");
@@ -31,6 +36,11 @@ class ReviseTodoComment
             }
             if ($comment->revision !== $expectedRevision) {
                 throw new TodoStaleRevisionException($comment->id, "Comment (local id {$id}) has changed since expectedRevision was read. Reread it and reconcile before retrying.");
+            }
+
+            $body ??= TextReplacements::apply($comment->body, $replace);
+            if (trim($body) === '') {
+                throw new TodoValidationException('A comment body is required.');
             }
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's

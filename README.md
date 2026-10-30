@@ -34,6 +34,8 @@ local SQLite is authoritative.
 
 *(Screenshots show seeded sample data — see `database/seeders/DemoSeeder.php`.)*
 
+Temporary tasks are local-only, short-lived coordination records. Create one with `todo_create` using `temporary: true` or `todo:agent:create --temporary`. They appear marked in the workspace and agent reads, but are excluded from durable counts. Completing or deleting one permanently removes it; see [the agent interface](docs/agent-interface.md#temporary-tasks) for parent, claim, and summary behavior.
+
 ## Quick start
 
 Requires Docker and Docker Compose (or see [Running without Docker](#running-without-docker)).
@@ -262,11 +264,26 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
 - **Checking before re-reading** — `todo_peek` reports id/title/revision/state for a batch of ids
   in one cheap call, no body, so a cached record can be checked for change without paying for a
   full `todo_show`; `todo_show`'s `maxBodyLength` gives a cheap truncated preview for the same
-  reason.
+  reason. Read selected records together with `todo_show({ids: [...]})` (up to 20), or check
+  several claims with `todo_claim_status({issueIds: [...]})` (up to 100). Batch reads preserve
+  order and report individual errors; batch show also bounds its JSON payload and marks clipped
+  or omitted fields.
+- **Filing several tasks** — `todo_create({tasks: [...]})` creates up to 20 independent tasks
+  in one call with ordered per-task results. Successful items stay saved when another fails;
+  per-task retry keys prevent duplicates on keyed retries. The CLI accepts the same definitions
+  from a JSON file with `todo:agent:create --tasks-file=...`.
+- **Creating child tasks** — a new task under a parent defaults to its project and Group when
+  those fields are blank. Explicit choices win; a parent in several projects needs an explicit
+  project choice. Scaffold children use the same Group default, with Priority set separately.
 - **Plans and progress** — `todo_scaffold_plan` and `todo_revise` let an agent record a multi-step
   plan up front and keep it current as work progresses (`todo_revise` edits a record's title, body,
-  Group, parent and labels with a stale-write check), so the plan itself — not a chat transcript
+  Area, Group, Priority, parent and labels with a stale-write check), so the plan itself — not a chat transcript
   — is the durable record.
+- **Picking up the next step** — steps can carry Done-when, Evidence and Files likely as fields
+  and wait on sibling steps (`blockedBy`). `todo_next` returns a plan's first open, unclaimed,
+  unblocked step with a short work order (objective, Done-when, files, linked rules, last
+  checkpoint), and `todo_claim` returns the same brief, sending each linked rule's text only once
+  per agent, so a session can start a step cold from the brief alone.
 - **Project knowledge** — research, lessons, and decisions get saved as their own records
   (`todo_create` with a knowledge label), discoverable later instead of buried in a comment
   history no one re-reads.
@@ -288,7 +305,7 @@ duplicating or colliding on the same task, all without ever handling your GitHub
 write goes through the same Actions the web UI uses. Completing a task can carry a closing note,
 a reason (`COMPLETED`/`NOT_PLANNED`), and references, all visible afterward via `todo_show`; `todo_reopen` puts a closed task back to open. See
 [`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a partial JSON CLI
-fallback (`php artisan todo:agent:*`, nine commands, not the full tool set) for scripting or recovery.
+fallback (`php artisan todo:agent:*`, ten commands, not the full tool set) for scripting or recovery.
 
 To teach an agent how to use these tools well, drop [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md)
 into its skills directory (or paste it into its instructions). It's a short, generic guide in the

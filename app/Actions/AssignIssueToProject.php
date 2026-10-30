@@ -29,6 +29,13 @@ class AssignIssueToProject
         if ($project instanceof GitHubProject) {
             $item = $memberships->firstWhere('project_id', $project->id);
             if (! $item instanceof ProjectItem) {
+                $item = ProjectItem::query()->where('project_id', $project->id)->where('issue_id', $issue->id)->first();
+            }
+            if ($item instanceof ProjectItem && ! $item->is_available) {
+                // A membership retired by an earlier move away: reuse the row (project_id + issue_id is unique), starting clean and re-adding it remotely.
+                $item->update(['is_available' => true, 'archived_at' => null, 'github_node_id' => null, 'group_option_id' => null, 'priority_option_id' => null, 'last_seen_at' => now()]);
+                $this->enqueue->handle('add_project_membership', 'project_item', $item->id, [], 'project_item:create:'.$item->id.':'.now()->timestamp);
+            } elseif (! $item instanceof ProjectItem) {
                 $item = ProjectItem::create([
                     'project_id' => $project->id,
                     'issue_id' => $issue->id,

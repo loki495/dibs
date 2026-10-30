@@ -21,7 +21,7 @@ class Issue extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['remote_updated_at' => 'datetime', 'closed_at' => 'datetime', 'last_synced_at' => 'datetime', 'is_available' => 'boolean', 'last_seen_at' => 'datetime'];
+        return ['remote_updated_at' => 'datetime', 'closed_at' => 'datetime', 'last_synced_at' => 'datetime', 'is_temporary' => 'boolean', 'is_available' => 'boolean', 'last_seen_at' => 'datetime'];
     }
 
     /** @return BelongsTo<GitHubRepository, $this> */
@@ -64,6 +64,12 @@ class Issue extends Model
     public function linkedBy(): HasMany
     {
         return $this->hasMany(IssueLink::class, 'to_issue_id')->orderBy('id');
+    }
+
+    /** @return BelongsToMany<Issue, $this> the sibling steps that must close before this one may start */
+    public function blockedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'step_blockers', 'issue_id', 'blocked_by_issue_id')->withTimestamps()->orderBy('sibling_position');
     }
 
     /** @return HasMany<Comment, $this> */

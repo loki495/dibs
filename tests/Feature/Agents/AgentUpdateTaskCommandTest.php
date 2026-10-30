@@ -6,6 +6,7 @@ use App\Models\GitHubProject;
 use App\Models\Issue;
 use App\Models\Label;
 use App\Models\ProjectField;
+use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 
 it('revises a task title through the CLI', function (): void {
@@ -88,4 +89,25 @@ it('fails with a message for a non-numeric --parent or a parent that is also cle
         ->expectsOutputToContain('numeric --parent')->assertFailed();
     $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--parent' => '5', '--clear-parent' => true])
         ->expectsOutputToContain('both set and cleared')->assertFailed();
+});
+
+it('moves Area and sets a Priority through the CLI, and clears it', function (): void {
+    $project = GitHubProject::factory()->create(['title' => 'Alpha']);
+    $priority = ProjectFieldOption::factory()->for(ProjectField::factory()->for($project, 'project')->create(['semantic_key' => 'priority']), 'field')->create(['name' => '1']);
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--area-name' => 'Alpha', '--priority-name' => '1'])->assertSuccessful();
+    $item = ProjectItem::query()->where('issue_id', $issue->id)->where('is_available', true)->first();
+    expect($item->project_id)->toBe($project->id)->and($item->priority_option_id)->toBe($priority->id);
+
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '2', '--clear-priority' => true])->assertSuccessful();
+    expect($item->fresh()->priority_option_id)->toBeNull();
+});
+
+it('rejects a non-numeric --area or --priority and an unknown Area', function (): void {
+    $issue = Issue::factory()->create(['revision' => 1]);
+
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--area' => 'x'])->assertFailed();
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--priority' => 'x'])->assertFailed();
+    $this->artisan('todo:agent:update', ['issue' => $issue->id, '--expected-revision' => '1', '--area-name' => 'Nope'])->assertFailed();
 });
