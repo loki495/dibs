@@ -11,6 +11,7 @@ use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
 use App\Mcp\Tools\Concerns\ReplaceArgument;
+use App\Mcp\Tools\Concerns\RunsBatch;
 use App\Mcp\Tools\Concerns\StepArgument;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -21,14 +22,16 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Revises an issue\'s canonical title, body, Area (areaId, areaName or clearArea), Priority (priorityId, priorityName or clearPriority), Group (groupId, newGroupName or clearGroup), parent (parentId or clearParent), labels (addLabels/removeLabels deltas by name), explicit links (addLinks/removeLinks) and/or plan step fields (step, blockedBy) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its area (the issue must belong to an area, or be given one with areaId/areaName in the same call; moving Area drops the old Group and Priority); use clearGroup to remove it. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence.')]
+#[Description('Revises an issue\'s canonical title, body, Area (areaId, areaName or clearArea), Priority (priorityId, priorityName or clearPriority), Group (groupId, newGroupName or clearGroup), parent (parentId or clearParent), labels (addLabels/removeLabels deltas by name), explicit links (addLinks/removeLinks) and/or plan step fields (step, blockedBy) — optimistic concurrency against local SQLite, not GitHub: pass the `revision` you last read from todo_show/todo_list as expectedRevision. If the issue changed since then, this returns {conflict: true, current: <fresh todo_show detail>} instead of applying anything or erroring, so you can reread and reconcile. groupId moves the issue to a different Group within its area (the issue must belong to an area, or be given one with areaId/areaName in the same call; moving Area drops the old Group and Priority); use clearGroup to remove it. Add an optional concise note to record why, without duplicating the whole body into a comment. This is for the canonical document itself — use todo_comment for supporting discussion/evidence. Pass items (1–20 objects with the single-issue fields) instead of the top-level fields to revise several issues in one call, best effort, each under its own expectedRevision: returns items with each result (conflict true plus the current revision on a stale one) or its error.')]
 class ReviseTodoTask extends Tool implements Errable
 {
+    use RunsBatch;
+
     protected string $name = 'todo_revise';
 
     public function handle(Request $request, ReviseTodoIssue $revise, DescribeTodoIssue $describe): Response|ResponseFactory
     {
-        $arguments = $request->validate([
+        $rules = [
             'id' => ['required', 'integer', 'min:1'],
             'expectedRevision' => ['required', 'integer', 'min:1'],
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -61,59 +64,72 @@ class ReviseTodoTask extends Tool implements Errable
             'note' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'idempotencyKey' => ['sometimes', 'nullable', 'string', 'max:255'],
             ...StepArgument::rules(),
-        ]);
-        $stepArguments = StepArgument::normalize($arguments);
+        ];
+
+        $one = function (array $arguments) use ($revise, $describe): array {
+            $stepArguments = StepArgument::normalize($arguments);
+
+            try {
+                $issue = $revise->handle(
+                    id: $arguments['id'],
+                    expectedRevision: $arguments['expectedRevision'],
+                    title: $arguments['title'] ?? null,
+                    body: $arguments['body'] ?? null,
+                    groupId: $arguments['groupId'] ?? null,
+                    note: $arguments['note'] ?? null,
+                    idempotencyKey: $arguments['idempotencyKey'] ?? null,
+                    addLabels: $arguments['addLabels'] ?? [],
+                    removeLabels: $arguments['removeLabels'] ?? [],
+                    parentId: $arguments['parentId'] ?? null,
+                    clearParent: $arguments['clearParent'] ?? false,
+                    newGroupName: $arguments['newGroupName'] ?? null,
+                    clearGroup: $arguments['clearGroup'] ?? false,
+                    addLinks: $arguments['addLinks'] ?? [],
+                    removeLinks: $arguments['removeLinks'] ?? [],
+                    replace: ReplaceArgument::normalize($arguments['replace'] ?? []),
+                    step: $stepArguments['step'],
+                    blockedBy: $stepArguments['blockedBy'],
+                    areaId: $arguments['areaId'] ?? null,
+                    areaName: $arguments['areaName'] ?? null,
+                    clearArea: $arguments['clearArea'] ?? false,
+                    priorityId: $arguments['priorityId'] ?? null,
+                    priorityName: $arguments['priorityName'] ?? null,
+                    clearPriority: $arguments['clearPriority'] ?? false,
+                );
+            } catch (TodoStaleRevisionException $exception) {
+                return ['conflict' => true, 'message' => $exception->getMessage(), 'current' => $describe->handle($exception->currentId)];
+            }
+
+            if (isset($arguments['replace'])) {
+                return ['conflict' => false, 'id' => $issue->id, 'revision' => $issue->revision];
+            }
+
+            return ['conflict' => false] + $describe->handle($issue->id);
+        };
+
+        if ($request->get('items') !== null) {
+            $batch = $request->validate([
+                'items' => ['required', 'array', 'list', 'min:1', 'max:'.self::MAX_BATCH],
+                'items.*' => ['array'],
+            ]);
+
+            return $this->runBatch($batch['items'], fn (array $item): array => $one(validator($item, $rules)->validate()));
+        }
 
         try {
-            $issue = $revise->handle(
-                id: $arguments['id'],
-                expectedRevision: $arguments['expectedRevision'],
-                title: $arguments['title'] ?? null,
-                body: $arguments['body'] ?? null,
-                groupId: $arguments['groupId'] ?? null,
-                note: $arguments['note'] ?? null,
-                idempotencyKey: $arguments['idempotencyKey'] ?? null,
-                addLabels: $arguments['addLabels'] ?? [],
-                removeLabels: $arguments['removeLabels'] ?? [],
-                parentId: $arguments['parentId'] ?? null,
-                clearParent: $arguments['clearParent'] ?? false,
-                newGroupName: $arguments['newGroupName'] ?? null,
-                clearGroup: $arguments['clearGroup'] ?? false,
-                addLinks: $arguments['addLinks'] ?? [],
-                removeLinks: $arguments['removeLinks'] ?? [],
-                replace: ReplaceArgument::normalize($arguments['replace'] ?? []),
-                step: $stepArguments['step'],
-                blockedBy: $stepArguments['blockedBy'],
-                areaId: $arguments['areaId'] ?? null,
-                areaName: $arguments['areaName'] ?? null,
-                clearArea: $arguments['clearArea'] ?? false,
-                priorityId: $arguments['priorityId'] ?? null,
-                priorityName: $arguments['priorityName'] ?? null,
-                clearPriority: $arguments['clearPriority'] ?? false,
-            );
-        } catch (TodoStaleRevisionException $exception) {
-            return Response::structured([
-                'conflict' => true,
-                'message' => $exception->getMessage(),
-                'current' => $describe->handle($exception->currentId),
-            ]);
+            return Response::structured($one($request->validate($rules)));
         } catch (TodoRecordNotFoundException|TodoRecordUnavailableException|TodoValidationException $exception) {
             return Response::error($exception->getMessage());
         }
-
-        if (isset($arguments['replace'])) {
-            return Response::structured(['conflict' => false, 'id' => $issue->id, 'revision' => $issue->revision]);
-        }
-
-        return Response::structured(['conflict' => false] + $describe->handle($issue->id));
     }
 
     /** @return array<string, Type> */
     public function schema(JsonSchema $schema): array
     {
         return [
-            'id' => $schema->integer()->required()->description('The local Todo issue id to revise.'),
-            'expectedRevision' => $schema->integer()->required()->description('The `revision` value last read for this issue.'),
+            'items' => $schema->array()->items($schema->object())->min(1)->max(self::MAX_BATCH)->description('Batch form: 1–20 objects, each with the single-issue fields (id, expectedRevision, ...). Use instead of the top-level fields.'),
+            'id' => $schema->integer()->description('The local Todo issue id to revise. Required unless items is given.'),
+            'expectedRevision' => $schema->integer()->description('The `revision` value last read for this issue. Required unless items is given.'),
             'title' => $schema->string()->nullable()->description('The new title, if changing it.'),
             'body' => $schema->string()->nullable()->description('The new canonical body, if changing it.'),
             'replace' => ReplaceArgument::schema($schema, 'body'),

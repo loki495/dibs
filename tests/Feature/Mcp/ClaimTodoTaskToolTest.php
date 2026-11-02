@@ -72,3 +72,24 @@ it('falls back to the parent process when DIBS_CLIENT_PID is dead or malformed',
 
     expect(TaskClaim::query()->sole()->agentSession->pid)->toBe(posix_getppid());
 })->with(['nonexistent pid' => '4194999', 'not a number' => 'abc', 'zero' => '0', 'negative' => '-5']);
+
+it('claims several tasks in one call and reports a per-id error without stopping', function (): void {
+    $first = Issue::factory()->create();
+    $second = Issue::factory()->create();
+
+    TodoServer::tool(ClaimTodoTask::class, ['issueIds' => [$first->id, 999_999, $second->id], 'agentName' => 'codex'])
+        ->assertOk()
+        ->assertHasNoErrors()
+        ->assertSee('"succeeded":2')
+        ->assertSee('"failed":1')
+        ->assertSee('not found');
+
+    expect(TaskClaim::query()->count())->toBe(2);
+});
+
+it('rejects issueId together with issueIds', function (): void {
+    $issue = Issue::factory()->create();
+
+    TodoServer::tool(ClaimTodoTask::class, ['issueId' => $issue->id, 'issueIds' => [$issue->id], 'agentName' => 'codex'])
+        ->assertHasErrors();
+});
