@@ -112,3 +112,22 @@ it('returns the guard refusal as a tool error naming the missing field, and comp
         ->assertSee('Guard overridden: fixed by the vendor upstream');
     expect($issue->fresh()->state)->toBe('CLOSED');
 });
+
+it('completes several claimed tasks in one call and reports a bad token without stopping', function (): void {
+    $a = Issue::factory()->create(['state' => 'OPEN']);
+    $b = Issue::factory()->create(['state' => 'OPEN']);
+    $claimA = app(ClaimTaskForAgent::class)->handle($a, 'codex', posix_getppid(), 30);
+    app(ClaimTaskForAgent::class)->handle($b, 'codex', posix_getppid(), 30);
+
+    TodoServer::tool(CompleteTodoTaskTool::class, ['items' => [
+        ['issueId' => $a->id, 'capabilityToken' => $claimA['capability_token'], 'summary' => 'Done A.'],
+        ['issueId' => $b->id, 'capabilityToken' => 'wrong', 'summary' => 'Done B.'],
+        ['issueId' => $b->id],
+    ]])
+        ->assertOk()
+        ->assertHasNoErrors()
+        ->assertSee('"succeeded":1')
+        ->assertSee('"failed":2');
+
+    expect($a->fresh()->state)->toBe('CLOSED')->and($b->fresh()->state)->toBe('OPEN');
+});

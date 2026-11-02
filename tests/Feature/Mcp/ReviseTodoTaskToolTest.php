@@ -271,3 +271,20 @@ it('reports a conflict instead of moving Area or Priority on a stale revision', 
 
     expect($item->fresh()->priority_option_id)->toBeNull();
 });
+
+it('revises several issues in one call, reporting a stale one as a conflict and a bad one as an error', function (): void {
+    $a = Issue::factory()->create(['title' => 'A', 'revision' => 1]);
+    $b = Issue::factory()->create(['title' => 'B', 'revision' => 2]);
+
+    TodoServer::tool(ReviseTodoTask::class, ['items' => [
+        ['id' => $a->id, 'expectedRevision' => 1, 'title' => 'A2'],
+        ['id' => $b->id, 'expectedRevision' => 1, 'title' => 'B2'],
+        ['id' => $a->id, 'title' => 'no revision'],
+    ]])
+        ->assertOk()
+        ->assertHasNoErrors()
+        ->assertSee('"conflict":true')
+        ->assertSee('"failed":1');
+
+    expect($a->fresh()->title)->toBe('A2')->and($b->fresh()->title)->toBe('B');
+});

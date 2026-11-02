@@ -10,6 +10,7 @@ use App\Actions\DescribeTodoIssue;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoValidationException;
 use App\Mcp\CallerPid;
+use App\Mcp\Tools\Concerns\RunsBatch;
 use DomainException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -20,14 +21,16 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Finishes the calling agent\'s own claimed task: closes the issue, enqueues the GitHub push, and releases the claim. Temporary tasks are permanently deleted instead, returning a deleted receipt; consume children first. They bypass completion evidence guards, and an explicit summary becomes a normal comment on a surviving permanent parent. NOT_PLANNED discards the task; ordinary claim release retains it. Only the exact process holding the live claim (matched by capability token) can complete it. `summary` becomes the closing note (a comment on the issue); `reason` and `references` are optional extra detail on why and how it was closed. `result` is the structured evidence (commit, tests, docs, done_when_held); the completion guards refuse a close that lacks what the task\'s guard profile asks for (a summary always; a commit for agent tasks, bugs and plan steps; tests and docs whenever a commit SHA is given; Done-when for plan steps), and the refusal lists each missing field. Where evidence truly does not apply, give "none: <the real reason>" for that field, or force: true with a real forceReason (logged and noted in the closing note). Call todo_show afterward for the `closing` object of a permanent task; a consumed temporary task no longer exists.')]
+#[Description('Finishes the calling agent\'s own claimed task: closes the issue, enqueues the GitHub push, and releases the claim. Temporary tasks are permanently deleted instead, returning a deleted receipt; consume children first. They bypass completion evidence guards, and an explicit summary becomes a normal comment on a surviving permanent parent. NOT_PLANNED discards the task; ordinary claim release retains it. Only the exact process holding the live claim (matched by capability token) can complete it. `summary` becomes the closing note (a comment on the issue); `reason` and `references` are optional extra detail on why and how it was closed. `result` is the structured evidence (commit, tests, docs, done_when_held); the completion guards refuse a close that lacks what the task\'s guard profile asks for (a summary always; a commit for agent tasks, bugs and plan steps; tests and docs whenever a commit SHA is given; Done-when for plan steps), and the refusal lists each missing field. Where evidence truly does not apply, give "none: <the real reason>" for that field, or force: true with a real forceReason (logged and noted in the closing note). Call todo_show afterward for the `closing` object of a permanent task; a consumed temporary task no longer exists. Pass items (1–20 objects, each with issueId, capabilityToken and the usual fields) instead of the single-task fields to complete several tasks in one call, best effort: returns items with each closed issue or its error.')]
 class CompleteTodoTaskTool extends Tool implements Errable
 {
+    use RunsBatch;
+
     protected string $name = 'todo_complete';
 
     public function handle(Request $request, CompleteTodoTask $complete, DescribeTodoIssue $describe, CallerPid $callerPid): Response|ResponseFactory
     {
-        $arguments = $request->validate([
+        $rules = [
             'issueId' => ['required', 'integer', 'min:1'],
             'capabilityToken' => ['required', 'string'],
             'summary' => ['sometimes', 'nullable', 'string', 'max:65535'],
@@ -41,9 +44,9 @@ class CompleteTodoTaskTool extends Tool implements Errable
             'result.done_when_held' => ['sometimes', 'boolean'],
             'force' => ['sometimes', 'boolean'],
             'forceReason' => ['sometimes', 'nullable', 'string', 'max:2000'],
-        ]);
+        ];
 
-        try {
+        $one = function (array $arguments) use ($complete, $describe, $callerPid): array {
             $issue = $complete->handle(
                 issueId: $arguments['issueId'],
                 pid: $callerPid->resolve(),
@@ -55,19 +58,35 @@ class CompleteTodoTaskTool extends Tool implements Errable
                 force: $arguments['force'] ?? false,
                 forceReason: $arguments['forceReason'] ?? null,
             );
+
+            return $issue->is_temporary ? ['id' => $issue->id, 'deleted' => true, 'temporary' => true] : $describe->handle($issue->id);
+        };
+
+        if ($request->get('items') !== null) {
+            $batch = $request->validate([
+                'items' => ['required', 'array', 'list', 'min:1', 'max:'.self::MAX_BATCH],
+                'items.*' => ['array'],
+            ]);
+
+            return $this->runBatch($batch['items'], fn (array $item): array => $one(validator($item, $rules)->validate()));
+        }
+
+        $arguments = $request->validate($rules);
+
+        try {
+            return Response::structured($one($arguments));
         } catch (DomainException|TodoRecordUnavailableException|TodoValidationException $exception) {
             return Response::error($exception->getMessage());
         }
-
-        return Response::structured($issue->is_temporary ? ['id' => $issue->id, 'deleted' => true, 'temporary' => true] : $describe->handle($issue->id));
     }
 
     /** @return array<string, Type> */
     public function schema(JsonSchema $schema): array
     {
         return [
-            'issueId' => $schema->integer()->required()->description('The claimed issue\'s local id.'),
-            'capabilityToken' => $schema->string()->required()->description('The token returned by todo_claim for this claim.'),
+            'items' => $schema->array()->items($schema->object())->min(1)->max(self::MAX_BATCH)->description('Batch form: 1–20 objects, each with the single-task fields (issueId, capabilityToken, summary, result, ...). Use instead of the top-level fields.'),
+            'issueId' => $schema->integer()->description('The claimed issue\'s local id. Required unless items is given.'),
+            'capabilityToken' => $schema->string()->description('The token returned by todo_claim for this claim. Required unless items is given.'),
             'summary' => $schema->string()->nullable()->description('The closing note, posted as a comment. Omit for no note.'),
             'reason' => $schema->string()->enum(CloseTodoIssue::REASONS)->nullable()->description('Why the task was closed: COMPLETED or NOT_PLANNED (explicit discard for a temporary task). Pushed to GitHub as the issue\'s close reason.'),
             'result' => $schema->object([

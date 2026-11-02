@@ -14,7 +14,7 @@ it('exposes the tool under the todo_show name', function (): void {
 
 it('declares the expected input schema for tools/list introspection', function (): void {
     expect(array_keys(app(DescribeTodoIssue::class)->schema(new JsonSchemaTypeFactory)))
-        ->toBe(['id', 'ids', 'withComments', 'commentsPage', 'commentsPerPage', 'maxBodyLength', 'maxResponseChars']);
+        ->toBe(['id', 'ids', 'withComments', 'commentsPage', 'commentsPerPage', 'maxBodyLength', 'fullBody', 'maxResponseChars']);
 });
 
 it('truncates a long body through the tool when maxBodyLength is given', function (): void {
@@ -83,3 +83,17 @@ it('rejects invalid or ambiguous batch arguments', function (array $arguments): 
     'too large a budget' => [['ids' => [1], 'maxResponseChars' => 120_001]],
     'budget on single read' => [['id' => 1, 'maxResponseChars' => 20_000]],
 ]);
+
+it('cuts the body to 1500 characters by default and returns it whole with fullBody', function (): void {
+    $issue = Issue::factory()->create(['body' => str_repeat('x', 3000)]);
+
+    TodoServer::tool(DescribeTodoIssue::class, ['id' => $issue->id])
+        ->assertOk()
+        ->assertSee('"bodyTruncated":true')
+        ->assertDontSee(str_repeat('x', 1501));
+
+    TodoServer::tool(DescribeTodoIssue::class, ['id' => $issue->id, 'fullBody' => true])
+        ->assertOk()
+        ->assertSee('"bodyTruncated":false')
+        ->assertSee(str_repeat('x', 3000));
+});
