@@ -87,14 +87,14 @@ class ClaimTaskForAgent
             return;
         }
         if ($active->expires_at->isPast()) {
-            $active->update(['released_at' => now()]);
+            $active->update(['released_at' => now(), 'end_reason' => TaskClaim::END_STALE]);
 
             return;
         }
         $session = $active->agentSession;
         if ($session->is_verified_live && $session->pid !== null && $session->process_started_at !== null
             && $this->liveness->currentlyAlive($session->pid, $session->process_started_at) === false) {
-            $active->update(['released_at' => now()]);
+            $active->update(['released_at' => now(), 'end_reason' => TaskClaim::END_DEAD]);
         }
     }
 }

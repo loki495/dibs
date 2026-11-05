@@ -38,6 +38,7 @@ it('replaces an expired claim automatically', function (): void {
 
     expect(TaskClaim::query()->whereNull('released_at')->count())->toBe(1)
         ->and(TaskClaim::query()->count())->toBe(2, 'the expired claim is kept as history, not deleted')
+        ->and(TaskClaim::query()->whereNotNull('released_at')->sole()->end_reason)->toBe(TaskClaim::END_STALE)
         ->and($result['claim']->agentSession->agent_name)->toBe('claude');
 });
 
@@ -52,6 +53,7 @@ it('takes over a claim once PID reuse proves the previous holder is actually dea
 
     expect(TaskClaim::query()->whereNull('released_at')->count())->toBe(1)
         ->and(TaskClaim::query()->count())->toBe(2, 'the dead-process claim is kept as history, not deleted')
+        ->and(TaskClaim::query()->whereNotNull('released_at')->sole()->end_reason)->toBe(TaskClaim::END_DEAD)
         ->and($result['claim']->agentSession->agent_name)->toBe('claude');
 });
 
@@ -76,7 +78,8 @@ it('releases a claim only when the exact capability token and pid match', functi
         ->toThrow(DomainException::class, 'No live claim');
 
     $released = app(ReleaseTaskClaim::class)->handle($issue->id, getmypid(), $result['capability_token'], 'Next: finish it.');
-    expect($released->released_at)->not->toBeNull();
+    expect($released->released_at)->not->toBeNull()
+        ->and($released->end_reason)->toBe(TaskClaim::END_RELEASED);
 });
 
 it('renews a claim on heartbeat and rejects renewal without the right capability', function (): void {

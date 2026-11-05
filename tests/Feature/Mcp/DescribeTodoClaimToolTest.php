@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\ClaimTaskForAgent;
 use App\Mcp\Servers\TodoServer;
 use App\Mcp\Tools\DescribeTodoClaimTool;
+use App\Mcp\Tools\FindDroppedWorkTool;
 use App\Models\Issue;
 use App\Models\TaskClaim;
 use Illuminate\JsonSchema\JsonSchemaTypeFactory;
@@ -84,3 +85,15 @@ it('rejects invalid or ambiguous claim batch arguments', function (array $argume
     'non numeric id' => [['issueIds' => ['no']], 'issueIds.0'],
     'both selectors' => [['issueId' => 1, 'issueIds' => [2]], 'issue id'],
 ]);
+
+it('lists dropped work through todo_dropped', function (): void {
+    $issue = Issue::factory()->create(['title' => 'Half done thing']);
+    app(ClaimTaskForAgent::class)->handle($issue, 'codex', getmypid(), 30);
+    TaskClaim::query()->sole()->update(['expires_at' => now()->subMinute()]);
+
+    TodoServer::tool(FindDroppedWorkTool::class)
+        ->assertOk()
+        ->assertHasNoErrors()
+        ->assertSee('Half done thing')
+        ->assertSee('lapsed');
+});
