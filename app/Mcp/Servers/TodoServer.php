@@ -16,6 +16,7 @@ use App\Mcp\Tools\DescribeTodoIssue;
 use App\Mcp\Tools\DescribeTodoMetadata;
 use App\Mcp\Tools\DescribeTodoQueueStatus;
 use App\Mcp\Tools\DescribeTodoServer;
+use App\Mcp\Tools\FindDroppedWorkTool;
 use App\Mcp\Tools\HeartbeatTodoTask;
 use App\Mcp\Tools\ListTodoTasks;
 use App\Mcp\Tools\NextTodoStep;
@@ -56,6 +57,7 @@ class TodoServer extends Server
         CompleteTodoTaskTool::class,
         ReopenTodoTask::class,
         DescribeTodoClaimTool::class,
+        FindDroppedWorkTool::class,
         ReportBugTool::class,
     ];
 

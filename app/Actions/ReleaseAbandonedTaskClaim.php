@@ -21,7 +21,7 @@ class ReleaseAbandonedTaskClaim
         if (! $claim instanceof TaskClaim) {
             throw new DomainException('This task has no live claim to release.');
         }
-        $claim->update(['released_at' => now()]);
+        $claim->update(['released_at' => now(), 'end_reason' => TaskClaim::END_ABANDONED]);
 
         return $claim->refresh();
     }

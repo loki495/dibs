@@ -24,7 +24,7 @@ class ReleaseTaskClaim
 
         return DB::transaction(function () use ($issueId, $pid, $capabilityToken, $left): TaskClaim {
             $claim = $this->authorize->handle($issueId, $pid, $capabilityToken);
-            $claim->update(['released_at' => now()]);
+            $claim->update(['released_at' => now(), 'end_reason' => TaskClaim::END_RELEASED]);
             $this->comment->handle($issueId, '**Released, left to do:** '.trim($left));
 
             return $claim->refresh();

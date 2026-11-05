@@ -6,6 +6,7 @@ namespace App\Actions;
 
 use App\Exceptions\TodoValidationException;
 use App\Models\Issue;
+use App\Models\TaskClaim;
 use App\Services\Activity\ActivityRecorder;
 use App\Support\RealReason;
 use Illuminate\Support\Arr;
@@ -62,7 +63,7 @@ class CompleteTodoTask
             if ($issue->is_temporary) {
                 return $issue;
             }
-            $claim->update(['released_at' => now()]);
+            $claim->update(['released_at' => now(), 'end_reason' => TaskClaim::END_DONE]);
 
             return $issue->fresh();
         }, 3);
