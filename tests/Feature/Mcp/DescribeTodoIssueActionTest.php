@@ -145,3 +145,54 @@ it('leaves a null body as null and untruncated regardless of maxBodyLength', fun
 
     expect($result['body'])->toBeNull()->and($result['bodyTruncated'])->toBeFalse();
 });
+
+it('does not lint a closed child that lacks the step sections', function (): void {
+    $plan = Issue::factory()->create();
+    Issue::factory()->for($plan, 'parent')->create(['state' => 'CLOSED', 'body' => 'No sections here.']);
+
+    $result = app(DescribeTodoIssue::class)->handle($plan->id);
+
+    expect($result['stepLint'])->toBe([]);
+});
+
+it('does not lint a child that has children of its own', function (): void {
+    $plan = Issue::factory()->create();
+    $step = Issue::factory()->for($plan, 'parent')->create(['body' => 'No sections here.']);
+    Issue::factory()->for($step, 'parent')->create();
+
+    $result = app(DescribeTodoIssue::class)->handle($plan->id);
+
+    expect($result['stepLint'])->toBe([]);
+});
+
+it('does not lint a child written by an untrusted author', function (): void {
+    $plan = Issue::factory()->create();
+    Issue::factory()->for($plan, 'parent')->create(['author_login' => 'untrusted-bot', 'body' => 'No sections here.']);
+
+    $result = app(DescribeTodoIssue::class)->handle($plan->id);
+
+    expect($result['stepLint'])->toBe([]);
+});
+
+it('returns an empty lint list when every step is complete', function (): void {
+    $plan = Issue::factory()->create();
+    Issue::factory()->for($plan, 'parent')->create([
+        'body' => 'Do the thing.',
+        'done_when' => 'The thing is done.',
+        'evidence' => 'commit and test output.',
+        'files_likely' => 'src/thing.php',
+    ]);
+
+    $result = app(DescribeTodoIssue::class)->handle($plan->id);
+
+    expect($result)->toHaveKey('stepLint')->and($result['stepLint'])->toBe([]);
+});
+
+it('still lints an open leaf child that is missing sections', function (): void {
+    $plan = Issue::factory()->create();
+    $step = Issue::factory()->for($plan, 'parent')->create(['body' => 'No sections here.']);
+
+    $result = app(DescribeTodoIssue::class)->handle($plan->id);
+
+    expect($result['stepLint'])->toHaveCount(1)->and($result['stepLint'][0]['id'])->toBe($step->id);
+});
