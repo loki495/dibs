@@ -263,7 +263,7 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
   choose what to read in full without opening every match.
 - **Checking before re-reading** — `todo_peek` reports id/title/revision/state for a batch of ids
   in one cheap call, no body, so a cached record can be checked for change without paying for a
-  full `todo_show`; `todo_show`'s `maxBodyLength` gives a cheap truncated preview for the same
+  full `todo_show`; `todo_show` cuts bodies to 1500 characters unless `fullBody: true`, a cheap preview for the same
   reason. Read selected records together with `todo_show({ids: [...]})` (up to 20), or check
   several claims with `todo_claim_status({issueIds: [...]})` (up to 100). Batch reads preserve
   order and report individual errors; batch show also bounds its JSON payload and marks clipped
@@ -305,7 +305,7 @@ duplicating or colliding on the same task, all without ever handling your GitHub
 write goes through the same Actions the web UI uses. Completing a task can carry a closing note,
 a reason (`COMPLETED`/`NOT_PLANNED`), and references, all visible afterward via `todo_show`; `todo_reopen` puts a closed task back to open. See
 [`docs/agent-interface.md`](docs/agent-interface.md) for the full tool contract, and a partial JSON CLI
-fallback (`php artisan todo:agent:*`, ten commands, not the full tool set) for scripting or recovery.
+fallback (`php artisan todo:agent:*`, eleven commands, not the full tool set) for scripting or recovery.
 
 To teach an agent how to use these tools well, drop [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md)
 into its skills directory (or paste it into its instructions). It's a short, generic guide in the
