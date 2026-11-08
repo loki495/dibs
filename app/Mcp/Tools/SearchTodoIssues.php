@@ -16,7 +16,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Contracts\Errable;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Find related tasks, plans, and knowledge in one call by searching titles and bodies, including closed records by default. Every whitespace-separated term must match somewhere in the title or body; title matches rank first. Returns paginated summaries with matching body excerpts and parent IDs so you can judge relevance before calling todo_show. Does not search comments.')]
+#[Description('Find related tasks, plans, and knowledge in one call by full-text search of titles, bodies and comments, including closed records by default. Every whitespace-separated term must match somewhere in the issue or one of its comments; words are stemmed and the last word matches as a prefix. Title matches rank first, then bm25 relevance. Returns paginated summaries with matching body excerpts and parent IDs so you can judge relevance before calling todo_show.')]
 class SearchTodoIssues extends Tool implements Errable
 {
     use AcceptsIssueFilters;
@@ -53,7 +53,7 @@ class SearchTodoIssues extends Tool implements Errable
     public function schema(JsonSchema $schema): array
     {
         return [
-            'query' => $schema->string()->max(SearchTodoIssuesAction::MAX_QUERY_LENGTH)->description('Keywords; all terms must match title or body. Literal substrings, ASCII case-insensitive; no special query syntax. Optional when at least one filter is given, in which case results list in id order.'),
+            'query' => $schema->string()->max(SearchTodoIssuesAction::MAX_QUERY_LENGTH)->description('Keywords; all terms must match the title, body or a comment. Stemmed, case-insensitive, last word a prefix; no special query syntax. Optional when at least one filter is given, in which case results list in id order.'),
             'area' => $schema->integer()->min(1)->description('A GitHub Project id to scope results to.'),
             'group' => $schema->integer()->min(1)->description('A Group option id to scope results to.'),
             'label' => $schema->string()->description('A label name (case-insensitive) every result must carry; `labels` takes several.'),
