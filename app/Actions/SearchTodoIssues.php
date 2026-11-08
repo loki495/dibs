@@ -8,6 +8,7 @@ use App\Models\Issue;
 use App\Support\IssueFilters;
 use App\Support\IssueSummary;
 use App\Support\TrustedAuthors;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class SearchTodoIssues
@@ -17,6 +18,11 @@ class SearchTodoIssues
     public const EXCERPT_LENGTH = 240;
 
     private const int EXCERPT_CONTEXT = 60;
+
+    /** bm25 column weights for issues_fts (title, body); a title hit counts ten times a body hit. */
+    private const float TITLE_WEIGHT = 10.0;
+
+    private const float BODY_WEIGHT = 1.0;
 
     public function __construct(private readonly ApplyIssueFilters $applyFilters, private readonly TrustedAuthors $trust) {}
 
@@ -51,17 +57,40 @@ class SearchTodoIssues
 
         $ranking = [];
         $patterns = [];
+        $phrases = [];
         foreach ($terms as $term) {
             $pattern = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term).'%';
-            $issues->where(fn ($matches) => $matches
-                ->whereRaw("title LIKE ? ESCAPE '\\'", [$pattern])
-                ->orWhereRaw("body LIKE ? ESCAPE '\\'", [$pattern]));
             $ranking[] = "CASE WHEN title LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END";
             $patterns[] = $pattern;
+
+            // A term with letters or digits goes through the FTS5 indexes (stemmed, last word a prefix,
+            // issue text or any comment); a term of pure punctuation can't be tokenized, so it stays a literal LIKE.
+            preg_match_all('/[\p{L}\p{N}]+/u', $term, $words);
+            if ($words[0] === []) {
+                $issues->where(fn ($matches) => $matches
+                    ->whereRaw("title LIKE ? ESCAPE '\\'", [$pattern])
+                    ->orWhereRaw("body LIKE ? ESCAPE '\\'", [$pattern]));
+
+                continue;
+            }
+
+            $phrase = '"'.implode(' ', $words[0]).'"*';
+            $phrases[] = $phrase;
+            $issues->where(fn ($matches) => $matches
+                ->whereRaw('issues.id IN (SELECT rowid FROM issues_fts WHERE issues_fts MATCH ?)', [$phrase])
+                ->orWhereRaw('issues.id IN (SELECT issue_id FROM comments WHERE is_available = 1 AND id IN (SELECT rowid FROM comments_fts WHERE comments_fts MATCH ?))', [$phrase]));
+        }
+
+        if ($phrases !== []) {
+            $scores = DB::table('issues_fts')
+                ->selectRaw(sprintf('rowid AS rid, bm25(issues_fts, %F, %F) AS score', self::TITLE_WEIGHT, self::BODY_WEIGHT))
+                ->whereRaw('issues_fts MATCH ?', [implode(' OR ', $phrases)]);
+            $issues->select('issues.*')->leftJoinSub($scores, 'scores', 'scores.rid', '=', 'issues.id');
         }
 
         $paginator = $issues->when($ranking !== [], fn ($ranked) => $ranked->orderByRaw('('.implode(' + ', $ranking).') DESC', $patterns))
-            ->orderBy('id')
+            ->when($phrases !== [], fn ($ranked) => $ranked->orderByRaw('scores.score IS NULL')->orderBy('scores.score'))
+            ->orderBy('issues.id')
             ->paginate(max(1, min($perPage, ListTodoIssues::MAX_PER_PAGE)), ['*'], 'page', max(1, $page));
 
         return [

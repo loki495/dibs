@@ -61,7 +61,7 @@ it('filters by area group label and state', function (): void {
 });
 
 it('paginates equal ranked matches deterministically and returns empty results', function (): void {
-    $issues = Issue::factory()->count(3)->create(['title' => 'Matching title']);
+    $issues = Issue::factory()->count(3)->create(['title' => 'Matching title', 'body' => null]);
     $result = app(SearchTodoIssues::class)->handle(query: 'matching', page: 2, perPage: 1);
 
     expect($result)->toMatchArray(['page' => 2, 'perPage' => 1, 'total' => 3, 'lastPage' => 3])

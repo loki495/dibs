@@ -258,7 +258,7 @@ with [`skills/dibs/SKILL.md`](skills/dibs/SKILL.md), below.
 - **Cold-start orientation** — `todo_context` and `todo_list` answer "what's open?" with no prior
   state needed, across every project or scoped to one, so a brand-new session (or a different
   agent picking up someone else's work) can get oriented and start immediately.
-- **Finding related material** — `todo_search` searches titles and bodies across tasks, plans,
+- **Finding related material** — `todo_search` full-text searches (FTS5, bm25-ranked) titles, bodies and comments across tasks, plans,
   and knowledge, including closed records. Ranked results include short excerpts so agents can
   choose what to read in full without opening every match.
 - **Checking before re-reading** — `todo_peek` reports id/title/revision/state for a batch of ids
