@@ -9,6 +9,7 @@ use App\Actions\CreateTodoIssues;
 use App\Actions\DescribeTodoIssue;
 use App\Actions\ReadTodoBatchFile;
 use App\Exceptions\TodoValidationException;
+use App\Support\WriteWarnings;
 use Illuminate\Console\Command;
 use RuntimeException;
 
@@ -30,7 +31,7 @@ class AgentCreateTaskCommand extends Command
 
     protected $description = 'Create a Todo task, plan, or knowledge record locally for a host-local agent as JSON';
 
-    public function handle(CreateTodoIssue $create, DescribeTodoIssue $details, CreateTodoIssues $batch, ReadTodoBatchFile $read): int
+    public function handle(CreateTodoIssue $create, DescribeTodoIssue $details, CreateTodoIssues $batch, ReadTodoBatchFile $read, WriteWarnings $warnings): int
     {
         try {
             if ($this->option('tasks-file') !== null) {
@@ -40,6 +41,9 @@ class AgentCreateTaskCommand extends Command
                     throw new TodoValidationException('Provide either --tasks-file or single-task arguments, not both.');
                 }
                 $result = $batch->handle($read->handle($this->option('tasks-file')));
+                foreach ($warnings->flush() as $warning) {
+                    $this->line('Warning: '.$warning);
+                }
                 $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 
                 return $result['failed'] === 0 ? self::SUCCESS : self::FAILURE;
@@ -66,6 +70,9 @@ class AgentCreateTaskCommand extends Command
             return self::FAILURE;
         }
 
+        foreach ($warnings->flush() as $warning) {
+            $this->line('Warning: '.$warning);
+        }
         $this->line(json_encode($details->handle($issue->id), JSON_PRETTY_PRINT));
 
         return self::SUCCESS;

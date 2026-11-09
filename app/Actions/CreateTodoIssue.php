@@ -11,6 +11,8 @@ use App\Models\Label;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\Activity\ActivityRecorder;
+use App\Support\ChildLimit;
+use App\Support\WriteWarnings;
 use Illuminate\Support\Facades\DB;
 
 class CreateTodoIssue
@@ -23,6 +25,8 @@ class CreateTodoIssue
         private readonly ResolveActiveRepository $activeRepository,
         private readonly SyncIssueLinks $syncLinks,
         private readonly SyncStepFields $syncStep,
+        private readonly ChildLimit $childLimit,
+        private readonly WriteWarnings $warnings,
     ) {}
 
     /**
@@ -98,10 +102,11 @@ class CreateTodoIssue
                 throw new TodoValidationException('One or more selected labels are no longer available. Refresh and try again.');
             }
             $repository = $this->activeRepository->handle();
+            $limitWarning = $parent instanceof Issue && ! $temporary ? $this->childLimit->check($parent) : null;
 
             // attempts: 3 — same transient "database is locked" race against the scheduler's
             // push-queue drain as CompleteTodoTask; see that Action for the observed incident.
-            return DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy, $temporary): Issue {
+            $issue = DB::transaction(function () use ($title, $body, $project, $priority, $labels, $parent, $repository, $group, $newGroupName, $newLabelNames, $addLinks, $step, $blockedBy, $temporary): Issue {
                 if ($newGroupName !== null && trim($newGroupName) !== '') {
                     $group = $this->resolveGroup->handle($project, $newGroupName, ! $temporary);
                 }
@@ -164,6 +169,11 @@ class CreateTodoIssue
 
                 return $issue;
             }, 3);
+            if ($limitWarning !== null) {
+                $this->warnings->add($limitWarning, $this->childLimit->key($parent));
+            }
+
+            return $issue;
         };
 
         if ($idempotencyKey === null || $idempotencyKey === '') {

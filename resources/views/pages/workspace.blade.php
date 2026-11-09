@@ -34,6 +34,8 @@ use App\Models\Label;
 use App\Models\ProjectFieldOption;
 use App\Models\ProjectItem;
 use App\Services\GitHub\GitHubSyncException;
+use App\Support\WriteWarnings;
+use Flux\Flux;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -419,6 +421,7 @@ new class extends Component
 
             return;
         }
+        $this->toastWarnings();
         $this->bulkParentOpen = false;
     }
 
@@ -524,6 +527,7 @@ new class extends Component
 
             return;
         }
+        $this->toastWarnings();
         $this->selected = $issue->id;
         $this->reset('newTitle', 'newBody', 'captureGroup', 'capturePriority', 'captureLabels', 'captureNewGroup', 'captureNewLabels', 'captureParentSearch');
         $this->captureOpen = false;
@@ -610,7 +614,15 @@ new class extends Component
 
             return;
         }
+        $this->toastWarnings();
         $this->cancelEdit();
+    }
+
+    private function toastWarnings(): void
+    {
+        foreach (app(WriteWarnings::class)->flush() as $warning) {
+            Flux::toast(text: $warning, heading: 'Sub-task limit', variant: 'warning', duration: 0);
+        }
     }
 
     public function addLink(int $targetId): void

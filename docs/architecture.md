@@ -272,6 +272,14 @@ The MCP write Actions `CompleteTodoTask`, `ClaimTaskForAgent`, `ReviseTodoIssue`
 the scheduler's own writes to the same SQLite file and Laravel's `DB::transaction()` retries on a
 `"database is locked"` SQLSTATE only when told to.
 
+## Sub-task limit
+
+`App\Support\ChildLimit` keeps a parent under GitHub's 100 sub-issue cap. `check($parent, $adding)` counts the parent's available, non-temporary direct children (open and closed) plus the ones being added, and `checkNew($title, $count)` does the same for a plan that does not exist yet. It returns null below `config('dibs.child_limit.warn_at')` (env `DIBS_CHILD_WARN_AT`, default 80), a warning string at or above it, and throws `TodoValidationException` above `refuse_above` (env `DIBS_CHILD_REFUSE_ABOVE`, default 100). It does nothing when the instance is not mirrored or the parent is temporary. `CreateTodoIssue`, `MoveIssueUnderParent`, `BulkSetIssuesParent` and `ScaffoldTodoPlan` call it inside their transactions.
+
+`App\Support\WriteWarnings` is a scoped service (registered in `AppServiceProvider`, so one instance per request, command or queue job) that collects non-fatal notices. `add($message, $key)` replaces an earlier warning with the same key, so a batch reports one warning per parent (`ChildLimit::key()`). Callers flush it: `attachTo($result)` adds a top-level `warnings` list only when non-empty (MCP tools and `RunsBatch`), the CLI prints `Warning: <message>`, and the workspace page shows each as a `Flux::toast` (variant `warning`, heading "Sub-task limit", persistent). `resources/views/layouts/app.blade.php` carries the `<flux:toast />` outlet that renders them.
+
+Known limitation: the count and the insert are not locked together, so two concurrent writers adding to the same parent can both pass the check and exceed the cap. A rejected surplus push marks its row `needs_attention` and does not roll back the local write.
+
 ## Agents and claims
 
 The full MCP tool surface, the CLI fallback, and the claim/heartbeat/release/complete lifecycle

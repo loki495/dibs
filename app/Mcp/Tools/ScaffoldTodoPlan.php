@@ -8,6 +8,7 @@ use App\Actions\DescribeTodoIssue;
 use App\Actions\ScaffoldTodoPlan as ScaffoldTodoPlanAction;
 use App\Exceptions\TodoValidationException;
 use App\Mcp\Tools\Concerns\StepArgument;
+use App\Support\WriteWarnings;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -22,7 +23,7 @@ class ScaffoldTodoPlan extends Tool implements Errable
 {
     protected string $name = 'todo_scaffold_plan';
 
-    public function handle(Request $request, ScaffoldTodoPlanAction $scaffold, DescribeTodoIssue $describe): Response|ResponseFactory
+    public function handle(Request $request, ScaffoldTodoPlanAction $scaffold, DescribeTodoIssue $describe, WriteWarnings $warnings): Response|ResponseFactory
     {
         $arguments = $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -63,7 +64,7 @@ class ScaffoldTodoPlan extends Tool implements Errable
             return Response::error($exception->getMessage());
         }
 
-        return Response::structured($describe->handle($plan->id));
+        return Response::structured($warnings->attachTo($describe->handle($plan->id)));
     }
 
     /** @return array<string, Type> */

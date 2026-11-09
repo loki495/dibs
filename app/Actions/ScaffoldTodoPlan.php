@@ -6,6 +6,7 @@ namespace App\Actions;
 
 use App\Exceptions\TodoValidationException;
 use App\Models\Issue;
+use App\Support\ChildLimit;
 use Illuminate\Support\Facades\DB;
 
 class ScaffoldTodoPlan
@@ -13,6 +14,7 @@ class ScaffoldTodoPlan
     public function __construct(
         private readonly CreateTodoIssue $create,
         private readonly ResolveIdempotentWrite $idempotent,
+        private readonly ChildLimit $childLimit,
     ) {}
 
     /**
@@ -44,6 +46,9 @@ class ScaffoldTodoPlan
                 }
             }
         }
+
+        // The creates below add the single (latest) warning for the plan; this only refuses an oversized batch up front.
+        $this->childLimit->checkNew($title, count($children));
 
         $scaffold = fn (): Issue => DB::transaction(function () use ($title, $body, $area, $groupId, $priorityId, $labelIds, $newLabelName, $children): Issue {
             $plan = $this->create->handle(title: $title, body: $body, area: $area, groupId: $groupId, priorityId: $priorityId, labelIds: $labelIds, newLabelNames: $newLabelName !== null ? [$newLabelName] : []);

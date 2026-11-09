@@ -8,6 +8,7 @@ use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
+use App\Support\WriteWarnings;
 use DomainException;
 use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Response;
@@ -43,6 +44,6 @@ trait RunsBatch
             }
         }
 
-        return Response::structured(['items' => $results, 'succeeded' => count($items) - $failed, 'failed' => $failed]);
+        return Response::structured(app(WriteWarnings::class)->attachTo(['items' => $results, 'succeeded' => count($items) - $failed, 'failed' => $failed]));
     }
 }

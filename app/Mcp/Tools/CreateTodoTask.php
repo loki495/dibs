@@ -10,6 +10,7 @@ use App\Actions\DescribeTodoIssue;
 use App\Exceptions\TodoValidationException;
 use App\Mcp\Tools\Concerns\StepArgument;
 use App\Support\TodoCreationInput;
+use App\Support\WriteWarnings;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -24,7 +25,7 @@ class CreateTodoTask extends Tool implements Errable
 {
     protected string $name = 'todo_create';
 
-    public function handle(Request $request, CreateTodoIssue $create, DescribeTodoIssue $describe, CreateTodoIssues $batch): Response|ResponseFactory
+    public function handle(Request $request, CreateTodoIssue $create, DescribeTodoIssue $describe, CreateTodoIssues $batch, WriteWarnings $warnings): Response|ResponseFactory
     {
         if (array_key_exists('tasks', $request->all())) {
             $arguments = $request->validate(['tasks' => ['required', 'array', 'list', 'min:1', 'max:'.CreateTodoIssues::MAX_TASKS]]);
@@ -32,7 +33,7 @@ class CreateTodoTask extends Tool implements Errable
                 return Response::error('Provide either tasks or single-task fields, not both.');
             }
 
-            return Response::structured($batch->handle($arguments['tasks']));
+            return Response::structured($warnings->attachTo($batch->handle($arguments['tasks'])));
         }
         $arguments = $request->validate(TodoCreationInput::rules());
 
@@ -42,7 +43,7 @@ class CreateTodoTask extends Tool implements Errable
             return Response::error($exception->getMessage());
         }
 
-        return Response::structured($describe->handle($issue->id));
+        return Response::structured($warnings->attachTo($describe->handle($issue->id)));
     }
 
     /** @return array<string, Type> */

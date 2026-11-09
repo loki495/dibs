@@ -13,6 +13,7 @@ use App\Exceptions\TodoValidationException;
 use App\Mcp\Tools\Concerns\ReplaceArgument;
 use App\Mcp\Tools\Concerns\RunsBatch;
 use App\Mcp\Tools\Concerns\StepArgument;
+use App\Support\WriteWarnings;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -117,7 +118,7 @@ class ReviseTodoTask extends Tool implements Errable
         }
 
         try {
-            return Response::structured($one($request->validate($rules)));
+            return Response::structured(app(WriteWarnings::class)->attachTo($one($request->validate($rules))));
         } catch (TodoRecordNotFoundException|TodoRecordUnavailableException|TodoValidationException $exception) {
             return Response::error($exception->getMessage());
         }
