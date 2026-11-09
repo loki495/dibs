@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AutoLoginForTrustedRequests;
 use App\Http\Middleware\BeginActivityContext;
+use App\Http\Middleware\ForceCanonicalUrl;
 use App\Http\Middleware\ResolveDemoDatabase;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -18,6 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Global, so the canonical origin is set before any route middleware (auth in particular) can
+        // build a redirect.
+        $middleware->prepend(ForceCanonicalUrl::class);
         // Demo mode only (config('dibs.demo_mode')) -- no-op otherwise. Must run after
         // EncryptCookies (it reads the visitor-id cookie -- a bare prependToGroup runs before
         // EncryptCookies decrypts anything, so the cookie never validates and a fresh visitor
