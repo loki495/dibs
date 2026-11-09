@@ -13,6 +13,8 @@ use App\Models\Issue;
  */
 class ChildLimit
 {
+    public function __construct(private readonly TrustedAuthors $trust) {}
+
     /**
      * Check adding children to a parent. Returns a warning when the resulting count reaches the
      * warning threshold, null when it is fine.
@@ -28,7 +30,7 @@ class ChildLimit
         $existing = Issue::query()->where('parent_issue_id', $parent->id)
             ->where('is_available', true)->where('is_temporary', false)->count();
 
-        return $this->evaluate($parent->title, $existing + $adding);
+        return $this->evaluate($this->trust->title($parent), $existing + $adding);
     }
 
     /** Same decision for a parent that does not exist yet (a plan being scaffolded). */
