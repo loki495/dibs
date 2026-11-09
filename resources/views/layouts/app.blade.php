@@ -56,6 +56,7 @@
         <span>{{ __('Lost contact with the server, so your last change may not have been saved.') }}</span>
         <button type="button" data-reload class="shrink-0 rounded-lg border border-amber-700 px-3 py-1.5 font-medium hover:bg-amber-100 dark:border-amber-400 dark:hover:bg-amber-900">{{ __('Reload') }}</button>
     </div>
+    <flux:toast />
     @livewireScripts
     @fluxScripts
 </body>

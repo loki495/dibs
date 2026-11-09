@@ -13,6 +13,12 @@ return [
     // Milliseconds a request or page navigation must take before the loading bar shows and the lists dim,
     // so quick ones don't flicker.
     'loading_indicator_delay_ms' => (int) env('DIBS_LOADING_INDICATOR_DELAY_MS', 150),
+    // Direct children per parent (GitHub allows 100 sub-issues): a write that brings a parent to warn_at or
+    // more children succeeds with a warning; one that would exceed refuse_above is refused. Mirrored only.
+    'child_limit' => [
+        'warn_at' => (int) env('DIBS_CHILD_WARN_AT', 80),
+        'refuse_above' => (int) env('DIBS_CHILD_REFUSE_ABOVE', 100),
+    ],
     'push_queue_ui_enabled' => (bool) env('DIBS_PUSH_QUEUE_UI_ENABLED', true),
 
     // Whether this process can see the agents' PIDs (/proc of the host PID namespace) to verify claim

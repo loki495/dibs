@@ -211,6 +211,17 @@ Claims and session metadata are local durable data that GitHub never holds, so t
 - A command records the agent identity and intent in the local record before a multi-step write.
 - Nothing on a schedule creates, edits, completes or comments through the MCP surface; an agent explicitly invoking a tool or command is always the trigger. The push-queue drain to GitHub is a separate background process, not an agent write.
 
+## Sub-task limit and write warnings
+
+GitHub allows at most 100 sub-issues per parent. On a mirrored instance (`GitHubMirror::mirrored()`; local-only instances are never limited) `App\Support\ChildLimit` checks every write that adds children to a parent: create (single and batch), revise or move under a new parent, bulk set parent, and `todo_scaffold_plan`. The count is the parent's available, non-temporary direct children, open and closed. Temporary parents are never limited.
+
+- A write whose resulting count is at least 80 succeeds and returns a warning.
+- A write whose resulting count is above 100 is refused with a `TodoValidationException` (the message names the parent, the resulting count and the limit). Nothing is written.
+- Batch creation, scaffold and bulk set parent are all-or-nothing for this check: one refusal rejects the whole write. They report one warning per parent, with the latest count.
+- Thresholds: `DIBS_CHILD_WARN_AT` (default 80) and `DIBS_CHILD_REFUSE_ABOVE` (default 100), read through `config('dibs.child_limit.warn_at')` and `config('dibs.child_limit.refuse_above')`.
+
+Warnings reach the caller as a top-level `warnings` list of strings on the `todo_create` (single and batch), `todo_revise` and `todo_scaffold_plan` results. The key is present only when the list is non-empty. The CLI (`todo:agent:create`, `todo:agent:update`) prints each as `Warning: <message>`.
+
 ## Website convention
 
 A website is a Group inside a Project area. Its meaningful parent issue holds repository/path/context links. Work is child issues; granular work is nested children. Lessons, research, and decisions are labeled issues in that Group, with evidence and records in comments. Planned, not built: a `website_bindings` table that maps a website to explicit repository paths, so names alone never select a checkout.

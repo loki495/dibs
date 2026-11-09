@@ -7,12 +7,16 @@ namespace App\Actions;
 use App\Exceptions\TodoValidationException;
 use App\Models\Issue;
 use App\Services\Activity\ActivityRecorder;
+use App\Support\ChildLimit;
+use App\Support\WriteWarnings;
 
 class MoveIssueUnderParent
 {
     public function __construct(
         private readonly EnqueueGitHubPush $enqueue,
         private readonly ActivityRecorder $recorder,
+        private readonly ChildLimit $childLimit,
+        private readonly WriteWarnings $warnings,
     ) {}
 
     /** Set or clear an issue's parent locally and queue the matching GitHub change. */
@@ -29,9 +33,13 @@ class MoveIssueUnderParent
                 return;
             }
             $this->assertNoCycle($issue, $parent);
+            $limitWarning = $issue->is_temporary ? null : $this->childLimit->check($parent);
             $position = (int) Issue::query()->where('parent_issue_id', $parent->id)->max('sibling_position') + 1;
             $issue->update(['parent_issue_id' => $parent->id, 'sibling_position' => $position]);
             $this->enqueue->handle('set_issue_parent', 'issue', $issue->id, ['parent_issue_id' => $parent->id], 'issue:parent:'.$issue->id.':'.now()->timestamp);
+            if ($limitWarning !== null) {
+                $this->warnings->add($limitWarning, $this->childLimit->key($parent));
+            }
             $this->recorder->change(
                 'MoveIssueUnderParent',
                 $issue,

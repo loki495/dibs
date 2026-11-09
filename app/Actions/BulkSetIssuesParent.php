@@ -6,6 +6,8 @@ namespace App\Actions;
 
 use App\Exceptions\TodoValidationException;
 use App\Models\Issue;
+use App\Support\ChildLimit;
+use App\Support\WriteWarnings;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -17,6 +19,8 @@ use Illuminate\Support\Facades\DB;
  */
 class BulkSetIssuesParent
 {
+    public function __construct(private readonly ChildLimit $childLimit, private readonly WriteWarnings $warnings) {}
+
     /**
      * @param  list<int>  $issueIds
      * @return int number of tasks actually changed
@@ -29,7 +33,13 @@ class BulkSetIssuesParent
         }
         $issues = Issue::query()->where('is_available', true)->whereIn('id', $issueIds)->get();
 
-        return DB::transaction(function () use ($issues, $parent): int {
+        $limitWarning = null;
+        if ($parent instanceof Issue) {
+            $incoming = $issues->filter(fn (Issue $issue): bool => ! $issue->is_temporary && $issue->id !== $parent->id && $issue->parent_issue_id !== $parent->id)->count();
+            $limitWarning = $incoming > 0 ? $this->childLimit->check($parent, $incoming) : null;
+        }
+
+        $updated = DB::transaction(function () use ($issues, $parent): int {
             $updated = 0;
             foreach ($issues as $issue) {
                 if ($parent instanceof Issue && $parent->id === $issue->id) {
@@ -52,5 +62,10 @@ class BulkSetIssuesParent
 
             return $updated;
         });
+        if ($limitWarning !== null) {
+            $this->warnings->add($limitWarning, $this->childLimit->key($parent));
+        }
+
+        return $updated;
     }
 }

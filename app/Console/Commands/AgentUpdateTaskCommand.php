@@ -10,6 +10,7 @@ use App\Exceptions\TodoRecordNotFoundException;
 use App\Exceptions\TodoRecordUnavailableException;
 use App\Exceptions\TodoStaleRevisionException;
 use App\Exceptions\TodoValidationException;
+use App\Support\WriteWarnings;
 use Illuminate\Console\Command;
 
 class AgentUpdateTaskCommand extends Command
@@ -36,7 +37,7 @@ class AgentUpdateTaskCommand extends Command
 
     protected $description = 'Revise a Todo task\'s title/body/Area/Group/Priority/parent/labels for a host-local agent as JSON';
 
-    public function handle(ReviseTodoIssue $revise, DescribeTodoIssue $details): int
+    public function handle(ReviseTodoIssue $revise, DescribeTodoIssue $details, WriteWarnings $warnings): int
     {
         $expectedRevision = $this->option('expected-revision');
         if ($expectedRevision === null || ! ctype_digit((string) $expectedRevision)) {
@@ -91,6 +92,9 @@ class AgentUpdateTaskCommand extends Command
             return self::FAILURE;
         }
 
+        foreach ($warnings->flush() as $warning) {
+            $this->line('Warning: '.$warning);
+        }
         $this->line(json_encode(['conflict' => false] + $details->handle($issue->id), JSON_PRETTY_PRINT));
 
         return self::SUCCESS;
