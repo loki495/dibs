@@ -31,6 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY docker/entrypoint-prod.sh /usr/local/bin/entrypoint-prod.sh
 RUN chmod +x /usr/local/bin/entrypoint-prod.sh
+# Compress application/json as well as the text types Debian already lists; Livewire answers every
+# interaction with the whole workspace as JSON.
+COPY docker/apache/dibs-gzip.conf /etc/apache2/conf-available/dibs-gzip.conf
+RUN a2enmod deflate && a2enconf dibs-gzip
 
 WORKDIR /var/www/html
 COPY --from=build --chown=www-data:www-data /var/www/html /var/www/html

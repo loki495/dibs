@@ -40,7 +40,11 @@ directories and `umask 002` for both.
 
 - **Web server.** Point nginx or Apache (with PHP-FPM or `mod_php`) at `public/` as the document root.
   Apache needs `mod_rewrite` and `AllowOverride All` for `public/.htaccess`. For a quick local look,
-  `php artisan serve` (single-process, development only) is enough.
+  `php artisan serve` (single-process, development only) is enough. Also compress `application/json`:
+  Livewire answers each interaction with the whole workspace as JSON, several megabytes of it, so a
+  server that compresses only HTML sends that raw. Apache's Debian default type list stops at `text/*`
+  and JavaScript, so add `AddOutputFilterByType DEFLATE application/json` (the Docker images do this
+  through `docker/apache/dibs-gzip.conf`); nginx's `gzip_types` needs `application/json` too.
 - **Scheduler:** `php artisan schedule:work`. It drains the GitHub push queue every 10 seconds and prunes
   the activity log daily.
 - **Claim watcher:** `php artisan dibs:claims:watch`. It re-checks every live claim's process each
