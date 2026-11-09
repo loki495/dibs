@@ -7,6 +7,10 @@ ARG DIBS_UID=1000
 ARG DIBS_GID=1000
 COPY docker/setup-dev-container.sh /tmp/setup.sh
 RUN bash /tmp/setup.sh
+# Compress application/json as well as the text types Debian already lists; Livewire answers every
+# interaction with the whole workspace as JSON.
+COPY docker/apache/dibs-gzip.conf /etc/apache2/conf-available/dibs-gzip.conf
+RUN a2enmod deflate && a2enconf dibs-gzip
 WORKDIR /var/www/html
 
 # Browser (Pest + Playwright) tests only — adds Node.js + a ~300MB Chromium binary on
