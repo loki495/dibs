@@ -78,7 +78,7 @@ class DescribeTodoIssue
 
         if ($withComments) {
             $commentsPerPage = max(1, min($commentsPerPage, self::MAX_COMMENTS_PER_PAGE));
-            $paginator = $issue->comments()->where('is_available', true)->orderBy('remote_created_at')
+            $paginator = $issue->comments()->where('is_available', true)->orderBy('remote_created_at')->orderBy('id')
                 ->paginate($commentsPerPage, ['*'], 'page', max(1, $commentsPage));
             $result['comments'] = [
                 'items' => $paginator->getCollection()->map(fn ($comment): array => [
